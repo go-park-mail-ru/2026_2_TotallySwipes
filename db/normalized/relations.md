@@ -2,212 +2,679 @@
 
 ER: [er.puml](er.puml). Типы и ограничения: [schema.dbml](schema.dbml).
 
-Все атрибуты скалярные. DEFAULT CURRENT_TIMESTAMP задан для recorded_at. Остальные значения задаются явно; NULL у всех пяти весов означает незавершённое прохождение. Генерация id предполагается через identity в DDL. Технические created_at/updated_at опущены на этапе нормализации.
+Все идентификаторы генерируются через `GENERATED ALWAYS AS IDENTITY`.
 
-
-## 1. user — Учётная запись
-
-Хранит имя, email и хеш пароля пользователя.
-
-| Атрибут | Тип | Ограничения поля |
-| --- | --- | --- |
-| `id` | bigint | pk, not null |
-| `name` | text | not null |
-| `email` | text | not null, unique |
-| `password_hash` | text | not null |
-
-Проверки CHECK:
-
-- `id > 0`.
-- `char_length(name) BETWEEN 1 AND 100 AND name ~ '[^[:space:]]'`.
-- `char_length(email) BETWEEN 1 AND 254 AND email !~ '[[:space:]]'`.
-- `password_hash ~ '[^[:space:]]'`.
-
-email уникален при текущем правиле сравнения БД; формат email проверяется приложением.
-
-Кандидатные ключи: `{id}, {email}`.
-
-```text
-Relation user:
-{id} -> name, email, password_hash
-{email} -> id
-```
-
-Все значения атомарны (1НФ). Кандидатные ключи простые, частичных зависимостей нет (2НФ). Неключевые атрибуты не определяют другие атрибуты (3НФ). Оба определителя в базисе — кандидатные ключи, поэтому выполняется НФБК.
-
-## 2. profile — Анкета и её владелец
-
-Связывает единственную анкету с её владельцем. Изменяемые поля находятся в profile_version.
-
-| Атрибут | Тип | Ограничения поля |
-| --- | --- | --- |
-| `id` | bigint | pk, not null |
-| `user_id` | bigint | not null, unique |
-
-Проверки CHECK:
-
-- `id > 0`.
-
-user_id — FK на user.id. У пользователя должна быть ровно одна анкета; FK и UNIQUE обеспечивают только владельца и не более одной анкеты.
-
-Кандидатные ключи: `{id}, {user_id}`.
+Для технических временных полей в DDL используются:
 
 ```
-Relation profile:
-{id} -> user_id
-{user_id} -> id
+created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 ```
 
-Значения атомарны (1НФ). Оба атрибута являются кандидатными ключами, неключевых атрибутов нет (2НФ и 3НФ). В обеих нетривиальных зависимостях определитель — ключ (НФБК).
+Межтабличные ограничения, которые нельзя выразить через `PK`, `FK`, `UNIQUE` или `CHECK`, реализуются backend-логикой либо триггерами.
 
-## 3. profile_version — Версия анкеты
+---
 
-Неизменяемый снимок полей анкеты. Редактирование создаёт новую версию; текущей считается версия с максимальным revision для profile_id.
+## 1. user
 
-| Атрибут | Тип | Ограничения поля |
-| --- | --- | --- |
-| `id` | bigint | pk, not null |
-| `profile_id` | bigint | not null |
-| `revision` | integer | not null |
-| `recorded_at` | timestamptz | not null, default: `CURRENT_TIMESTAMP` |
-| `birth_date` | date | not null |
-| `sex` | text | not null |
-| `search_sex` | text | not null |
-| `search_age_from` | integer | not null |
-| `search_age_to` | integer | not null |
+| Атрибут         | Тип    | Ограничения      |
+| --------------- | ------ | ---------------- |
+| `id`            | bigint | PK, NOT NULL     |
+| `name`          | text   | NOT NULL         |
+| `email`         | text   | NOT NULL, UNIQUE |
+| `password_hash` | text   | NOT NULL         |
 
-Проверки CHECK:
-
-- `id > 0`.
-- `revision > 0`.
-- `isfinite(recorded_at)`.
-- `isfinite(birth_date)`.
-- `sex IN ('male', 'female')`.
-- `search_sex IN ('male', 'female', 'all')`.
-- `search_age_from >= 18 AND search_age_to >= search_age_from`.
-
-profile_id — FK на profile.id. UNIQUE(profile_id, revision) запрещает повтор номера версии. У анкеты должна быть минимум одна версия. Возраст владельца на момент записи — не менее 18 лет (проверка приложения).
-
-Кандидатные ключи: `{id}, {profile_id, revision}`.
+CHECK:
 
 ```
-Relation profile_version:
-{id} -> profile_id, revision, recorded_at, birth_date, sex, search_sex, search_age_from, search_age_to
-{profile_id, revision} -> id
+id > 0
+char_length(name) BETWEEN 1 AND 100 AND name ~ '[^[:space:]]'
+char_length(email) BETWEEN 1 AND 254 AND email !~ '[[:space:]]'
+password_hash ~ '[^[:space:]]'
 ```
 
-Значения атомарны (1НФ). Поля снимка определяются всей парой (profile_id, revision), а не одной её частью (2НФ). Зависимостей между неключевыми атрибутами не задано (3НФ). Оба определителя — кандидатные ключи (НФБК).
-
-## 4. test — Тест
-
-Определяет конкретную редакцию психологического теста. Использованный набор вопросов и смысл операций неизменяемы; новая редакция — новая запись test.
-
-| Атрибут | Тип | Ограничения поля |
-| --- | --- | --- |
-| `id` | bigint | pk, not null |
-| `name` | text | not null |
-
-Проверки CHECK:
-
-- `id > 0`.
-- `name ~ '[^[:space:]]'`.
-
-
-
-Кандидатные ключи: `{id}`.
+Кандидатные ключи:
 
 ```
-Relation test:
-{id} -> name
+{id}
+{email}
 ```
 
-Значения атомарны (1НФ), ключ простой (2НФ). Название не уникально и не определяет id; транзитивных зависимостей нет (3НФ). Единственный определитель — ключ id (НФБК).
+---
 
-## 5. question — Вопрос
+## 2. profile
 
-Хранит текст вопроса, ссылку на тест и код операции расчёта. operation_id — код backend, не внешний ключ.
+| Атрибут   | Тип    | Ограничения                     |
+| --------- | ------ | ------------------------------- |
+| `id`      | bigint | PK, NOT NULL                    |
+| `user_id` | bigint | NOT NULL, UNIQUE, FK -> user.id |
 
-| Атрибут | Тип | Ограничения поля |
-| --- | --- | --- |
-| `id` | bigint | pk, not null |
-| `test_id` | bigint | not null |
-| `operation_id` | integer | not null |
-| `body` | text | not null |
-
-Проверки CHECK:
-
-- `id > 0`.
-- `body ~ '[^[:space:]]'`.
-
-test_id — FK на test.id. Допустимые operation_id определяются реестром операций; перечень пока не задан.
-
-Кандидатные ключи: `{id}`.
+CHECK:
 
 ```
-Relation question:
-{id} -> test_id, operation_id, body
+id > 0
 ```
 
-Значения атомарны (1НФ), ключ простой (2НФ). Операция и текст могут повторяться и не определяют остальные поля (3НФ). Единственный определитель — ключ id (НФБК).
-
-## 6. profile_psycho — Прохождение психологического теста
-
-Хранит одно прохождение теста: владельца, тест, номер версии, время создания записи и пять итоговых характеристик. Повторное прохождение создаёт новую запись; завершённый результат неизменяем.
-
-| Атрибут | Тип | Ограничения поля |
-| --- | --- | --- |
-| `id` | bigint | pk, not null |
-| `profile_id` | bigint | not null |
-| `test_id` | bigint | not null |
-| `revision` | integer | not null |
-| `recorded_at` | timestamptz | not null, default: `CURRENT_TIMESTAMP` |
-| `weight_1` | numeric | null |
-| `weight_2` | numeric | null |
-| `weight_3` | numeric | null |
-| `weight_4` | numeric | null |
-| `weight_5` | numeric | null |
-
-Проверки CHECK:
-
-- `id > 0`.
-- `revision > 0`.
-- `isfinite(recorded_at)`.
-- До завершения все пять весов NULL; при завершении все пять заполнены.
-- Каждый заданный вес — конечное число: NaN и ±Infinity запрещены.
-
-profile_id и test_id — FK на profile.id и test.id. На анкету приходится 0..N прохождений. Все пять весов либо одновременно NULL (незавершённая попытка), либо одновременно заданы (готовый результат). UNIQUE(profile_id, revision) запрещает повтор номера версии в пределах анкеты независимо от теста. Новая попытка получает следующий revision; номер после создания неизменяем. Нумерация независима от revision в profile_version. Текущий результат выбранного теста — готовая запись с максимальным revision; незавершённая новая версия его не заменяет. Готовый результат требует ответов на все вопросы непустого теста; FK и CHECK не проверяют полноту и формулу.
-
-Кандидатные ключи: `{id}, {profile_id, revision}`.
+FK:
 
 ```
-Relation profile_psycho:
-{id} -> profile_id, test_id, revision, recorded_at, weight_1, weight_2, weight_3, weight_4, weight_5
-{profile_id, revision} -> id
+profile.user_id -> user.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
 ```
 
-Пять весов — отдельные скалярные значения (1НФ). Результат зависит от всей пары (profile_id, revision), а не от одной её части (2НФ). Владелец и тест не определяют результат: прохождений может быть несколько; зависимостей между весами не задано (3НФ). Оба определителя — кандидатные ключи (НФБК).
-
-## 7. user_answer — Ответ в прохождении
-
-Хранит ответ на вопрос в конкретном прохождении. После завершения прохождения ответ неизменяем.
-
-| Атрибут | Тип | Ограничения поля |
-| --- | --- | --- |
-| `profile_psycho_id` | bigint | not null |
-| `question_id` | bigint | not null |
-| `answer_value` | smallint | not null |
-
-Проверки CHECK:
-
-- `answer_value BETWEEN 0 AND 7`.
-
-PK(profile_psycho_id, question_id); оба поля — FK. 0 — «точно нет», 7 — «точно да». Отсутствие строки означает отсутствие ответа. Вопрос должен принадлежать тесту прохождения: question.test_id = profile_psycho.test_id; отдельные FK это равенство не обеспечивают.
-
-Кандидатные ключи: `{profile_psycho_id, question_id}`.
+Кандидатные ключи:
 
 ```
-Relation user_answer:
-{profile_psycho_id, question_id} -> answer_value
+{id}
+{user_id}
 ```
 
-Значения атомарны (1НФ). Ответ зависит от всей пары: одна попытка содержит ответы на разные вопросы, один вопрос имеет разные ответы в разных попытках (2НФ). Других нетривиальных зависимостей не задано (3НФ). Определитель — составной ключ (НФБК).
+---
+
+## 3. profile_version
+
+| Атрибут           | Тип         | Ограничения                         |
+| ----------------- | ----------- | ----------------------------------- |
+| `id`              | bigint      | PK, NOT NULL                        |
+| `profile_id`      | bigint      | NOT NULL, FK -> profile.id          |
+| `revision`        | integer     | NOT NULL                            |
+| `recorded_at`     | timestamptz | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
+| `birth_date`      | date        | NOT NULL                            |
+| `sex`             | text        | NOT NULL                            |
+| `search_sex`      | text        | NOT NULL                            |
+| `search_age_from` | integer     | NOT NULL                            |
+| `search_age_to`   | integer     | NOT NULL                            |
+
+UNIQUE:
+
+```
+(profile_id, revision)
+```
+
+CHECK:
+
+```
+id > 0
+revision > 0
+isfinite(recorded_at)
+isfinite(birth_date)
+sex IN ('male', 'female')
+search_sex IN ('male', 'female', 'all')
+search_age_from >= 18
+search_age_to >= search_age_from
+```
+
+FK:
+
+```
+profile_version.profile_id -> profile.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
+```
+
+Кандидатные ключи:
+
+```
+{id}
+{profile_id, revision}
+```
+
+---
+
+## 4. test
+
+| Атрибут | Тип    | Ограничения  |
+| ------- | ------ | ------------ |
+| `id`    | bigint | PK, NOT NULL |
+| `name`  | text   | NOT NULL     |
+
+CHECK:
+
+```
+id > 0
+name ~ '[^[:space:]]'
+```
+
+Кандидатный ключ:
+
+```
+{id}
+```
+
+---
+
+## 5. question
+
+| Атрибут        | Тип     | Ограничения             |
+| -------------- | ------- | ----------------------- |
+| `id`           | bigint  | PK, NOT NULL            |
+| `test_id`      | bigint  | NOT NULL, FK -> test.id |
+| `operation_id` | integer | NOT NULL                |
+| `body`         | text    | NOT NULL                |
+
+CHECK:
+
+```
+id > 0
+operation_id > 0
+body ~ '[^[:space:]]'
+```
+
+FK:
+
+```
+question.test_id -> test.id
+ON DELETE RESTRICT
+ON UPDATE RESTRICT
+```
+
+Кандидатный ключ:
+
+```
+{id}
+```
+
+---
+
+## 6. profile_psycho
+
+| Атрибут       | Тип         | Ограничения                         |
+| ------------- | ----------- | ----------------------------------- |
+| `id`          | bigint      | PK, NOT NULL                        |
+| `profile_id`  | bigint      | NOT NULL, FK -> profile.id          |
+| `test_id`     | bigint      | NOT NULL, FK -> test.id             |
+| `revision`    | integer     | NOT NULL                            |
+| `recorded_at` | timestamptz | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
+| `weight_1`    | numeric     | NULL                                |
+| `weight_2`    | numeric     | NULL                                |
+| `weight_3`    | numeric     | NULL                                |
+| `weight_4`    | numeric     | NULL                                |
+| `weight_5`    | numeric     | NULL                                |
+
+UNIQUE:
+
+```
+(profile_id, revision)
+```
+
+CHECK:
+
+```
+id > 0
+revision > 0
+isfinite(recorded_at)
+```
+
+Все веса либо одновременно `NULL`, либо одновременно заданы:
+
+```
+(
+  weight_1 IS NULL
+  AND weight_2 IS NULL
+  AND weight_3 IS NULL
+  AND weight_4 IS NULL
+  AND weight_5 IS NULL
+)
+OR
+(
+  weight_1 IS NOT NULL
+  AND weight_2 IS NOT NULL
+  AND weight_3 IS NOT NULL
+  AND weight_4 IS NOT NULL
+  AND weight_5 IS NOT NULL
+)
+```
+
+Каждый заданный вес должен быть конечным числом:
+
+```
+weight_N <> 'NaN'::numeric
+AND weight_N <> 'Infinity'::numeric
+AND weight_N <> '-Infinity'::numeric
+```
+
+FK:
+
+```
+profile_psycho.profile_id -> profile.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
+```
+
+```
+profile_psycho.test_id -> test.id
+ON DELETE RESTRICT
+ON UPDATE RESTRICT
+```
+
+Кандидатные ключи:
+
+```
+{id}
+{profile_id, revision}
+```
+
+---
+
+## 7. user_answer
+
+| Атрибут             | Тип      | Ограничения      |
+| ------------------- | -------- | ---------------- |
+| `profile_psycho_id` | bigint   | PK, NOT NULL, FK |
+| `question_id`       | bigint   | PK, NOT NULL, FK |
+| `answer_value`      | smallint | NOT NULL         |
+
+PK:
+
+```
+(profile_psycho_id, question_id)
+```
+
+CHECK:
+
+```
+answer_value BETWEEN 0 AND 7
+```
+
+FK:
+
+```
+user_answer.profile_psycho_id -> profile_psycho.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
+```
+
+```
+user_answer.question_id -> question.id
+ON DELETE RESTRICT
+ON UPDATE RESTRICT
+```
+
+Межтабличное правило:
+
+```
+question.test_id = profile_psycho.test_id
+```
+
+проверяется backend-логикой либо триггером.
+
+---
+
+## 8. plan
+
+| Атрибут       | Тип     | Ограничения            |
+| ------------- | ------- | ---------------------- |
+| `id`          | bigint  | PK, NOT NULL           |
+| `name`        | text    | NOT NULL, UNIQUE       |
+| `ads_enabled` | boolean | NOT NULL, DEFAULT true |
+
+CHECK:
+
+```
+id > 0
+char_length(name) BETWEEN 1 AND 100
+name ~ '[^[:space:]]'
+```
+
+Кандидатные ключи:
+
+```
+{id}
+{name}
+```
+
+---
+
+## 9. subscription
+
+| Атрибут     | Тип         | Ограничения             |
+| ----------- | ----------- | ----------------------- |
+| `id`        | bigint      | PK, NOT NULL            |
+| `user_id`   | bigint      | NOT NULL, FK -> user.id |
+| `plan_id`   | bigint      | NOT NULL, FK -> plan.id |
+| `starts_at` | timestamptz | NOT NULL                |
+| `ends_at`   | timestamptz | NOT NULL                |
+
+CHECK:
+
+```
+id > 0
+isfinite(starts_at)
+isfinite(ends_at)
+ends_at > starts_at
+```
+
+FK:
+
+```
+subscription.user_id -> user.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
+```
+
+```
+subscription.plan_id -> plan.id
+ON DELETE RESTRICT
+ON UPDATE RESTRICT
+```
+
+Периоды подписок одного пользователя не должны пересекаться; это обеспечивается `EXCLUDE` constraint либо backend/trigger-логикой.
+
+---
+
+## 10. tag
+
+| Атрибут | Тип    | Ограничения      |
+| ------- | ------ | ---------------- |
+| `id`    | bigint | PK, NOT NULL     |
+| `name`  | text   | NOT NULL, UNIQUE |
+
+CHECK:
+
+```
+id > 0
+char_length(name) BETWEEN 1 AND 100
+name ~ '[^[:space:]]'
+```
+
+Кандидатные ключи:
+
+```
+{id}
+{name}
+```
+
+---
+
+## 11. profile_tag
+
+| Атрибут      | Тип    | Ограничения      |
+| ------------ | ------ | ---------------- |
+| `profile_id` | bigint | PK, NOT NULL, FK |
+| `tag_id`     | bigint | PK, NOT NULL, FK |
+
+PK:
+
+```
+(profile_id, tag_id)
+```
+
+FK:
+
+```
+profile_tag.profile_id -> profile.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
+```
+
+```
+profile_tag.tag_id -> tag.id
+ON DELETE RESTRICT
+ON UPDATE RESTRICT
+```
+
+---
+
+## 12. report_type
+
+| Атрибут | Тип    | Ограничения      |
+| ------- | ------ | ---------------- |
+| `id`    | bigint | PK, NOT NULL     |
+| `name`  | text   | NOT NULL, UNIQUE |
+
+CHECK:
+
+```
+id > 0
+char_length(name) BETWEEN 1 AND 100
+name ~ '[^[:space:]]'
+```
+
+Кандидатные ключи:
+
+```
+{id}
+{name}
+```
+
+---
+
+## 13. report
+
+| Атрибут            | Тип    | Ограничения                    |
+| ------------------ | ------ | ------------------------------ |
+| `id`               | bigint | PK, NOT NULL                   |
+| `author_id`        | bigint | NOT NULL, FK -> user.id        |
+| `reported_user_id` | bigint | NOT NULL, FK -> user.id        |
+| `report_type_id`   | bigint | NOT NULL, FK -> report_type.id |
+
+UNIQUE:
+
+```
+(author_id, reported_user_id, report_type_id)
+```
+
+CHECK:
+
+```
+id > 0
+author_id <> reported_user_id
+```
+
+FK:
+
+```
+report.author_id -> user.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
+```
+
+```
+report.reported_user_id -> user.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
+```
+
+```
+report.report_type_id -> report_type.id
+ON DELETE RESTRICT
+ON UPDATE RESTRICT
+```
+
+Кандидатные ключи:
+
+```
+{id}
+{author_id, reported_user_id, report_type_id}
+```
+
+---
+
+## 14. photo
+
+Файл фотографии хранится в S3, в БД сохраняется только его ключ.
+
+| Атрибут       | Тип      | Ограничения                |
+| ------------- | -------- | -------------------------- |
+| `id`          | bigint   | PK, NOT NULL               |
+| `profile_id`  | bigint   | NOT NULL, FK -> profile.id |
+| `storage_key` | text     | NOT NULL, UNIQUE           |
+| `position`    | smallint | NOT NULL                   |
+
+UNIQUE:
+
+```
+(profile_id, position)
+```
+
+CHECK:
+
+```
+id > 0
+storage_key ~ '[^[:space:]]'
+char_length(storage_key) <= 1024
+position > 0
+```
+
+FK:
+
+```
+photo.profile_id -> profile.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
+```
+
+Максимальное количество фотографий у одного профиля проверяется backend-логикой либо триггером.
+
+---
+
+## 15. photo_comment
+
+| Атрибут     | Тип    | Ограничения              |
+| ----------- | ------ | ------------------------ |
+| `id`        | bigint | PK, NOT NULL             |
+| `author_id` | bigint | NOT NULL, FK -> user.id  |
+| `photo_id`  | bigint | NOT NULL, FK -> photo.id |
+| `body`      | text   | NOT NULL                 |
+
+CHECK:
+
+```
+id > 0
+char_length(body) BETWEEN 1 AND 2000
+body ~ '[^[:space:]]'
+```
+
+FK:
+
+```
+photo_comment.author_id -> user.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
+```
+
+```
+photo_comment.photo_id -> photo.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
+```
+
+Кандидатный ключ:
+
+```
+{id}
+```
+
+---
+
+## 16. profile_like
+
+| Атрибут      | Тип    | Ограничения                |
+| ------------ | ------ | -------------------------- |
+| `id`         | bigint | PK, NOT NULL               |
+| `author_id`  | bigint | NOT NULL, FK -> user.id    |
+| `profile_id` | bigint | NOT NULL, FK -> profile.id |
+
+UNIQUE:
+
+```
+(author_id, profile_id)
+```
+
+CHECK:
+
+```
+id > 0
+```
+
+FK:
+
+```
+profile_like.author_id -> user.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
+```
+
+```
+profile_like.profile_id -> profile.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
+```
+
+Запрет лайка собственной анкеты проверяется backend-логикой либо триггером.
+
+---
+
+## 17. match
+
+| Атрибут             | Тип     | Ограничения             |
+| ------------------- | ------- | ----------------------- |
+| `id`                | bigint  | PK, NOT NULL            |
+| `first_user_id`     | bigint  | NOT NULL, FK -> user.id |
+| `second_user_id`    | bigint  | NOT NULL, FK -> user.id |
+| `access_to_message` | boolean | NOT NULL, DEFAULT true  |
+
+UNIQUE:
+
+```
+(first_user_id, second_user_id)
+```
+
+CHECK:
+
+```
+id > 0
+first_user_id < second_user_id
+```
+
+FK:
+
+```
+match.first_user_id -> user.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
+```
+
+```
+match.second_user_id -> user.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
+```
+
+`match` создаётся при взаимном лайке; это реализуется backend-логикой либо `AFTER INSERT` trigger на `profile_like`.
+
+---
+
+## 18. message
+
+| Атрибут     | Тип    | Ограничения              |
+| ----------- | ------ | ------------------------ |
+| `id`        | bigint | PK, NOT NULL             |
+| `match_id`  | bigint | NOT NULL, FK -> match.id |
+| `sender_id` | bigint | NOT NULL, FK -> user.id  |
+| `body`      | text   | NOT NULL                 |
+
+CHECK:
+
+```
+id > 0
+char_length(body) BETWEEN 1 AND 10000
+body ~ '[^[:space:]]'
+```
+
+FK:
+
+```
+message.match_id -> match.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
+```
+
+```
+message.sender_id -> user.id
+ON DELETE CASCADE
+ON UPDATE RESTRICT
+```
+
+Перед созданием сообщения должно проверяться, что отправитель является участником `match` и `access_to_message = true`; это обеспечивается backend-логикой либо триггером.
