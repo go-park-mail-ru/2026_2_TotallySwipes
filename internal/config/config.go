@@ -51,22 +51,22 @@ func Load() (*Config, error) {
 
 	var err error
 
-	if cfg.JWTAccessTTL, err = envDurationOrDefault("JWT_ACCESS_TTL", defaultJWTAccessTTL); err != nil {
+	if cfg.JWTAccessTTL, err = envDurationOrDefault("JWT_ACCESS_TTL", defaultJWTAccessTTL, false); err != nil {
 		return nil, err
 	}
-	if cfg.JWTRefreshTTL, err = envDurationOrDefault("JWT_REFRESH_TTL", defaultJWTRefreshTTL); err != nil {
+	if cfg.JWTRefreshTTL, err = envDurationOrDefault("JWT_REFRESH_TTL", defaultJWTRefreshTTL, false); err != nil {
 		return nil, err
 	}
-	if cfg.HTTPReadHeaderTimeout, err = envDurationOrDefault("HTTP_READ_HEADER_TIMEOUT", defaultHTTPReadHeaderTimeout); err != nil {
+	if cfg.HTTPReadHeaderTimeout, err = envDurationOrDefault("HTTP_READ_HEADER_TIMEOUT", defaultHTTPReadHeaderTimeout, true); err != nil {
 		return nil, err
 	}
-	if cfg.HTTPReadTimeout, err = envDurationOrDefault("HTTP_READ_TIMEOUT", defaultHTTPReadTimeout); err != nil {
+	if cfg.HTTPReadTimeout, err = envDurationOrDefault("HTTP_READ_TIMEOUT", defaultHTTPReadTimeout, true); err != nil {
 		return nil, err
 	}
-	if cfg.HTTPWriteTimeout, err = envDurationOrDefault("HTTP_WRITE_TIMEOUT", defaultHTTPWriteTimeout); err != nil {
+	if cfg.HTTPWriteTimeout, err = envDurationOrDefault("HTTP_WRITE_TIMEOUT", defaultHTTPWriteTimeout, true); err != nil {
 		return nil, err
 	}
-	if cfg.HTTPIdleTimeout, err = envDurationOrDefault("HTTP_IDLE_TIMEOUT", defaultHTTPIdleTimeout); err != nil {
+	if cfg.HTTPIdleTimeout, err = envDurationOrDefault("HTTP_IDLE_TIMEOUT", defaultHTTPIdleTimeout, true); err != nil {
 		return nil, err
 	}
 
@@ -88,7 +88,7 @@ func requireEnv(key string, missing *[]string) string {
 	return v
 }
 
-func envDurationOrDefault(key string, def time.Duration) (time.Duration, error) {
+func envDurationOrDefault(key string, def time.Duration, allowZero bool) (time.Duration, error) {
 	v := os.Getenv(key)
 	if v == "" {
 		return def, nil
@@ -96,6 +96,9 @@ func envDurationOrDefault(key string, def time.Duration) (time.Duration, error) 
 	d, err := time.ParseDuration(v)
 	if err != nil {
 		return 0, fmt.Errorf("invalid %s %q: %w", key, v, err)
+	}
+	if d < 0 || (d == 0 && !allowZero) {
+		return 0, fmt.Errorf("invalid %s %q: must be positive", key, v)
 	}
 	return d, nil
 }
