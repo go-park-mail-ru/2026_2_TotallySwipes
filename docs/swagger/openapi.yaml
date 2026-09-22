@@ -6,7 +6,7 @@ info:
 
 paths:
 
-  /api/v1/register:
+  /api/v1/auth/register:
     post:
       summary: Зарегистрировать пользователя
       requestBody:
@@ -22,8 +22,7 @@ paths:
                 - birth_date
                 - sex
                 - search_sex
-                - search_age_from
-                - search_age_to
+                - dating_intent
               properties:
                 email:
                   minLength: 1
@@ -64,17 +63,14 @@ paths:
                     - male
                     - female
                     - all
-                search_age_from:
-                  description: Не должно превышать search_age_to. При PATCH сравнивается с итоговым значением после обновления анкеты.
-                  type: integer
-                  minimum: 18
-                  example: 18
-
-                search_age_to:
-                  description: Не должно быть меньше search_age_from. При PATCH сравнивается с итоговым значением после обновления анкеты.
-                  type: integer
-                  minimum: 18
-                  example: 25
+                dating_intent:
+                  type: string
+                  description: Цель знакомства.
+                  enum:
+                    - Ищу общение
+                    - Ищу половинку
+                    - Ищу встречи
+                  example: Ищу половинку
                 tags:
                   maxItems: 10
                   uniqueItems: true
@@ -151,7 +147,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /api/v1/login:
+  /api/v1/auth/login:
     post:
       summary: Авторизовать пользователя
       requestBody:
@@ -224,210 +220,42 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /api/v1/profile:
-    get:
-      summary: Получить анкету текущего пользователя
+  /api/v1/auth/refresh:
+    post:
+      summary: Обновить сессию пользователя
+      description: Продлевает действующую сессию. Если сессия отсутствует, истекла или отозвана, необходимо войти заново.
       responses:
-        '200':
-          description: Анкета получена
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Profile'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-    patch:
-      summary: Изменить анкету текущего пользователя
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              minProperties: 1
-              additionalProperties: false
-              properties:
-                name:
-                  minLength: 1
-                  maxLength: 100
-                  pattern: '\S'
-                  description: Имя не должно состоять только из пробелов.
-                  type: string
-
-                birth_date:
-                  description: Реальная календарная дата в формате YYYY-MM-DD, не в будущем. На текущую дату пользователю должно исполниться 18 лет; проверяется сервером.
-                  type: string
-                  format: date
-
-                sex:
-                  type: string
-                  enum:
-                    - male
-                    - female
-
-                search_sex:
-                  type: string
-                  enum:
-                    - male
-                    - female
-                    - all
-
-                search_age_from:
-                  description: Не должно превышать search_age_to. При PATCH сравнивается с итоговым значением после обновления анкеты.
-                  type: integer
-                  minimum: 18
-
-                search_age_to:
-                  description: Не должно быть меньше search_age_from. При PATCH сравнивается с итоговым значением после обновления анкеты.
-                  type: integer
-                  minimum: 18
-
-                tags:
-                  maxItems: 10
-                  uniqueItems: true
-                  type: array
-                  items:
-                    type: string
-                    minLength: 1
-                    maxLength: 30
-                    pattern: '\S'
-          multipart/form-data:
-            schema:
-              type: object
-              minProperties: 1
-              additionalProperties: false
-              properties:
-                name:
-                  minLength: 1
-                  maxLength: 100
-                  pattern: '\S'
-                  description: Имя не должно состоять только из пробелов.
-                  type: string
-
-                birth_date:
-                  description: Реальная календарная дата в формате YYYY-MM-DD, не в будущем. На текущую дату пользователю должно исполниться 18 лет; проверяется сервером.
-                  type: string
-                  format: date
-
-                sex:
-                  type: string
-                  enum:
-                    - male
-                    - female
-
-                search_sex:
-                  type: string
-                  enum:
-                    - male
-                    - female
-                    - all
-
-                search_age_from:
-                  description: Не должно превышать search_age_to. При PATCH сравнивается с итоговым значением после обновления анкеты.
-                  type: integer
-                  minimum: 18
-
-                search_age_to:
-                  description: Не должно быть меньше search_age_from. При PATCH сравнивается с итоговым значением после обновления анкеты.
-                  type: integer
-                  minimum: 18
-
-                tags:
-                  maxItems: 10
-                  uniqueItems: true
-                  type: array
-                  items:
-                    type: string
-                    minLength: 1
-                    maxLength: 30
-                    pattern: '\S'
-                photos:
-                  type: array
-                  minItems: 0
-                  maxItems: 6
-                  description: Новые фотографии JPEG или PNG, до 5 МиБ (5242880 байт) каждая. Всего в анкете не более 6 фото с учётом существующих. Отсутствующее поле или пустой массив ничего не добавляет и не удаляет. Сервер проверяет фактический формат и декодирование файлов, их размер и общее количество.
-                  items:
-                    type: string
-                    format: binary
-            encoding:
-              photos:
-                contentType: image/jpeg, image/png
-
-      responses:
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '200':
-          description: Анкета обновлена. Возвращается полная актуальная анкета, включая фотографии.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Profile'
+        '204':
+          description: Сессия обновлена. Тело ответа отсутствует.
         '401':
-          description: Сессия отсутствует или истекла. Необходимо войти заново.
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - error
-                properties:
-                  error:
-                    type: object
-                    required:
-                      - code
-                      - message
-                    properties:
-                      code:
-                        type: string
-                        example: UNAUTHORIZED
-                      message:
-                        type: string
-                        example: Сессия отсутствует или истекла. Необходимо войти заново.
-        '413':
-          description: Превышен допустимый размер фотографии или всего запроса.
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - error
-                properties:
-                  error:
-                    type: object
-                    required:
-                      - code
-                      - message
-                    properties:
-                      code:
-                        type: string
-                        example: PAYLOAD_TOO_LARGE
-                      message:
-                        type: string
-                        example: Превышен допустимый размер фотографии или всего запроса.
-        '415':
-          description: Неподдерживаемый формат тела запроса или фотографии.
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - error
-                properties:
-                  error:
-                    type: object
-                    required:
-                      - code
-                      - message
-                    properties:
-                      code:
-                        type: string
-                        example: UNSUPPORTED_MEDIA_TYPE
-                      message:
-                        type: string
-                        example: Неподдерживаемый формат тела запроса или фотографии.
+          $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/auth/logout:
+    post:
+      summary: Завершить текущую сессию пользователя
+      description: Отзывает текущую сессию. Повторный запрос, включая запрос без действующей сессии, также возвращает 204.
+      responses:
+        '204':
+          description: Сессия завершена. Тело ответа отсутствует.
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/psychotest:
+    get:
+      summary: Получить психологический тест (заглушка)
+      description: Контракт психологического теста будет описан позднее.
+      responses:
+        '501':
+          description: Психологический тест пока не реализован.
+
+    post:
+      summary: Отправить ответы психологического теста (заглушка)
+      description: Формат запроса и контракт сохранения ответов будут описаны позднее.
+      responses:
+        '501':
+          description: Отправка ответов психологического теста пока не реализована.
 
   /api/v1/feed:
     get:
@@ -549,7 +377,7 @@ paths:
                         type: string
                         example: Не удалось загрузить ленту из-за ошибки сервера
 
-  /api/v1/swipes:
+  /api/v1/feed/swipe:
     post:
       summary: Выполнить свайп пользователя
       requestBody:
@@ -603,100 +431,28 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
 components:
-  schemas:
-    Profile:
-      type: object
-      required:
-        - user_id
-        - email
-        - name
-        - birth_date
-        - sex
-        - search_sex
-        - search_age_from
-        - search_age_to
-        - tags
-        - photos
-        - profile_completed
-      properties:
-        user_id:
-          minimum: 1
-          type: integer
-          format: int64
-          example: 12
-        email:
-          minLength: 1
-          maxLength: 254
-          description: Пробелы по краям удаляются до проверки формата и поиска аккаунта.
-          type: string
-          format: email
-          example: alex@example.com
-        name:
-          minLength: 1
-          maxLength: 100
-          pattern: '\S'
-          description: Имя не должно состоять только из пробелов.
-          type: string
-          example: Алекс
-        birth_date:
-          description: Реальная календарная дата в формате YYYY-MM-DD, не в будущем. На текущую дату пользователю должно исполниться 18 лет; проверяется сервером.
-          type: string
-          format: date
-          example: '2005-08-17'
-        sex:
-          type: string
-          enum:
-            - male
-            - female
-        search_sex:
-          type: string
-          enum:
-            - male
-            - female
-            - all
-        search_age_from:
-          description: Не должно превышать search_age_to. При PATCH сравнивается с итоговым значением после обновления анкеты.
-          type: integer
-          minimum: 18
-          example: 18
-        search_age_to:
-          description: Не должно быть меньше search_age_from. При PATCH сравнивается с итоговым значением после обновления анкеты.
-          type: integer
-          minimum: 18
-          example: 25
-        tags:
-          maxItems: 10
-          uniqueItems: true
-          type: array
-          items:
-            type: string
-            minLength: 1
-            maxLength: 30
-            pattern: '\S'
-          example: [sport, gaming]
-        photos:
-          type: array
-          minItems: 0
-          maxItems: 6
-          items:
+  responses:
+    Unauthorized:
+      description: Сессия отсутствует, истекла или отозвана. Необходимо войти заново.
+      content:
+        application/json:
+          schema:
             type: object
             required:
-              - id
-              - url
+              - error
             properties:
-              id:
-                minimum: 1
-                type: integer
-                format: int64
-                example: 7
-              url:
-                minLength: 1
-                type: string
-                example: /media/photo-7.jpg
-        profile_completed:
-          type: boolean
-          example: true
-  responses:
+              error:
+                type: object
+                required:
+                  - code
+                  - message
+                properties:
+                  code:
+                    type: string
+                    example: UNAUTHORIZED
+                  message:
+                    type: string
+                    example: Необходимо войти заново
     InternalServerError:
       description: Внутренняя ошибка сервера
       content:
