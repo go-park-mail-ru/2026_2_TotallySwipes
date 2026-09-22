@@ -1,0 +1,135 @@
+// Профили и психологический тест. Описание отношений: relations.md.
+// Черновик физической модели PostgreSQL, не SQL-миграция.
+// Политики удаления — проектное предложение, описаны в relations.md.
+// ID в DDL: GENERATED ALWAYS AS IDENTITY, без serial.
+// created_at/updated_at опущены только на этапе нормализации.
+
+Project totally_swipes {
+  database_type: 'PostgreSQL'
+  Note: 'Семь отношений с историей анкет и прохождений. Межтабличные проверки и пересчёт весов описаны в relations.md; одних FK недостаточно.'
+}
+
+Table "user" {
+  id bigint [pk, not null]
+  name text [not null]
+  email text [not null, unique]
+  password_hash text [not null]
+
+  checks {
+    `id > 0` [name: 'user_id_positive']
+    `char_length(name) BETWEEN 1 AND 100 AND name ~ '[^[:space:]]'` [name: 'user_name_valid']
+    `char_length(email) BETWEEN 1 AND 254 AND email !~ '[[:space:]]'` [name: 'user_email_valid']
+    `password_hash ~ '[^[:space:]]'` [name: 'user_password_hash_nonblank']
+  }
+  Note: 'Проверка формата email — в приложении. UNIQUE пока использует точное сравнение; регистронезависимость ещё не согласована. Храним хеш, не пароль.'
+}
+
+Table "profile" {
+  id bigint [pk, not null]
+  user_id bigint [not null, unique]
+  checks {
+    `id > 0` [name: 'profile_id_positive']
+  }
+  Note: 'Постоянная идентичность анкеты. При регистрации создаются user, profile и первая profile_version в одной транзакции. Владелец неизменяем.'
+}
+
+Table "profile_version" {
+  id bigint [pk, not null]
+  profile_id bigint [not null]
+  revision integer [not null]
+  recorded_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  birth_date date [not null]
+  sex text [not null]
+  search_sex text [not null]
+  search_age_from integer [not null]
+  search_age_to integer [not null]
+  indexes {
+    (profile_id, revision) [unique]
+  }
+  checks {
+    `id > 0` [name: 'profile_version_id_positive']
+    `revision > 0` [name: 'profile_version_revision_positive']
+    `isfinite(recorded_at)` [name: 'profile_version_recorded_at_finite']
+    `isfinite(birth_date)` [name: 'profile_version_birth_date_finite']
+    `sex IN ('male', 'female')` [name: 'profile_version_sex_valid']
+    `search_sex IN ('male', 'female', 'all')` [name: 'profile_version_search_sex_valid']
+    `search_age_from >= 18 AND search_age_to >= search_age_from` [name: 'profile_version_search_age_valid']
+  }
+  Note: 'Неизменяемый полный снимок полей анкеты. Текущая версия имеет максимальный revision для profile_id. Новая версия создаётся под блокировкой profile; CHECK и UNIQUE сами не запрещают изменение истории.'
+}
+
+Table "test" {
+  id bigint [pk, not null]
+  name text [not null]
+
+  checks {
+    `id > 0` [name: 'test_id_positive']
+    `name ~ '[^[:space:]]'` [name: 'test_name_nonblank']
+  }
+  Note: 'Имя не обязано быть уникальным. Использованный набор вопросов и смысл операций не меняем; изменённый тест создаём новой записью. Полная модель версий пока не вводится.'
+}
+
+Table "question" {
+  id bigint [pk, not null]
+  test_id bigint [not null]
+  operation_id integer [not null]
+  body text [not null]
+
+  checks {
+    `id > 0` [name: 'question_id_positive']
+    `body ~ '[^[:space:]]'` [name: 'question_body_nonblank']
+  }
+  Note: 'operation_id — код алгоритма backend, не FK. Список допустимых кодов ещё не определён: проверка принадлежности реестру операций обязательна при создании вопроса. Число вопросов не ограничено ровно десятью.'
+}
+
+Table "profile_psycho" {
+  id bigint [pk, not null]
+  profile_id bigint [not null]
+  test_id bigint [not null]
+  revision integer [not null]
+  recorded_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  weight_1 numeric [null]
+  weight_2 numeric [null]
+  weight_3 numeric [null]
+  weight_4 numeric [null]
+  weight_5 numeric [null]
+
+  indexes {
+    (profile_id, revision) [unique]
+  }
+
+  checks {
+    `id > 0` [name: 'profile_psycho_id_positive']
+    `revision > 0` [name: 'profile_psycho_revision_positive']
+    `isfinite(recorded_at)` [name: 'profile_psycho_recorded_at_finite']
+    `(weight_1 IS NULL AND weight_2 IS NULL AND weight_3 IS NULL AND weight_4 IS NULL AND weight_5 IS NULL) OR (weight_1 IS NOT NULL AND weight_2 IS NOT NULL AND weight_3 IS NOT NULL AND weight_4 IS NOT NULL AND weight_5 IS NOT NULL)` [name: 'profile_psycho_weights_complete']
+    `weight_1 <> 'NaN'::numeric AND weight_1 <> 'Infinity'::numeric AND weight_1 <> '-Infinity'::numeric` [name: 'profile_psycho_weight_1_finite']
+    `weight_2 <> 'NaN'::numeric AND weight_2 <> 'Infinity'::numeric AND weight_2 <> '-Infinity'::numeric` [name: 'profile_psycho_weight_2_finite']
+    `weight_3 <> 'NaN'::numeric AND weight_3 <> 'Infinity'::numeric AND weight_3 <> '-Infinity'::numeric` [name: 'profile_psycho_weight_3_finite']
+    `weight_4 <> 'NaN'::numeric AND weight_4 <> 'Infinity'::numeric AND weight_4 <> '-Infinity'::numeric` [name: 'profile_psycho_weight_4_finite']
+    `weight_5 <> 'NaN'::numeric AND weight_5 <> 'Infinity'::numeric AND weight_5 <> '-Infinity'::numeric` [name: 'profile_psycho_weight_5_finite']
+  }
+  Note: 'Одно прохождение теста. У профиля много прохождений; завершённые строки и ответы неизменяемы. До завершения все веса NULL, готовый результат содержит пять весов. Пересдача создаёт новую запись с revision + 1 в пределах profile_id независимо от test_id. Revision неизменяем; выдаётся под блокировкой profile. Текущий результат выбранного теста — готовая запись с максимальным revision. Полноту и правильность расчёта проверяет backend.'
+}
+
+Table "user_answer" {
+  profile_psycho_id bigint [not null]
+  question_id bigint [not null]
+  answer_value smallint [not null]
+
+  indexes {
+    (profile_psycho_id, question_id) [pk]
+  }
+  checks {
+    `answer_value BETWEEN 0 AND 7` [name: 'user_answer_value_valid']
+  }
+  Note: '0 — точно нет, 7 — точно да. Вопрос должен принадлежать тесту profile_psycho. Отсутствие строки означает отсутствие ответа; 0 — полноценный ответ. Ответ можно менять только до завершения прохождения. Повтор завершённой отправки не изменяет историю; новые ответы требуют нового прохождения.'
+}
+
+Ref profile_owner: "user".id - "profile".user_id [delete: cascade, update: restrict]
+Ref version_owner: "profile_version".profile_id > "profile".id [delete: cascade, update: restrict]
+Ref psycho_owner: "profile_psycho".profile_id > "profile".id [delete: cascade, update: restrict]
+Ref psycho_test: "profile_psycho".test_id > "test".id [delete: restrict, update: restrict]
+Ref question_test: "question".test_id > "test".id [delete: restrict, update: restrict]
+Ref answer_result: "user_answer".profile_psycho_id > "profile_psycho".id [delete: cascade, update: restrict]
+Ref answer_question: "user_answer".question_id > "question".id [delete: restrict, update: restrict]
