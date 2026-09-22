@@ -1,0 +1,71 @@
+@startuml
+title Totally Swipes — история анкет и психологических тестов
+hide circle
+skinparam linetype ortho
+skinparam shadowing false
+' Ограничения: schema.dbml. Описание, зависимости и правила истории: relations.md.
+
+entity "user" as app_user {
+  id
+  name
+  email
+  password_hash
+}
+
+entity "profile" as profile {
+  id
+  user_id
+}
+
+entity "profile_version" as profile_version {
+  id
+  profile_id
+  revision
+  recorded_at
+  birth_date
+  sex
+  search_sex
+  search_age_from
+  search_age_to
+}
+
+entity "test" as psycho_test {
+  id
+  name
+}
+
+entity "question" as question {
+  id
+  test_id
+  operation_id
+  body
+}
+
+entity "profile_psycho" as profile_psycho {
+  id
+  profile_id
+  test_id
+  revision
+  recorded_at
+  weight_1
+  weight_2
+  weight_3
+  weight_4
+  weight_5
+}
+
+entity "user_answer" as user_answer {
+  profile_psycho_id
+  question_id
+  answer_value
+}
+
+app_user ||--|| profile : "анкета"
+profile ||--|{ profile_version : "версии анкеты"
+profile ||--o{ profile_psycho : "прохождения тестов"
+psycho_test ||--o{ profile_psycho : "результаты"
+psycho_test ||--o{ question : "вопросы"
+profile_psycho ||--o{ user_answer : "ответы прохождения"
+question ||--o{ user_answer : "ответы на вопрос"
+
+@enduml
