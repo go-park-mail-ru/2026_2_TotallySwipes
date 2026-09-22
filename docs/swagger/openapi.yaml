@@ -1,0 +1,741 @@
+openapi: 3.0.3
+
+info:
+  title: Totally Swipes
+  version: 1.0.0
+
+paths:
+
+  /api/v1/register:
+    post:
+      summary: Зарегистрировать пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - password
+                - birth_date
+                - sex
+                - search_sex
+                - search_age_from
+                - search_age_to
+              properties:
+                email:
+                  minLength: 1
+                  maxLength: 254
+                  description: Пробелы по краям удаляются до проверки формата и поиска аккаунта.
+                  type: string
+                  format: email
+                  example: alex@example.com
+
+                password:
+                  writeOnly: true
+                  description: Передаётся без обрезки пробелов и изменения регистра.
+                  type: string
+                  minLength: 8
+                  maxLength: 128
+                  format: password
+                  example: qwerty123
+                name:
+                  minLength: 1
+                  maxLength: 100
+                  pattern: '\S'
+                  description: Имя не должно состоять только из пробелов.
+                  type: string
+                  example: alex
+                birth_date:
+                  description: Реальная календарная дата в формате YYYY-MM-DD, не в будущем. На текущую дату пользователю должно исполниться 18 лет; проверяется сервером.
+                  type: string
+                  format: date
+                  example: '2005-08-17'
+                sex:
+                  type: string
+                  enum:
+                    - male
+                    - female
+                search_sex:
+                  type: string
+                  enum:
+                    - male
+                    - female
+                    - all
+                search_age_from:
+                  description: Не должно превышать search_age_to. При PATCH сравнивается с итоговым значением после обновления анкеты.
+                  type: integer
+                  minimum: 18
+                  example: 18
+
+                search_age_to:
+                  description: Не должно быть меньше search_age_from. При PATCH сравнивается с итоговым значением после обновления анкеты.
+                  type: integer
+                  minimum: 18
+                  example: 25
+                tags:
+                  maxItems: 10
+                  uniqueItems: true
+                  type: array
+                  items:
+                    type: string
+                    minLength: 1
+                    maxLength: 30
+                    pattern: '\S'
+                  example:
+                    - sport
+                    - gaming
+      responses:
+        '201':
+          description: Пользователь зарегистрирован
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - user_id
+                  - profile_completed
+                properties:
+                  user_id:
+                    minimum: 1
+                    type: integer
+                    format: int64
+                    example: 12
+                  profile_completed:
+                    type: boolean
+                    example: false
+        '400':
+          description: Некорректные данные
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                        example: VALIDATION_ERROR
+                      message:
+                        type: string
+                        example: Некорректные данные
+        '409':
+          description: Почта уже занята
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                        example: EMAIL_ALREADY_EXISTS
+                      message:
+                        type: string
+                        example: Почта уже занята
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/login:
+    post:
+      summary: Авторизовать пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  minLength: 1
+                  maxLength: 254
+                  description: Пробелы по краям удаляются до проверки формата и поиска аккаунта.
+                  type: string
+                  format: email
+
+                password:
+                  writeOnly: true
+                  description: Передаётся без обрезки пробелов и изменения регистра.
+                  type: string
+                  format: password
+                  minLength: 1
+                  maxLength: 128
+
+      responses:
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '200':
+          description: Вход выполнен успешно
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - user_id
+                  - profile_completed
+                properties:
+                  user_id:
+                    minimum: 1
+                    type: integer
+                    format: int64
+                    example: 12
+                  profile_completed:
+                    type: boolean
+                    example: true
+        '401':
+          description: Неверная почта или пароль
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                        example: INVALID_CREDENTIALS
+                      message:
+                        type: string
+                        example: Неверная почта или пароль
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/profile:
+    get:
+      summary: Получить анкету текущего пользователя
+      responses:
+        '200':
+          description: Анкета получена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    patch:
+      summary: Изменить анкету текущего пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              additionalProperties: false
+              properties:
+                name:
+                  minLength: 1
+                  maxLength: 100
+                  pattern: '\S'
+                  description: Имя не должно состоять только из пробелов.
+                  type: string
+
+                birth_date:
+                  description: Реальная календарная дата в формате YYYY-MM-DD, не в будущем. На текущую дату пользователю должно исполниться 18 лет; проверяется сервером.
+                  type: string
+                  format: date
+
+                sex:
+                  type: string
+                  enum:
+                    - male
+                    - female
+
+                search_sex:
+                  type: string
+                  enum:
+                    - male
+                    - female
+                    - all
+
+                search_age_from:
+                  description: Не должно превышать search_age_to. При PATCH сравнивается с итоговым значением после обновления анкеты.
+                  type: integer
+                  minimum: 18
+
+                search_age_to:
+                  description: Не должно быть меньше search_age_from. При PATCH сравнивается с итоговым значением после обновления анкеты.
+                  type: integer
+                  minimum: 18
+
+                tags:
+                  maxItems: 10
+                  uniqueItems: true
+                  type: array
+                  items:
+                    type: string
+                    minLength: 1
+                    maxLength: 30
+                    pattern: '\S'
+          multipart/form-data:
+            schema:
+              type: object
+              minProperties: 1
+              additionalProperties: false
+              properties:
+                name:
+                  minLength: 1
+                  maxLength: 100
+                  pattern: '\S'
+                  description: Имя не должно состоять только из пробелов.
+                  type: string
+
+                birth_date:
+                  description: Реальная календарная дата в формате YYYY-MM-DD, не в будущем. На текущую дату пользователю должно исполниться 18 лет; проверяется сервером.
+                  type: string
+                  format: date
+
+                sex:
+                  type: string
+                  enum:
+                    - male
+                    - female
+
+                search_sex:
+                  type: string
+                  enum:
+                    - male
+                    - female
+                    - all
+
+                search_age_from:
+                  description: Не должно превышать search_age_to. При PATCH сравнивается с итоговым значением после обновления анкеты.
+                  type: integer
+                  minimum: 18
+
+                search_age_to:
+                  description: Не должно быть меньше search_age_from. При PATCH сравнивается с итоговым значением после обновления анкеты.
+                  type: integer
+                  minimum: 18
+
+                tags:
+                  maxItems: 10
+                  uniqueItems: true
+                  type: array
+                  items:
+                    type: string
+                    minLength: 1
+                    maxLength: 30
+                    pattern: '\S'
+                photos:
+                  type: array
+                  minItems: 0
+                  maxItems: 6
+                  description: Новые фотографии JPEG или PNG, до 5 МиБ (5242880 байт) каждая. Всего в анкете не более 6 фото с учётом существующих. Отсутствующее поле или пустой массив ничего не добавляет и не удаляет. Сервер проверяет фактический формат и декодирование файлов, их размер и общее количество.
+                  items:
+                    type: string
+                    format: binary
+            encoding:
+              photos:
+                contentType: image/jpeg, image/png
+
+      responses:
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '200':
+          description: Анкета обновлена. Возвращается полная актуальная анкета, включая фотографии.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '401':
+          description: Сессия отсутствует или истекла. Необходимо войти заново.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                        example: UNAUTHORIZED
+                      message:
+                        type: string
+                        example: Сессия отсутствует или истекла. Необходимо войти заново.
+        '413':
+          description: Превышен допустимый размер фотографии или всего запроса.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                        example: PAYLOAD_TOO_LARGE
+                      message:
+                        type: string
+                        example: Превышен допустимый размер фотографии или всего запроса.
+        '415':
+          description: Неподдерживаемый формат тела запроса или фотографии.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                        example: UNSUPPORTED_MEDIA_TYPE
+                      message:
+                        type: string
+                        example: Неподдерживаемый формат тела запроса или фотографии.
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/feed:
+    get:
+      summary: Получить ленту анкет
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+            default: 10
+
+        - name: cursor
+          description: Курсор из next_cursor предыдущего ответа. В первом запросе не передаётся.
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            format: int64
+
+      responses:
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '200':
+          description: Лента загружена. Если анкет нет, items пустой, next_cursor равен null.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                  - next_cursor
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - user_id
+                        - name
+                        - age
+                        - tags
+                        - photos
+                      properties:
+                        user_id:
+                          minimum: 1
+                          type: integer
+                          format: int64
+                          example: 42
+                        name:
+                          minLength: 1
+                          maxLength: 100
+                          pattern: '\S'
+                          description: Имя не должно состоять только из пробелов.
+                          type: string
+                          example: Аня
+                        age:
+                          minimum: 18
+                          type: integer
+                          example: 22
+                        tags:
+                          maxItems: 10
+                          uniqueItems: true
+                          type: array
+                          items:
+                            type: string
+                            minLength: 1
+                            maxLength: 30
+                            pattern: '\S'
+                          example: [sport]
+                        photos:
+                          type: array
+                          minItems: 0
+                          maxItems: 6
+                          items:
+                            type: object
+                            required:
+                              - id
+                              - url
+                            properties:
+                              id:
+                                minimum: 1
+                                type: integer
+                                format: int64
+                                example: 7
+                              url:
+                                minLength: 1
+                                type: string
+                                example: /media/photo-7.jpg
+                  next_cursor:
+                    minimum: 1
+                    type: integer
+                    format: int64
+                    nullable: true
+                    description: Курсор следующей порции. null, если продолжения нет.
+                    example: 42
+        '500':
+          description: Не удалось загрузить ленту из-за ошибки сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                        example: FEED_LOAD_FAILED
+                      message:
+                        type: string
+                        example: Не удалось загрузить ленту из-за ошибки сервера
+
+  /api/v1/swipes:
+    post:
+      summary: Выполнить свайп пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - target_user_id
+                - action
+              properties:
+                target_user_id:
+                  description: Идентификатор другого пользователя. Свайп собственной анкеты запрещён; проверяется сервером.
+                  minimum: 1
+                  type: integer
+                  format: int64
+
+                action:
+                  type: string
+                  enum:
+                    - like
+                    - dislike
+      responses:
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '204':
+          description: Свайп сохранён
+        '404':
+          description: Целевая анкета не найдена или недоступна
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                        example: PROFILE_NOT_FOUND
+                      message:
+                        type: string
+                        example: Целевая анкета не найдена или недоступна
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  schemas:
+    Profile:
+      type: object
+      required:
+        - user_id
+        - email
+        - name
+        - birth_date
+        - sex
+        - search_sex
+        - search_age_from
+        - search_age_to
+        - tags
+        - photos
+        - profile_completed
+      properties:
+        user_id:
+          minimum: 1
+          type: integer
+          format: int64
+          example: 12
+        email:
+          minLength: 1
+          maxLength: 254
+          description: Пробелы по краям удаляются до проверки формата и поиска аккаунта.
+          type: string
+          format: email
+          example: alex@example.com
+        name:
+          minLength: 1
+          maxLength: 100
+          pattern: '\S'
+          description: Имя не должно состоять только из пробелов.
+          type: string
+          example: Алекс
+        birth_date:
+          description: Реальная календарная дата в формате YYYY-MM-DD, не в будущем. На текущую дату пользователю должно исполниться 18 лет; проверяется сервером.
+          type: string
+          format: date
+          example: '2005-08-17'
+        sex:
+          type: string
+          enum:
+            - male
+            - female
+        search_sex:
+          type: string
+          enum:
+            - male
+            - female
+            - all
+        search_age_from:
+          description: Не должно превышать search_age_to. При PATCH сравнивается с итоговым значением после обновления анкеты.
+          type: integer
+          minimum: 18
+          example: 18
+        search_age_to:
+          description: Не должно быть меньше search_age_from. При PATCH сравнивается с итоговым значением после обновления анкеты.
+          type: integer
+          minimum: 18
+          example: 25
+        tags:
+          maxItems: 10
+          uniqueItems: true
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 30
+            pattern: '\S'
+          example: [sport, gaming]
+        photos:
+          type: array
+          minItems: 0
+          maxItems: 6
+          items:
+            type: object
+            required:
+              - id
+              - url
+            properties:
+              id:
+                minimum: 1
+                type: integer
+                format: int64
+                example: 7
+              url:
+                minLength: 1
+                type: string
+                example: /media/photo-7.jpg
+        profile_completed:
+          type: boolean
+          example: true
+  responses:
+    InternalServerError:
+      description: Внутренняя ошибка сервера
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - error
+            properties:
+              error:
+                type: object
+                required:
+                  - code
+                  - message
+                properties:
+                  code:
+                    type: string
+                    example: INTERNAL_SERVER_ERROR
+                  message:
+                    type: string
+                    example: Внутренняя ошибка сервера
+    ValidationError:
+      description: Некорректные поля или параметры запроса
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - error
+            properties:
+              error:
+                type: object
+                required:
+                  - code
+                  - message
+                properties:
+                  code:
+                    type: string
+                    example: VALIDATION_ERROR
+                  message:
+                    type: string
+                    example: Проверьте поля запроса
