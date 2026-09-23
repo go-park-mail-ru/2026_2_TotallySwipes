@@ -1,0 +1,497 @@
+openapi: 3.0.3
+
+info:
+  title: Totally Swipes
+  version: 1.0.0
+
+paths:
+
+  /api/v1/auth/register:
+    post:
+      summary: Зарегистрировать пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - password
+                - birth_date
+                - sex
+                - search_sex
+                - dating_intent
+              properties:
+                email:
+                  minLength: 1
+                  maxLength: 254
+                  description: Пробелы по краям удаляются до проверки формата и поиска аккаунта.
+                  type: string
+                  format: email
+                  example: alex@example.com
+
+                password:
+                  writeOnly: true
+                  description: Передаётся без обрезки пробелов и изменения регистра.
+                  type: string
+                  minLength: 8
+                  maxLength: 128
+                  format: password
+                  example: qwerty123
+                name:
+                  minLength: 1
+                  maxLength: 100
+                  pattern: '\S'
+                  description: Имя не должно состоять только из пробелов.
+                  type: string
+                  example: alex
+                birth_date:
+                  description: Реальная календарная дата в формате YYYY-MM-DD, не в будущем. На текущую дату пользователю должно исполниться 18 лет; проверяется сервером.
+                  type: string
+                  format: date
+                  example: '2005-08-17'
+                sex:
+                  type: string
+                  enum:
+                    - male
+                    - female
+                search_sex:
+                  type: string
+                  enum:
+                    - male
+                    - female
+                    - all
+                dating_intent:
+                  type: string
+                  description: Цель знакомства.
+                  enum:
+                    - Ищу общение
+                    - Ищу половинку
+                    - Ищу встречи
+                  example: Ищу половинку
+                tags:
+                  maxItems: 10
+                  uniqueItems: true
+                  type: array
+                  items:
+                    type: string
+                    minLength: 1
+                    maxLength: 30
+                    pattern: '\S'
+                  example:
+                    - sport
+                    - gaming
+      responses:
+        '201':
+          description: Пользователь зарегистрирован
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - user_id
+                  - profile_completed
+                properties:
+                  user_id:
+                    minimum: 1
+                    type: integer
+                    format: int64
+                    example: 12
+                  profile_completed:
+                    type: boolean
+                    example: false
+        '400':
+          description: Некорректные данные
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                        example: VALIDATION_ERROR
+                      message:
+                        type: string
+                        example: Некорректные данные
+        '409':
+          description: Почта уже занята
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                        example: EMAIL_ALREADY_EXISTS
+                      message:
+                        type: string
+                        example: Почта уже занята
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/auth/login:
+    post:
+      summary: Авторизовать пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  minLength: 1
+                  maxLength: 254
+                  description: Пробелы по краям удаляются до проверки формата и поиска аккаунта.
+                  type: string
+                  format: email
+
+                password:
+                  writeOnly: true
+                  description: Передаётся без обрезки пробелов и изменения регистра.
+                  type: string
+                  format: password
+                  minLength: 1
+                  maxLength: 128
+
+      responses:
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '200':
+          description: Вход выполнен успешно
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - user_id
+                  - profile_completed
+                properties:
+                  user_id:
+                    minimum: 1
+                    type: integer
+                    format: int64
+                    example: 12
+                  profile_completed:
+                    type: boolean
+                    example: true
+        '401':
+          description: Неверная почта или пароль
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                        example: INVALID_CREDENTIALS
+                      message:
+                        type: string
+                        example: Неверная почта или пароль
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/auth/refresh:
+    post:
+      summary: Обновить сессию пользователя
+      description: Продлевает действующую сессию. Если сессия отсутствует, истекла или отозвана, необходимо войти заново.
+      responses:
+        '204':
+          description: Сессия обновлена. Тело ответа отсутствует.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/auth/logout:
+    post:
+      summary: Завершить текущую сессию пользователя
+      description: Отзывает текущую сессию. Повторный запрос, включая запрос без действующей сессии, также возвращает 204.
+      responses:
+        '204':
+          description: Сессия завершена. Тело ответа отсутствует.
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/psychotest:
+    get:
+      summary: Получить психологический тест (заглушка)
+      description: Контракт психологического теста будет описан позднее.
+      responses:
+        '501':
+          description: Психологический тест пока не реализован.
+
+    post:
+      summary: Отправить ответы психологического теста (заглушка)
+      description: Формат запроса и контракт сохранения ответов будут описаны позднее.
+      responses:
+        '501':
+          description: Отправка ответов психологического теста пока не реализована.
+
+  /api/v1/feed:
+    get:
+      summary: Получить ленту анкет
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+            default: 10
+
+        - name: cursor
+          description: Курсор из next_cursor предыдущего ответа. В первом запросе не передаётся.
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            format: int64
+
+      responses:
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '200':
+          description: Лента загружена. Если анкет нет, items пустой, next_cursor равен null.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                  - next_cursor
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - user_id
+                        - name
+                        - age
+                        - tags
+                        - photos
+                      properties:
+                        user_id:
+                          minimum: 1
+                          type: integer
+                          format: int64
+                          example: 42
+                        name:
+                          minLength: 1
+                          maxLength: 100
+                          pattern: '\S'
+                          description: Имя не должно состоять только из пробелов.
+                          type: string
+                          example: Аня
+                        age:
+                          minimum: 18
+                          type: integer
+                          example: 22
+                        tags:
+                          maxItems: 10
+                          uniqueItems: true
+                          type: array
+                          items:
+                            type: string
+                            minLength: 1
+                            maxLength: 30
+                            pattern: '\S'
+                          example: [sport]
+                        photos:
+                          type: array
+                          minItems: 0
+                          maxItems: 6
+                          items:
+                            type: object
+                            required:
+                              - id
+                              - url
+                            properties:
+                              id:
+                                minimum: 1
+                                type: integer
+                                format: int64
+                                example: 7
+                              url:
+                                minLength: 1
+                                type: string
+                                example: /media/photo-7.jpg
+                  next_cursor:
+                    minimum: 1
+                    type: integer
+                    format: int64
+                    nullable: true
+                    description: Курсор следующей порции. null, если продолжения нет.
+                    example: 42
+        '500':
+          description: Не удалось загрузить ленту из-за ошибки сервера
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                        example: FEED_LOAD_FAILED
+                      message:
+                        type: string
+                        example: Не удалось загрузить ленту из-за ошибки сервера
+
+  /api/v1/feed/swipe:
+    post:
+      summary: Выполнить свайп пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - target_user_id
+                - action
+              properties:
+                target_user_id:
+                  description: Идентификатор другого пользователя. Свайп собственной анкеты запрещён; проверяется сервером.
+                  minimum: 1
+                  type: integer
+                  format: int64
+
+                action:
+                  type: string
+                  enum:
+                    - like
+                    - dislike
+      responses:
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '204':
+          description: Свайп сохранён
+        '404':
+          description: Целевая анкета не найдена или недоступна
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                        example: PROFILE_NOT_FOUND
+                      message:
+                        type: string
+                        example: Целевая анкета не найдена или недоступна
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  responses:
+    Unauthorized:
+      description: Сессия отсутствует, истекла или отозвана. Необходимо войти заново.
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - error
+            properties:
+              error:
+                type: object
+                required:
+                  - code
+                  - message
+                properties:
+                  code:
+                    type: string
+                    example: UNAUTHORIZED
+                  message:
+                    type: string
+                    example: Необходимо войти заново
+    InternalServerError:
+      description: Внутренняя ошибка сервера
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - error
+            properties:
+              error:
+                type: object
+                required:
+                  - code
+                  - message
+                properties:
+                  code:
+                    type: string
+                    example: INTERNAL_SERVER_ERROR
+                  message:
+                    type: string
+                    example: Внутренняя ошибка сервера
+    ValidationError:
+      description: Некорректные поля или параметры запроса
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - error
+            properties:
+              error:
+                type: object
+                required:
+                  - code
+                  - message
+                properties:
+                  code:
+                    type: string
+                    example: VALIDATION_ERROR
+                  message:
+                    type: string
+                    example: Проверьте поля запроса
