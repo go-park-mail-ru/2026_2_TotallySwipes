@@ -5,3 +5,4 @@
 *.exe
 *.test
 /bin/
+*.DS_Store
