@@ -16,7 +16,7 @@ migrate-down:
 	set -a && . ./docker.env && set +a && docker compose --profile tools run --rm migrate -path=/migrations -database "$$DATABASE_URL" down 1
 
 migrate-create:
-	docker run --rm -v $(CURDIR)/migrations:/migrations migrate/migrate create -ext sql -dir /migrations -seq $(name)
+	docker run --rm -v $(CURDIR)/db/migrations:/migrations migrate/migrate create -ext sql -dir /migrations -seq $(name)
 
 test:
 	go test ./...

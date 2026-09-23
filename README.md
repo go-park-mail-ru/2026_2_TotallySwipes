@@ -24,7 +24,7 @@
 * `make up` - поднять только Postgres в докере, для локальной разработки (используется вместе с `make run`)
 * `make up-all` - поднять всё в докере (`docker compose up --build`): Postgres + приложение, конфиг из `docker.env` (Postgres по имени сервиса)
 * `make migrate-up` / `make migrate-down` - накатить/откатить миграции через `migrate/migrate` в докере
-* `make migrate-create name=...` - создать новую пару файлов миграции в `migrations/`
+* `make migrate-create name=...` - создать новую пару файлов миграции в `db/migrations/`
 * `make test` - прогнать тесты (`go test ./...`)
 
 ## Правила оформления Pull Requests

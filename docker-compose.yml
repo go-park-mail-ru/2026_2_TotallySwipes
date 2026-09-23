@@ -29,7 +29,7 @@ services:
     image: migrate/migrate:latest
     profiles: ["tools"]
     volumes:
-      - ./migrations:/migrations
+      - ./db/migrations:/migrations
     depends_on:
       postgres:
         condition: service_healthy
