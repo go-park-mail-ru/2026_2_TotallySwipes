@@ -27,6 +27,7 @@ Table "user" {
   name text [not null]
   email text [not null, unique]
   password_hash text [not null]
+  birth_date date [not null]
 
   created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
   updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
@@ -44,6 +45,9 @@ Table "user" {
 
     `password_hash ~ '[^[:space:]]'`
       [name: 'user_password_hash_nonblank']
+
+    `isfinite(birth_date)`
+      [name: 'user_birth_date_finite']
 
     `isfinite(created_at)`
       [name: 'user_created_at_finite']
