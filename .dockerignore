@@ -1,0 +1,11 @@
+.env
+*.env
+!*.env.example
+
+.git
+.gitignore
+
+*.exe
+*.test
+/bin/
+*.DS_Store
