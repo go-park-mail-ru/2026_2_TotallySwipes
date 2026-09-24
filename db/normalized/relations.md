@@ -4,12 +4,18 @@ ER: [er.puml](er.puml). Типы и ограничения: [schema.dbml](schema
 
 Все идентификаторы генерируются через `GENERATED ALWAYS AS IDENTITY`.
 
-Для технических временных полей в DDL используются:
+В таблицах, кроме `profile_version` и `profile_psycho`, для технических временных полей в DDL используются:
 
 ```
 created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 ```
+
+В `profile_version` и `profile_psycho` вместо этой пары используется только
+`recorded_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP`.
+Все эти временные значения должны быть конечными (`isfinite`). Для пары
+`created_at` / `updated_at` действует `updated_at >= created_at`.
+`DEFAULT` задаёт время вставки; обновление `updated_at` выполняется явно backend-логикой либо триггером.
 
 Межтабличные ограничения, которые нельзя выразить через `PK`, `FK`, `UNIQUE` или `CHECK`, реализуются backend-логикой либо триггерами.
 
@@ -48,11 +54,16 @@ password_hash ~ '[^[:space:]]'
 | --------- | ------ | ------------------------------- |
 | `id`      | bigint | PK, NOT NULL                    |
 | `user_id` | bigint | NOT NULL, UNIQUE, FK -> user.id |
+| `created_at` | timestamptz | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
+| `updated_at` | timestamptz | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
 
 CHECK:
 
 ```
 id > 0
+isfinite(created_at)
+isfinite(updated_at)
+updated_at >= created_at
 ```
 
 FK:
@@ -70,9 +81,21 @@ ON UPDATE RESTRICT
 {user_id}
 ```
 
+`created_at` — время создания анкеты. `updated_at` — время последнего изменения
+анкеты: добавления новой `profile_version` либо сохранения готового результата
+теста, который отображается на карточке пользователя. Начало прохождения и
+сохранение промежуточных ответов не меняют `profile.updated_at`.
+Сохранение версии или готового результата и обновление `profile.updated_at`
+выполняются в одной транзакции.
+
 ---
 
 ## 3. profile_version
+
+`recorded_at` — время создания конкретной версии; версия неизменяема.
+Полей `created_at` и `updated_at` нет. Актуальная версия определяется по
+максимальному `revision`, а не по времени. Добавление версии обновляет
+`profile.updated_at` в той же транзакции.
 
 | Атрибут           | Тип         | Ограничения                         |
 | ----------------- | ----------- | ----------------------------------- |
@@ -178,6 +201,14 @@ ON UPDATE RESTRICT
 ---
 
 ## 6. profile_psycho
+
+`recorded_at` — время создания записи прохождения. Оно не меняется при
+сохранении ответов и завершении теста. Полей `created_at` и `updated_at` нет;
+отдельное время завершения в текущей модели не хранится.
+До завершения все веса равны `NULL`; готовый результат содержит все пять весов
+и после завершения неизменяем. Если готовый результат отображается на карточке,
+его сохранение обновляет `profile.updated_at` в той же транзакции.
+Начало прохождения и промежуточные ответы время изменения анкеты не обновляют.
 
 | Атрибут       | Тип         | Ограничения                         |
 | ------------- | ----------- | ----------------------------------- |

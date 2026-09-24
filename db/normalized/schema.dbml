@@ -81,6 +81,8 @@ Table "profile" {
     `updated_at >= created_at`
       [name: 'profile_updated_not_before_created']
   }
+
+  Note: 'created_at — создание анкеты; updated_at — последнее изменение анкеты: новая версия или готовый результат теста, отображаемый на карточке. Обновляется в той же транзакции; начало теста и промежуточные ответы его не меняют.'
 }
 
 
@@ -101,9 +103,6 @@ Table "profile_version" {
   search_sex text [not null]
   search_age_from integer [not null]
   search_age_to integer [not null]
-
-  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
-  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
 
   indexes {
     (profile_id, revision) [unique]
@@ -131,16 +130,9 @@ Table "profile_version" {
     `search_age_from >= 18
       AND search_age_to >= search_age_from`
       [name: 'profile_version_search_age_valid']
-
-    `isfinite(created_at)`
-      [name: 'profile_version_created_at_finite']
-
-    `isfinite(updated_at)`
-      [name: 'profile_version_updated_at_finite']
-
-    `updated_at >= created_at`
-      [name: 'profile_version_updated_not_before_created']
   }
+
+  Note: 'Неизменяемая версия анкеты. recorded_at — время создания версии. Отдельные created_at и updated_at не используются. Добавление версии обновляет profile.updated_at в той же транзакции.'
 }
 
 
@@ -224,9 +216,6 @@ Table "profile_psycho" {
   weight_4 numeric [null]
   weight_5 numeric [null]
 
-  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
-  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
-
   indexes {
     (profile_id, revision) [unique]
   }
@@ -294,16 +283,9 @@ Table "profile_psycho" {
       AND weight_5 <> '-Infinity'::numeric
     `
       [name: 'profile_psycho_weight_5_finite']
-
-    `isfinite(created_at)`
-      [name: 'profile_psycho_created_at_finite']
-
-    `isfinite(updated_at)`
-      [name: 'profile_psycho_updated_at_finite']
-
-    `updated_at >= created_at`
-      [name: 'profile_psycho_updated_not_before_created']
   }
+
+  Note: 'recorded_at — время создания записи прохождения; не меняется при сохранении ответов и завершении. Отдельное время завершения не хранится. Готовый результат, отображаемый на карточке, обновляет profile.updated_at в той же транзакции; промежуточные ответы — нет. Завершённый результат неизменяем.'
 }
 
 

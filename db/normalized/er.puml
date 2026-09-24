@@ -15,6 +15,8 @@ entity "user" as app_user {
 entity "profile" as profile {
   id
   user_id
+  created_at
+  updated_at
 }
 
 entity "profile_version" as profile_version {
@@ -160,5 +162,24 @@ app_user ||--o{ report : "автор жалобы"
 app_user ||--o{ report : "на кого жалуются"
 report_type ||--o{ report : "тип жалобы"
 
+
+note right of profile
+  updated_at меняется при новой версии анкеты
+  или готовом результате теста на карточке.
+  Изменение данных и времени — одна транзакция.
+  Начало теста и промежуточные ответы его не меняют.
+end note
+
+note right of profile_version
+  recorded_at — создание неизменяемой версии.
+  created_at и updated_at отсутствуют.
+end note
+
+note right of profile_psycho
+  recorded_at — создание записи прохождения.
+  При завершении не меняется.
+  Отдельное время завершения не хранится.
+  created_at и updated_at отсутствуют.
+end note
 
 @enduml
