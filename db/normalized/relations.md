@@ -29,6 +29,7 @@ updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 | `name`          | text   | NOT NULL         |
 | `email`         | text   | NOT NULL, UNIQUE |
 | `password_hash` | text   | NOT NULL         |
+| `birth_date`    | date   | NOT NULL         |
 
 CHECK:
 
@@ -37,6 +38,7 @@ id > 0
 char_length(name) BETWEEN 1 AND 100 AND name ~ '[^[:space:]]'
 char_length(email) BETWEEN 1 AND 254 AND email !~ '[[:space:]]'
 password_hash ~ '[^[:space:]]'
+isfinite(birth_date)
 ```
 
 Кандидатные ключи:

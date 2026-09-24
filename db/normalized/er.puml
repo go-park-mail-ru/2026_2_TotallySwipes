@@ -10,6 +10,7 @@ entity "user" as app_user {
   name
   email
   password_hash
+  birth_date
 }
 
 entity "profile" as profile {
