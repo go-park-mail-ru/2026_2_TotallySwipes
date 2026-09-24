@@ -2,10 +2,10 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
-
-	"github.com/jackc/pgx/v4/pgxpool"
 )
 
 type Sex string
@@ -34,8 +34,8 @@ type Profile struct {
 
 type ProfileInput struct {
 	UserID         int64
-	TestID         int64
-	CurrentVersion ProfileVersion
+	CurrentVersion ProfileVersionInput
+	CurrentPsycho  *ProfilePsychoInput
 }
 
 type ProfileVersion struct {
@@ -82,32 +82,24 @@ type ProfilePsychoInput struct {
 	Weight5    *float64
 }
 
-type UpdateProfileInput struct {
-	Name         string
-	Email        string
-	PasswordHash string
-}
-
 type ProfileRepository interface {
-	GetByIDCurrentProfile(ctx context.Context, id int64) (Profile, error)
+	GetByIDCurrentProfile(ctx context.Context, id int64) (*Profile, error)
 
-	Add(ctx context.Context, input ProfileInput) error
+	CreateProfile(ctx context.Context, tx *sql.Tx, input *ProfileInput) error
 
-	AddVersion(ctx context.Context, profileID int64, version ProfileVersionInput) error
-	AddPsychoTest(ctx context.Context, profileID int64, psycho ProfilePsychoInput) error
+	AddProfileVersion(ctx context.Context, tx *sql.Tx, profileID int64, version *ProfileVersionInput) error
+	AddProfilePsycho(ctx context.Context, tx *sql.Tx, profileID int64, psycho *ProfilePsychoInput) error
 }
 
 type ProfileRepo struct {
-	pool *pgxpool.Pool
+	db *sql.DB
 }
 
-var _ ProfileRepository = (*ProfileRepo)(nil)
-
-func NewProfileRepository(pool *pgxpool.Pool) *ProfileRepo {
-	return &ProfileRepo{pool: pool}
+func NewProfileRepository(db *sql.DB) *ProfileRepo {
+	return &ProfileRepo{db: db}
 }
 
-func (r *ProfileRepo) GetByIDCurrentProfile(ctx context.Context, id int64) (Profile, error) {
+func (r *ProfileRepo) GetByIDCurrentProfile(ctx context.Context, id int64) (*Profile, error) {
 	const query = `
 		SELECT p.id, p.user_id, p.created_at, p.updated_at,
 		       v.id, v.profile_id, v.birth_date, v.recorded_at,
@@ -134,13 +126,13 @@ func (r *ProfileRepo) GetByIDCurrentProfile(ctx context.Context, id int64) (Prof
 		WHERE p.id = $1`
 
 	var profile Profile
-	version := &profile.CurrentVersion
-
 	var psychoID, psychoProfileID, testID *int64
 	var recordedAt *time.Time
 	var psycho ProfilePsycho
 
-	err := r.pool.QueryRow(ctx, query, id).Scan(
+	version := &profile.CurrentVersion
+
+	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&profile.ID, &profile.UserID, &profile.CreatedAt, &profile.UpdatedAt,
 		&version.ID, &version.ProfileID, &version.BirthDate, &version.RecordedAt,
 		&version.Sex, &version.SearchSex, &version.SearchAgeFrom, &version.SearchAgeTo,
@@ -148,8 +140,12 @@ func (r *ProfileRepo) GetByIDCurrentProfile(ctx context.Context, id int64) (Prof
 		&psycho.Weight1, &psycho.Weight2, &psycho.Weight3, &psycho.Weight4, &psycho.Weight5,
 	)
 
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+
 	if err != nil {
-		return Profile{}, fmt.Errorf("get current profile id=%d: %w", id, err)
+		return nil, fmt.Errorf("get current profile id=%d: %w", id, err)
 	}
 
 	if psychoID != nil {
@@ -160,75 +156,82 @@ func (r *ProfileRepo) GetByIDCurrentProfile(ctx context.Context, id int64) (Prof
 		profile.CurrentPsycho = &psycho
 	}
 
-	return profile, nil
+	return &profile, nil
 }
 
-func (r *ProfileRepo) Add(ctx context.Context, input ProfileInput) error {
-	if input.TestID <= 0 {
-		return fmt.Errorf("add profile user_id=%d: test_id must be positive", input.UserID)
+func (r *ProfileRepo) CreateProfile(ctx context.Context, tx *sql.Tx, input *ProfileInput) error {
+
+	if tx == nil {
+		return fmt.Errorf("create profile: transaction is nil")
 	}
 
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("add profile user_id=%d: begin transaction: %w", input.UserID, err)
+	if input == nil {
+		return fmt.Errorf("create profile: input is nil")
 	}
-	defer tx.Rollback(ctx)
+
+	if input.CurrentPsycho != nil && input.CurrentPsycho.TestID <= 0 {
+		return fmt.Errorf("create profile: test_id must be positive")
+	}
 
 	var profileID int64
-	err = tx.QueryRow(ctx, `INSERT INTO profile (user_id) VALUES ($1) RETURNING id`, input.UserID).Scan(&profileID)
+
+	err := tx.QueryRowContext(ctx,
+		`INSERT INTO profile (user_id) VALUES ($1) RETURNING id`, input.UserID,
+	).Scan(&profileID)
 
 	if err != nil {
-		return fmt.Errorf("add profile user_id=%d: insert profile: %w", input.UserID, err)
+		return fmt.Errorf("create profile user_id=%d: insert profile: %w", input.UserID, err)
 	}
-	_, err = tx.Exec(ctx,
+
+	version := input.CurrentVersion
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO profile_version (
-		profile_id, revision, birth_date,
-		sex, search_sex, search_age_from, search_age_to)
-		SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6 FROM profile_version
-		WHERE profile_id = $1;`,
-		profileID,
-		input.CurrentVersion.BirthDate,
-		input.CurrentVersion.Sex,
-		input.CurrentVersion.SearchSex,
-		input.CurrentVersion.SearchAgeFrom,
-		input.CurrentVersion.SearchAgeTo)
-
-	if err != nil {
-		return fmt.Errorf("add profile id=%d: insert version: %w", profileID, err)
-	}
-
-	_, err = tx.Exec(ctx,
-		`INSERT INTO profile_psycho (
-		    profile_id, revision, test_id,
-		    weight_1, weight_2, weight_3, weight_4, weight_5
-		) VALUES ($1, 1, $2, NULL, NULL, NULL, NULL, NULL)`,
-		profileID, input.TestID,
+		    profile_id, revision, birth_date, sex, search_sex, search_age_from, search_age_to
+		) VALUES ($1, 1, $2, $3, $4, $5, $6)`,
+		profileID, version.BirthDate, version.Sex, version.SearchSex,
+		version.SearchAgeFrom, version.SearchAgeTo,
 	)
+
 	if err != nil {
-		return fmt.Errorf("add profile id=%d: insert unfinished psycho test: %w", profileID, err)
+		return fmt.Errorf("create profile id=%d: insert version: %w", profileID, err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("add profile id=%d: commit: %w", profileID, err)
+	if psycho := input.CurrentPsycho; psycho != nil {
+		_, err = tx.ExecContext(ctx,
+			`INSERT INTO profile_psycho (
+			    profile_id, revision, test_id,
+			    weight_1, weight_2, weight_3, weight_4, weight_5
+			) VALUES ($1, 1, $2, $3, $4, $5, $6, $7)`,
+			profileID, psycho.TestID,
+			psycho.Weight1, psycho.Weight2, psycho.Weight3, psycho.Weight4, psycho.Weight5,
+		)
+
+		if err != nil {
+			return fmt.Errorf("create profile id=%d: insert psycho test: %w", profileID, err)
+		}
 	}
+
 	return nil
 }
 
-func (r *ProfileRepo) AddVersion(ctx context.Context, profileID int64, input ProfileVersionInput) error {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("add profile version profile_id=%d: begin transaction: %w", profileID, err)
-	}
-	defer tx.Rollback(ctx)
+func (r *ProfileRepo) AddProfileVersion(ctx context.Context, tx *sql.Tx, profileID int64, input ProfileVersionInput) error {
 
-	var lockedProfileID int64
-	err = tx.QueryRow(ctx, `SELECT id FROM profile WHERE id = $1 FOR UPDATE;`, profileID).Scan(&lockedProfileID)
+	if tx == nil {
+		return fmt.Errorf("write profile: transaction is nil")
+	}
+
+	var tempID int64
+	err := tx.QueryRowContext(ctx, `SELECT id FROM profile WHERE id = $1 FOR UPDATE;`, profileID).Scan(&tempID)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
 
 	if err != nil {
 		return fmt.Errorf("add profile version profile_id=%d: lock profile: %w", profileID, err)
 	}
 
-	_, err = tx.Exec(ctx,
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO profile_version (
 		profile_id, revision, birth_date,
 		sex, search_sex, search_age_from, search_age_to)
@@ -245,39 +248,41 @@ func (r *ProfileRepo) AddVersion(ctx context.Context, profileID int64, input Pro
 		return fmt.Errorf("add profile version profile_id=%d: insert: %w", profileID, err)
 	}
 
-	_, err = tx.Exec(ctx, `UPDATE profile SET updated_at = CURRENT_TIMESTAMP WHERE id = $1;`, profileID)
+	_, err = tx.ExecContext(ctx, `UPDATE profile SET updated_at = CURRENT_TIMESTAMP WHERE id = $1;`, profileID)
 
 	if err != nil {
 		return fmt.Errorf("add profile version profile_id=%d: update profile timestamp: %w", profileID, err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("add profile version profile_id=%d: commit: %w", profileID, err)
-	}
-
 	return nil
 }
 
-func (r *ProfileRepo) AddPsychoTest(ctx context.Context, profileID int64, input ProfilePsychoInput) error {
+func (r *ProfileRepo) AddProfilePsycho(ctx context.Context, tx *sql.Tx, profileID int64, input *ProfilePsychoInput) error {
+
+	if input == nil {
+		return fmt.Errorf("add pscho test: input is nil")
+	}
 
 	if input.Weight1 == nil || input.Weight2 == nil || input.Weight3 == nil || input.Weight4 == nil || input.Weight5 == nil {
 		return fmt.Errorf("add psycho test profile_id=%d: all five weights are required", profileID)
 	}
 
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("add psycho test profile_id=%d: begin transaction: %w", profileID, err)
+	if tx == nil {
+		return fmt.Errorf("write profile: transaction is nil")
 	}
-	defer tx.Rollback(ctx)
 
-	var lockedProfileID int64
-	err = tx.QueryRow(ctx, `SELECT id FROM profile WHERE id = $1 FOR UPDATE`, profileID).Scan(&lockedProfileID)
+	var tempID int64
+	err := tx.QueryRowContext(ctx, `SELECT id FROM profile WHERE id = $1 FOR UPDATE`, profileID).Scan(&tempID)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
 
 	if err != nil {
 		return fmt.Errorf("add psycho test profile_id=%d: lock profile: %w", profileID, err)
 	}
 
-	_, err = tx.Exec(ctx,
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO profile_psycho (
 		profile_id, revision, test_id, weight_1,
 		weight_2, weight_3, weight_4, weight_5)
@@ -295,14 +300,10 @@ func (r *ProfileRepo) AddPsychoTest(ctx context.Context, profileID int64, input 
 		return fmt.Errorf("add psycho test profile_id=%d: insert: %w", profileID, err)
 	}
 
-	_, err = tx.Exec(ctx, `UPDATE profile SET updated_at = CURRENT_TIMESTAMP WHERE id = $1;`, profileID)
+	_, err = tx.ExecContext(ctx, `UPDATE profile SET updated_at = CURRENT_TIMESTAMP WHERE id = $1;`, profileID)
 
 	if err != nil {
 		return fmt.Errorf("add psycho test profile_id=%d: update profile timestamp: %w", profileID, err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("add psycho test profile_id=%d: commit: %w", profileID, err)
 	}
 
 	return nil

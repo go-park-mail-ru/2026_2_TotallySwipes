@@ -2,10 +2,14 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
+)
 
-	"github.com/jackc/pgx/v4/pgxpool"
+var (
+	ErrNotFound = fmt.Errorf("not found")
 )
 
 type User struct {
@@ -14,7 +18,13 @@ type User struct {
 	Email        string
 	PasswordHash string
 	BirthDate    time.Time
-	ProfileID    int64
+}
+
+type UserInput struct {
+	Name         string
+	Email        string
+	PasswordHash string
+	BirthDate    time.Time
 }
 
 type UpdateUserInput struct {
@@ -25,46 +35,64 @@ type UpdateUserInput struct {
 }
 
 type UserRepository interface {
-	GetByID(ctx context.Context, id int64) (User, error)
+	CreateUser(ctx context.Context, tx *sql.Tx, user *User) error
+	GetUserByEmail(ctx context.Context, email string) (*User, error)
+	GetUserByID(ctx context.Context, id int64) (*User, error)
 
-	Add(ctx context.Context, user User) error
-	Update(ctx context.Context, id int64, input UpdateUserInput) (User, error)
-	DeleteById(ctx context.Context, id int64) error
+	UpdateUser(ctx context.Context, tx *sql.Tx, id int64, input *UpdateUserInput) (*User, error)
+	DeleteUserByID(ctx context.Context, tx *sql.Tx, id int64) error
 }
 
 type UserRepo struct {
-	pool *pgxpool.Pool
+	db *sql.DB
 }
 
-func NewUserRepository(pool *pgxpool.Pool) *UserRepo {
-	return &UserRepo{pool: pool}
+func NewUserRepository(db *sql.DB) *UserRepo {
+	return &UserRepo{db: db}
 }
 
-func (r *UserRepo) GetByID(ctx context.Context, id int64) (User, error) {
+func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*User, error) {
 
-	temp := User{}
+	user := User{}
 
-	err := r.pool.QueryRow(ctx,
-		`SELECT id, name, email, password_hash, birth_date, profile_id FROM "user" WHERE id = $1`,
-		id).Scan(&temp.ID, &temp.Name, &temp.Email, &temp.PasswordHash, &temp.BirthDate, &temp.ProfileID)
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, name, email, password_hash, birth_date FROM "user" WHERE id = $1`,
+		id).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.BirthDate)
 
-	if err != nil {
-		return User{}, fmt.Errorf("get user id=%d: %w", id, err)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
 	}
 
-	return temp, nil
+	if err != nil {
+		return nil, fmt.Errorf("get user id=%d: %w", id, err)
+	}
+
+	return &user, nil
 }
 
-func (r *UserRepo) Add(ctx context.Context, user User) error {
+func (r *UserRepo) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 
-	_, err := r.pool.Exec(ctx,
-		`INSERT INTO "user" (id, name, email, password_hash, birth_date, profile_id) VALUES ($1, $2, $3, $4, $5, $6)`,
-		user.ID,
+	user := User{}
+
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, name, email, password_hash, birth_date FROM "user" WHERE email = $1`,
+		email).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.BirthDate)
+
+	if err != nil {
+		return nil, fmt.Errorf("get user email=%s: %w", email, err)
+	}
+
+	return &user, nil
+}
+
+func (r *UserRepo) CreateUser(ctx context.Context, tx *sql.Tx, user *UserInput) error {
+
+	_, err := tx.ExecContext(ctx,
+		`INSERT INTO "user" (id, name, email, password_hash, birth_date) VALUES ($1, $2, $3, $4, $5)`,
 		user.Name,
 		user.Email,
 		user.PasswordHash,
 		user.BirthDate,
-		user.ProfileID,
 	)
 
 	if err != nil {
@@ -74,38 +102,51 @@ func (r *UserRepo) Add(ctx context.Context, user User) error {
 	return nil
 }
 
-func (r *UserRepo) Update(ctx context.Context, id int64, input UpdateUserInput) (User, error) {
+func (r *UserRepo) UpdateUser(ctx context.Context, tx *sql.Tx, id int64, input *UpdateUserInput) (*User, error) {
 
-	var temp User
+	if input == nil {
+		return nil, fmt.Errorf("update user: input is nil")
+	}
 
-	err := r.pool.QueryRow(ctx,
+	var user User
+
+	err := tx.QueryRowContext(ctx,
 		`UPDATE "user"
-		SET name = $1, email = $2, password_hash = $3, birth_date = $4 WHERE id = $5 RETURNING id, name, email, password_hash, birth_date, profile_id`,
+		SET name = $1, email = $2, password_hash = $3, birth_date = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5 RETURNING id, name, email, password_hash, birth_date`,
 		input.Name,
 		input.Email,
 		input.PasswordHash,
 		input.BirthDate,
 		id,
-	).Scan(&temp.ID, &temp.Name, &temp.Email, &temp.PasswordHash, &temp.BirthDate, &temp.ProfileID)
+	).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.BirthDate)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
 
 	if err != nil {
-		return User{}, fmt.Errorf("update user: %w", err)
+		return nil, fmt.Errorf("update user: %w", err)
 	}
 
-	return temp, nil
+	return &user, nil
 }
 
-func (r *UserRepo) DeleteById(ctx context.Context, id int64) error {
+func (r *UserRepo) DeleteUserByID(ctx context.Context, tx *sql.Tx, id int64) error {
 
-	var temp int64
-	if err := r.pool.QueryRow(ctx, `SELECT id FROM "user" WHERE id = $1`, id).Scan(&temp); err != nil {
-		return fmt.Errorf("delete user id=%d: lookup: %w", id, err)
-	}
-
-	_, err := r.pool.Exec(ctx, `DELETE FROM "user" WHERE id = $1`, id)
+	res, err := tx.ExecContext(ctx, `DELETE FROM "user" WHERE id = $1`, id)
 
 	if err != nil {
 		return fmt.Errorf("delete user id=%d: %w", id, err)
+	}
+
+	count, err := res.RowsAffected()
+
+	if err != nil {
+		return fmt.Errorf("delete user id=%d: rows affected: %w", id, err)
+	}
+
+	if count == 0 {
+		return ErrNotFound
 	}
 
 	return nil
