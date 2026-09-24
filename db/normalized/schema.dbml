@@ -1,14 +1,5 @@
 // Полная физическая модель Totally Swipes.
 // PostgreSQL.
-// Все id в итоговом DDL:
-// GENERATED ALWAYS AS IDENTITY.
-//
-// created_at / updated_at:
-// DEFAULT CURRENT_TIMESTAMP.
-// updated_at изменяется backend либо общим BEFORE UPDATE trigger.
-//
-// Межтабличные бизнес-ограничения, которые невозможно выразить
-// обычными CHECK/FK/UNIQUE, описываются в relations.md.
 
 Project totally_swipes {
   database_type: 'PostgreSQL'
@@ -63,16 +54,6 @@ Table "user" {
     `updated_at >= created_at`
       [name: 'user_updated_not_before_created']
   }
-
-  Note: '''
-  Проверка синтаксиса email выполняется приложением.
-  В БД хранится только хеш пароля.
-
-  UNIQUE(email) сейчас регистрозависим.
-  При необходимости регистронезависимой уникальности
-  следует использовать индекс по lower(email)
-  либо отдельное согласованное решение.
-  '''
 }
 
 
@@ -100,17 +81,6 @@ Table "profile" {
     `updated_at >= created_at`
       [name: 'profile_updated_not_before_created']
   }
-
-  Note: '''
-  Постоянная идентичность анкеты.
-
-  Один user имеет ровно один profile благодаря UNIQUE(user_id).
-
-  При регистрации user, profile и первая profile_version
-  создаются одной транзакцией.
-
-  user_id после создания profile не изменяется.
-  '''
 }
 
 
@@ -171,22 +141,6 @@ Table "profile_version" {
     `updated_at >= created_at`
       [name: 'profile_version_updated_not_before_created']
   }
-
-  Note: '''
-  Неизменяемый снимок полей анкеты.
-
-  Текущая версия — строка с максимальным revision
-  для конкретного profile_id.
-
-  Новая версия создаётся с revision + 1
-  под блокировкой profile.
-
-  UPDATE/DELETE исторических версий запрещаются
-  бизнес-правилами / правами / trigger.
-
-  updated_at присутствует согласно требованиям физической модели;
-  для неизменяемой строки он остаётся равен времени создания.
-  '''
 }
 
 
@@ -218,14 +172,6 @@ Table "test" {
     `updated_at >= created_at`
       [name: 'test_updated_not_before_created']
   }
-
-  Note: '''
-  Имя теста не обязано быть UNIQUE.
-
-  Тест, который уже проходили пользователи,
-  не изменяется семантически.
-  Новая редакция теста создаётся как новый test.
-  '''
 }
 
 
@@ -259,16 +205,6 @@ Table "question" {
     `updated_at >= created_at`
       [name: 'question_updated_not_before_created']
   }
-
-  Note: '''
-  operation_id — идентификатор операции алгоритма backend,
-  а не FK.
-
-  Допустимость operation_id проверяется по реестру операций backend.
-
-  Вопрос использованного теста нельзя изменять таким образом,
-  чтобы изменилась семантика уже сохранённых ответов.
-  '''
 }
 
 
@@ -368,17 +304,6 @@ Table "profile_psycho" {
     `updated_at >= created_at`
       [name: 'profile_psycho_updated_not_before_created']
   }
-
-  Note: '''
-  Одно прохождение психологического теста.
-
-  Пока тест не завершён — все weight_N = NULL.
-  После завершения заполнены все пять весов.
-
-  Повторное прохождение создаёт новую строку.
-
-  revision увеличивается в пределах profile_id.
-  '''
 }
 
 
@@ -408,20 +333,6 @@ Table "user_answer" {
     `updated_at >= created_at`
       [name: 'user_answer_updated_not_before_created']
   }
-
-  Note: '''
-  0 — точно нет.
-  7 — точно да.
-
-  Один вопрос имеет максимум один ответ
-  в рамках одного прохождения благодаря составному PK.
-
-  question_id должен принадлежать тому же test,
-  что profile_psycho.test_id.
-  Это межтабличное ограничение, описанное в relations.md.
-
-  После завершения прохождения ответы неизменяемы.
-  '''
 }
 
 
@@ -455,12 +366,6 @@ Table "plan" {
     `updated_at >= created_at`
       [name: 'plan_updated_not_before_created']
   }
-
-  Note: '''
-  name уникально идентифицирует название тарифа.
-  ads_enabled по умолчанию TRUE:
-  новый тариф считается рекламным, пока явно не указано обратное.
-  '''
 }
 
 
@@ -495,16 +400,6 @@ Table "subscription" {
     `updated_at >= created_at`
       [name: 'subscription_updated_not_before_created']
   }
-
-  Note: '''
-  Период подписки задаётся полуинтервалом [starts_at, ends_at).
-
-  Для одного пользователя периоды активных подписок
-  не должны пересекаться.
-
-  Это следует обеспечить EXCLUDE constraint
-  либо эквивалентным транзакционным механизмом.
-  '''
 }
 
 
@@ -536,18 +431,6 @@ Table "tag" {
     `updated_at >= created_at`
       [name: 'tag_updated_not_before_created']
   }
-
-  Note: '''
-  Справочник тегов анкеты.
-
-  Например:
-  sport,
-  gaming,
-  travelling.
-
-  Пользователь выбирает существующие теги,
-  произвольные строки непосредственно в profile не хранятся.
-  '''
 }
 
 
@@ -572,13 +455,6 @@ Table "profile_tag" {
     `updated_at >= created_at`
       [name: 'profile_tag_updated_not_before_created']
   }
-
-  Note: '''
-  Связь M:N profile <-> tag.
-
-  Составной PRIMARY KEY одновременно запрещает
-  повторный выбор одного тега одним profile.
-  '''
 }
 
 
@@ -644,13 +520,6 @@ Table "report" {
     `updated_at >= created_at`
       [name: 'report_updated_not_before_created']
   }
-
-  Note: '''
-  Пользователь не может пожаловаться на себя.
-
-  Одинаковая жалоба одного типа от одного пользователя
-  на одного и того же пользователя допускается только один раз.
-  '''
 }
 
 
@@ -694,21 +563,6 @@ Table "photo" {
     `updated_at >= created_at`
       [name: 'photo_updated_not_before_created']
   }
-
-  Note: '''
-  Изображение физически хранится в S3.
-
-  storage_key — ключ объекта в S3, а не публичный URL.
-
-  UNIQUE(storage_key) запрещает привязать один S3-объект
-  к нескольким photo.
-
-  UNIQUE(profile_id, position) определяет порядок фотографий.
-
-  Максимальное количество фотографий у profile
-  является межстрочным ограничением и проверяется backend
-  либо trigger.
-  '''
 }
 
 
@@ -777,20 +631,6 @@ Table "profile_like" {
     `updated_at >= created_at`
       [name: 'profile_like_updated_not_before_created']
   }
-
-  Note: '''
-  Один пользователь может лайкнуть конкретный profile
-  не более одного раза.
-
-  Запрет лайка собственного profile нельзя выразить
-  простым CHECK, поскольку author_id ссылается на user,
-  а profile_id — на profile.
-
-  Правило:
-    profile.user_id <> profile_like.author_id
-
-  проверяется backend либо trigger.
-  '''
 }
 
 
@@ -829,20 +669,6 @@ Table "match" {
     `updated_at >= created_at`
       [name: 'match_updated_not_before_created']
   }
-
-  Note: '''
-  Пользователь не может иметь match с самим собой.
-
-  Пара пользователей всегда хранится в каноническом порядке:
-  first_user_id < second_user_id.
-
-  Поэтому UNIQUE(first_user_id, second_user_id)
-  запрещает одновременно создать пары (1, 2) и (2, 1).
-
-  Создание match допустимо только при наличии
-  взаимных лайков пользователей.
-  Это межтабличное бизнес-ограничение.
-  '''
 }
 
 
@@ -878,16 +704,6 @@ Table "message" {
     `updated_at >= created_at`
       [name: 'message_updated_not_before_created']
   }
-
-  Note: '''
-  sender_id обязан быть одним из двух участников match.
-
-  Также отправка разрешена только при
-  match.access_to_message = TRUE.
-
-  Оба правила являются межтабличными и требуют
-  проверки backend либо trigger.
-  '''
 }
 
 
