@@ -85,14 +85,22 @@ func (r *UserRepo) GetUserByEmail(ctx context.Context, email string) (*User, err
 	return &user, nil
 }
 
-func (r *UserRepo) CreateUser(ctx context.Context, tx *sql.Tx, user *UserInput) error {
+func (r *UserRepo) CreateUser(ctx context.Context, tx *sql.Tx, input *UserInput) error {
+
+	if tx == nil {
+		return fmt.Errorf("create user: transaction is nil")
+	}
+
+	if input == nil {
+		return fmt.Errorf("create user: input is nil")
+	}
 
 	_, err := tx.ExecContext(ctx,
 		`INSERT INTO "user" (id, name, email, password_hash, birth_date) VALUES ($1, $2, $3, $4, $5)`,
-		user.Name,
-		user.Email,
-		user.PasswordHash,
-		user.BirthDate,
+		input.Name,
+		input.Email,
+		input.PasswordHash,
+		input.BirthDate,
 	)
 
 	if err != nil {
@@ -103,6 +111,10 @@ func (r *UserRepo) CreateUser(ctx context.Context, tx *sql.Tx, user *UserInput) 
 }
 
 func (r *UserRepo) UpdateUser(ctx context.Context, tx *sql.Tx, id int64, input *UpdateUserInput) (*User, error) {
+
+	if tx == nil {
+		return nil, fmt.Errorf("update user: transaction is nil")
+	}
 
 	if input == nil {
 		return nil, fmt.Errorf("update user: input is nil")
@@ -132,6 +144,10 @@ func (r *UserRepo) UpdateUser(ctx context.Context, tx *sql.Tx, id int64, input *
 }
 
 func (r *UserRepo) DeleteUserByID(ctx context.Context, tx *sql.Tx, id int64) error {
+
+	if tx == nil {
+		return fmt.Errorf("delete user id=%d: transaction is nil", id)
+	}
 
 	res, err := tx.ExecContext(ctx, `DELETE FROM "user" WHERE id = $1`, id)
 
