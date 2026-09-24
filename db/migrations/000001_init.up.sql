@@ -37,8 +37,6 @@ CREATE TABLE "profile_version" (
     "search_sex" TEXT NOT NULL,
     "search_age_from" INTEGER NOT NULL,
     "search_age_to" INTEGER NOT NULL,
-    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE ("profile_id", "revision"),
     CONSTRAINT "profile_version_id_positive" CHECK (id > 0),
     CONSTRAINT "profile_version_revision_positive" CHECK (revision > 0),
@@ -47,9 +45,6 @@ CREATE TABLE "profile_version" (
     CONSTRAINT "profile_version_sex_valid" CHECK (sex IN ('male', 'female')),
     CONSTRAINT "profile_version_search_sex_valid" CHECK (search_sex IN ('male', 'female', 'all')),
     CONSTRAINT "profile_version_search_age_valid" CHECK (search_age_from >= 18 AND search_age_to >= search_age_from),
-    CONSTRAINT "profile_version_created_at_finite" CHECK (isfinite(created_at)),
-    CONSTRAINT "profile_version_updated_at_finite" CHECK (isfinite(updated_at)),
-    CONSTRAINT "profile_version_updated_not_before_created" CHECK (updated_at >= created_at),
     CONSTRAINT "version_owner" FOREIGN KEY ("profile_id")
         REFERENCES "profile" ("id") ON DELETE CASCADE ON UPDATE RESTRICT
 );
@@ -94,8 +89,6 @@ CREATE TABLE "profile_psycho" (
     "weight_3" NUMERIC,
     "weight_4" NUMERIC,
     "weight_5" NUMERIC,
-    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE ("profile_id", "revision"),
     CONSTRAINT "profile_psycho_id_positive" CHECK (id > 0),
     CONSTRAINT "profile_psycho_revision_positive" CHECK (revision > 0),
@@ -106,9 +99,6 @@ CREATE TABLE "profile_psycho" (
     CONSTRAINT "profile_psycho_weight_3_finite" CHECK (weight_3 <> 'NaN'::numeric AND weight_3 <> 'Infinity'::numeric AND weight_3 <> '-Infinity'::numeric),
     CONSTRAINT "profile_psycho_weight_4_finite" CHECK (weight_4 <> 'NaN'::numeric AND weight_4 <> 'Infinity'::numeric AND weight_4 <> '-Infinity'::numeric),
     CONSTRAINT "profile_psycho_weight_5_finite" CHECK (weight_5 <> 'NaN'::numeric AND weight_5 <> 'Infinity'::numeric AND weight_5 <> '-Infinity'::numeric),
-    CONSTRAINT "profile_psycho_created_at_finite" CHECK (isfinite(created_at)),
-    CONSTRAINT "profile_psycho_updated_at_finite" CHECK (isfinite(updated_at)),
-    CONSTRAINT "profile_psycho_updated_not_before_created" CHECK (updated_at >= created_at),
     CONSTRAINT "psycho_owner" FOREIGN KEY ("profile_id")
         REFERENCES "profile" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
     CONSTRAINT "psycho_test" FOREIGN KEY ("test_id")
