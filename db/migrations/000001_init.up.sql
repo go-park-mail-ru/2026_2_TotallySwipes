@@ -36,6 +36,7 @@ CREATE TABLE "profile_version" (
     "recorded_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "birth_date" DATE NOT NULL,
     "sex" TEXT NOT NULL,
+    "dating_goal" TEXT,
     "search_sex" TEXT NOT NULL,
     "search_age_from" INTEGER NOT NULL,
     "search_age_to" INTEGER NOT NULL,
@@ -45,6 +46,7 @@ CREATE TABLE "profile_version" (
     CONSTRAINT "profile_version_recorded_at_finite" CHECK (isfinite(recorded_at)),
     CONSTRAINT "profile_version_birth_date_finite" CHECK (isfinite(birth_date)),
     CONSTRAINT "profile_version_sex_valid" CHECK (sex IN ('male', 'female')),
+    CONSTRAINT "profile_version_dating_goal_nonblank" CHECK (dating_goal IS NULL OR dating_goal ~ '[^[:space:]]'),
     CONSTRAINT "profile_version_search_sex_valid" CHECK (search_sex IN ('male', 'female', 'all')),
     CONSTRAINT "profile_version_search_age_valid" CHECK (search_age_from >= 18 AND search_age_to >= search_age_from),
     CONSTRAINT "version_owner" FOREIGN KEY ("profile_id")
