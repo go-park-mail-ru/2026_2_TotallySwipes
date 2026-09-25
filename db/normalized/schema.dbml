@@ -214,11 +214,11 @@ Table "profile_psycho" {
 
   recorded_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
 
-  weight_1 numeric [null]
-  weight_2 numeric [null]
-  weight_3 numeric [null]
-  weight_4 numeric [null]
-  weight_5 numeric [null]
+  openness numeric [null]
+  conscientiousness numeric [null]
+  extraversion numeric [null]
+  agreeableness numeric [null]
+  neuroticism numeric [null]
 
   indexes {
     (profile_id, revision) [unique]
@@ -236,57 +236,57 @@ Table "profile_psycho" {
 
     `
     (
-      weight_1 IS NULL
-      AND weight_2 IS NULL
-      AND weight_3 IS NULL
-      AND weight_4 IS NULL
-      AND weight_5 IS NULL
+      openness IS NULL
+      AND conscientiousness IS NULL
+      AND extraversion IS NULL
+      AND agreeableness IS NULL
+      AND neuroticism IS NULL
     )
     OR
     (
-      weight_1 IS NOT NULL
-      AND weight_2 IS NOT NULL
-      AND weight_3 IS NOT NULL
-      AND weight_4 IS NOT NULL
-      AND weight_5 IS NOT NULL
+      openness IS NOT NULL
+      AND conscientiousness IS NOT NULL
+      AND extraversion IS NOT NULL
+      AND agreeableness IS NOT NULL
+      AND neuroticism IS NOT NULL
     )
     `
-      [name: 'profile_psycho_weights_complete']
+      [name: 'profile_psycho_scores_complete']
 
     `
-      weight_1 <> 'NaN'::numeric
-      AND weight_1 <> 'Infinity'::numeric
-      AND weight_1 <> '-Infinity'::numeric
+      openness <> 'NaN'::numeric
+      AND openness <> 'Infinity'::numeric
+      AND openness <> '-Infinity'::numeric
     `
-      [name: 'profile_psycho_weight_1_finite']
+      [name: 'profile_psycho_openness_finite']
 
     `
-      weight_2 <> 'NaN'::numeric
-      AND weight_2 <> 'Infinity'::numeric
-      AND weight_2 <> '-Infinity'::numeric
+      conscientiousness <> 'NaN'::numeric
+      AND conscientiousness <> 'Infinity'::numeric
+      AND conscientiousness <> '-Infinity'::numeric
     `
-      [name: 'profile_psycho_weight_2_finite']
+      [name: 'profile_psycho_conscientiousness_finite']
 
     `
-      weight_3 <> 'NaN'::numeric
-      AND weight_3 <> 'Infinity'::numeric
-      AND weight_3 <> '-Infinity'::numeric
+      extraversion <> 'NaN'::numeric
+      AND extraversion <> 'Infinity'::numeric
+      AND extraversion <> '-Infinity'::numeric
     `
-      [name: 'profile_psycho_weight_3_finite']
+      [name: 'profile_psycho_extraversion_finite']
 
     `
-      weight_4 <> 'NaN'::numeric
-      AND weight_4 <> 'Infinity'::numeric
-      AND weight_4 <> '-Infinity'::numeric
+      agreeableness <> 'NaN'::numeric
+      AND agreeableness <> 'Infinity'::numeric
+      AND agreeableness <> '-Infinity'::numeric
     `
-      [name: 'profile_psycho_weight_4_finite']
+      [name: 'profile_psycho_agreeableness_finite']
 
     `
-      weight_5 <> 'NaN'::numeric
-      AND weight_5 <> 'Infinity'::numeric
-      AND weight_5 <> '-Infinity'::numeric
+      neuroticism <> 'NaN'::numeric
+      AND neuroticism <> 'Infinity'::numeric
+      AND neuroticism <> '-Infinity'::numeric
     `
-      [name: 'profile_psycho_weight_5_finite']
+      [name: 'profile_psycho_neuroticism_finite']
   }
 
   Note: 'recorded_at — время создания записи прохождения; не меняется при сохранении ответов и завершении. Отдельное время завершения не хранится. Готовый результат, отображаемый на карточке, обновляет profile.updated_at в той же транзакции; промежуточные ответы — нет. Завершённый результат неизменяем.'

@@ -50,11 +50,11 @@ entity "profile_psycho" as profile_psycho {
   test_id
   revision
   recorded_at
-  weight_1
-  weight_2
-  weight_3
-  weight_4
-  weight_5
+  openness
+  conscientiousness
+  extraversion
+  agreeableness
+  neuroticism
 }
 
 entity "user_answer" as user_answer {

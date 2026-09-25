@@ -219,11 +219,11 @@ ON UPDATE RESTRICT
 | `test_id`     | bigint      | NOT NULL, FK -> test.id             |
 | `revision`    | integer     | NOT NULL                            |
 | `recorded_at` | timestamptz | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
-| `weight_1`    | numeric     | NULL                                |
-| `weight_2`    | numeric     | NULL                                |
-| `weight_3`    | numeric     | NULL                                |
-| `weight_4`    | numeric     | NULL                                |
-| `weight_5`    | numeric     | NULL                                |
+| `openness`    | numeric     | NULL                                |
+| `conscientiousness`    | numeric     | NULL                                |
+| `extraversion`    | numeric     | NULL                                |
+| `agreeableness`    | numeric     | NULL                                |
+| `neuroticism`    | numeric     | NULL                                |
 
 UNIQUE:
 
@@ -243,28 +243,28 @@ isfinite(recorded_at)
 
 ```
 (
-  weight_1 IS NULL
-  AND weight_2 IS NULL
-  AND weight_3 IS NULL
-  AND weight_4 IS NULL
-  AND weight_5 IS NULL
+  openness IS NULL
+  AND conscientiousness IS NULL
+  AND extraversion IS NULL
+  AND agreeableness IS NULL
+  AND neuroticism IS NULL
 )
 OR
 (
-  weight_1 IS NOT NULL
-  AND weight_2 IS NOT NULL
-  AND weight_3 IS NOT NULL
-  AND weight_4 IS NOT NULL
-  AND weight_5 IS NOT NULL
+  openness IS NOT NULL
+  AND conscientiousness IS NOT NULL
+  AND extraversion IS NOT NULL
+  AND agreeableness IS NOT NULL
+  AND neuroticism IS NOT NULL
 )
 ```
 
-Каждый заданный вес должен быть конечным числом:
+Каждый заданный показатель (`score` в примере ниже) должен быть конечным числом:
 
 ```
-weight_N <> 'NaN'::numeric
-AND weight_N <> 'Infinity'::numeric
-AND weight_N <> '-Infinity'::numeric
+score <> 'NaN'::numeric
+AND score <> 'Infinity'::numeric
+AND score <> '-Infinity'::numeric
 ```
 
 FK:
