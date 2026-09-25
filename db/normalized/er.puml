@@ -27,6 +27,7 @@ entity "profile_version" as profile_version {
   recorded_at
   birth_date
   sex
+  dating_goal
   search_sex
   search_age_from
   search_age_to
