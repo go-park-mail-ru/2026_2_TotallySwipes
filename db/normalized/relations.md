@@ -107,6 +107,7 @@ ON UPDATE RESTRICT
 | `recorded_at`     | timestamptz | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
 | `birth_date`      | date        | NOT NULL                            |
 | `sex`             | text        | NOT NULL                            |
+| `dating_goal` | text | NULL (цель знакомства) |
 | `search_sex`      | text        | NOT NULL                            |
 | `search_age_from` | integer     | NOT NULL                            |
 | `search_age_to`   | integer     | NOT NULL                            |
