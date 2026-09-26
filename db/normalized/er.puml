@@ -28,6 +28,7 @@ entity "profile_version" as profile_version {
   birth_date
   sex
   dating_goal
+  about_me
   search_sex
   search_age_from
   search_age_to

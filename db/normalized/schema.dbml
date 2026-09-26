@@ -104,6 +104,7 @@ Table "profile_version" {
   birth_date date [not null]
   sex text [not null]
   dating_goal text [not null]
+  about_me text [null]
 
   search_sex text [not null]
   search_age_from integer [not null]

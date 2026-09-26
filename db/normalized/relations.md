@@ -108,6 +108,7 @@ ON UPDATE RESTRICT
 | `birth_date`      | date        | NOT NULL                            |
 | `sex`             | text        | NOT NULL                            |
 | `dating_goal`     | text        | NOT NULL                            |
+| `about_me` | text | NULL (описание анкеты) |
 | `search_sex`      | text        | NOT NULL                            |
 | `search_age_from` | integer     | NOT NULL                            |
 | `search_age_to`   | integer     | NOT NULL                            |
