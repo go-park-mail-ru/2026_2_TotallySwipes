@@ -196,6 +196,9 @@ func TestValidateSearchAge(t *testing.T) {
 		{99, nil},
 		{17, ErrSearchAgeTooLow},
 		{0, ErrSearchAgeTooLow},
+		{100, nil},
+		{101, ErrSearchAgeTooHigh},
+		{3000000000, ErrSearchAgeTooHigh},
 	}
 	for _, tt := range tests {
 		if got := ValidateSearchAge(tt.in); !errors.Is(got, tt.want) {

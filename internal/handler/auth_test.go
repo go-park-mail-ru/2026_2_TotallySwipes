@@ -255,7 +255,7 @@ func TestRegisterRequestValidate_SearchAgeRange(t *testing.T) {
 
 func TestRegisterRequestNormalize(t *testing.T) {
 	r := validRegister()
-	r.Email = "  alex@example.com \n"
+	r.Email = "  Alex@Example.COM \n"
 	r.Password = " qwerty123 "
 	r.Normalize()
 
@@ -267,6 +267,18 @@ func TestRegisterRequestNormalize(t *testing.T) {
 	}
 	if errs := r.Validate(); len(errs) != 0 {
 		t.Errorf("unexpected errors: %v", errs)
+	}
+}
+
+func TestLoginRequestNormalize(t *testing.T) {
+	r := LoginRequest{Email: " Alex@Example.COM ", Password: " Qwerty123 "}
+	r.Normalize()
+
+	if r.Email != "alex@example.com" {
+		t.Errorf("email = %q", r.Email)
+	}
+	if r.Password != " Qwerty123 " {
+		t.Errorf("password must not be changed, got %q", r.Password)
 	}
 }
 
@@ -353,15 +365,7 @@ func TestLogoutHandler(t *testing.T) {
 	if rec.Code != http.StatusNoContent || svc.logout != "ref" {
 		t.Fatalf("status = %d, logout(%q)", rec.Code, svc.logout)
 	}
-	cleared := 0
-	for _, c := range rec.Result().Cookies() {
-		if (c.Name == accessTokenCookie || c.Name == refreshTokenCookie) && c.MaxAge < 0 {
-			cleared++
-		}
-	}
-	if cleared != 2 {
-		t.Errorf("both session cookies must be cleared, got %v", rec.Result().Cookies())
-	}
+	assertSessionCleared(t, rec)
 
 	// Без cookie - всё равно 204, сервис не вызывается
 	svc = &fakeAuth{}
@@ -374,5 +378,19 @@ func TestLogoutHandler(t *testing.T) {
 		&http.Cookie{Name: refreshTokenCookie, Value: "ref"})
 	if rec.Code != http.StatusInternalServerError || errCode(resp) != codeInternalError {
 		t.Errorf("service error: status = %d", rec.Code)
+	}
+	assertSessionCleared(t, rec)
+}
+
+func assertSessionCleared(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	cleared := 0
+	for _, c := range rec.Result().Cookies() {
+		if (c.Name == accessTokenCookie || c.Name == refreshTokenCookie) && c.MaxAge < 0 {
+			cleared++
+		}
+	}
+	if cleared != 2 {
+		t.Errorf("both session cookies must be cleared, got %v", rec.Result().Cookies())
 	}
 }
