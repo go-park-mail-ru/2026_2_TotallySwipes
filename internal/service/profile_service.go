@@ -25,17 +25,27 @@ type ProfileRepository interface {
 	GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.Profile, *int64, error)
 }
 
-// Нужно реализовать
-type PhotoURLProvider interface {
-	GetURL(ctx context.Context, storageKey string) (string, error)
+// Нужно добавить в роутер fileserver добавить а то жопа
+type LocalPhotoURLProvider struct {
+	baseURL string
+}
+
+func NewLocalPhotoURLProvider(baseURL string) *LocalPhotoURLProvider {
+	return &LocalPhotoURLProvider{
+		baseURL: baseURL,
+	}
+}
+
+func (p *LocalPhotoURLProvider) GetURL(ctx context.Context, storageKey string) (string, error) {
+	return p.baseURL + "/uploads/" + storageKey, nil
 }
 
 type ProfileServiceImpl struct {
 	profileRepo ProfileRepository
-	media       PhotoURLProvider
+	media       LocalPhotoURLProvider
 }
 
-func NewProfileService(repo ProfileRepository, media PhotoURLProvider) *ProfileServiceImpl {
+func NewProfileService(repo ProfileRepository, media LocalPhotoURLProvider) *ProfileServiceImpl {
 	return &ProfileServiceImpl{profileRepo: repo, media: media}
 }
 
@@ -67,11 +77,6 @@ func (s *ProfileServiceImpl) GetNextFeed(ctx context.Context, userID int64, limi
 		}
 
 		for _, photo := range profile.Photos {
-
-			// реализвать minio provider или как то иначе
-			if s.media == nil {
-				return nil, fmt.Errorf("get feed: photo URL provider is nil")
-			}
 
 			url, err := s.media.GetURL(ctx, photo.StorageKey)
 
