@@ -2,25 +2,13 @@ package repository
 
 import (
 	"context"
-
 	"database/sql"
-	"dating-app/internal/model"
 	"errors"
 	"fmt"
 	"time"
+
+	"dating-app/internal/model"
 )
-
-type ProfileRepository interface {
-	GetByIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error)
-
-	CreateProfile(ctx context.Context, input *model.ProfileInput) (int64, error)
-
-	AddProfileVersion(ctx context.Context, profileID int64, version *model.ProfileVersionInput) error
-	AddProfilePsycho(ctx context.Context, profileID int64, psycho *model.ProfilePsychoInput) error
-
-	SetProfileTags(ctx context.Context, profileID int64, tagIDs []int64) error
-	AddProfilePhotos(ctx context.Context, profileID int64, photos []model.PhotoInput) error
-}
 
 type ProfileRepo struct {
 	db *sql.DB
@@ -221,6 +209,22 @@ func (r *ProfileRepo) AddProfilePhotos(ctx context.Context, profileID int64, pho
 	return nil
 }
 
+// IsProfileCompleted - профиль считается заполненным, когда пройден психотест
+func (r *ProfileRepo) IsProfileCompleted(ctx context.Context, userID int64) (bool, error) {
+	var completed bool
+	err := r.db.QueryRowContext(ctx,
+		`SELECT EXISTS (
+		    SELECT 1 FROM profile p
+		    JOIN profile_psycho ps ON ps.profile_id = p.id
+		    WHERE p.user_id = $1
+		)`, userID,
+	).Scan(&completed)
+	if err != nil {
+		return false, fmt.Errorf("is profile completed user_id=%d: %w", userID, err)
+	}
+	return completed, nil
+}
+
 // Хелперы ниже работают внутри чужой транзакции, их переиспользуют
 // и методы ProfileRepo, и регистрация (CreateUserWithProfile)
 
@@ -269,6 +273,10 @@ func insertProfilePsycho(ctx context.Context, tx *sql.Tx, profileID int64, p *mo
 		return fmt.Errorf("insert profile psycho profile_id=%d: %w", profileID, err)
 	}
 	return nil
+}
+
+func nullIfEmpty(s string) sql.NullString {
+	return sql.NullString{String: s, Valid: s != ""}
 }
 
 func insertProfileTag(ctx context.Context, tx *sql.Tx, profileID, tagID int64) error {
