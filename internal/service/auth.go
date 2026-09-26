@@ -13,6 +13,10 @@ import (
 
 var ErrInvalidCredentials = errors.New("invalid credentials")
 
+// ErrSessionNotOpened - аккаунт уже создан, но сессию открыть не удалось.
+// AuthResult при этом содержит UserID, Tokens пустые: клиенту надо залогиниться
+var ErrSessionNotOpened = errors.New("account created, session not opened")
+
 type AuthUserRepository interface {
 	// CreateUserWithProfile в одной транзакции создаёт пользователя и профиль
 	// Если email занят - model.ErrEmailAlreadyExists
@@ -98,7 +102,8 @@ func NewAuthService(users AuthUserRepository, profiles ProfileCompletionChecker,
 }
 
 // Register создаёт пользователя с профилем и сразу открывает сессию.
-// Ввод должен быть уже провалидирован
+// Ввод должен быть уже провалидирован. Если пользователь создан, а сессия
+// нет - возвращает ErrSessionNotOpened вместе с UserID
 func (s *AuthService) Register(ctx context.Context, in RegisterInput) (AuthResult, error) {
 	hash, err := s.hasher.Hash(in.Password)
 	if err != nil {
@@ -129,7 +134,7 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (AuthResul
 
 	tokens, err := s.openSession(ctx, userID)
 	if err != nil {
-		return AuthResult{}, err
+		return AuthResult{UserID: userID}, fmt.Errorf("%w: %w", ErrSessionNotOpened, err)
 	}
 
 	// Психотест при регистрации ещё не пройден

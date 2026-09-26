@@ -104,7 +104,7 @@ paths:
                     - gaming
       responses:
         '201':
-          description: Пользователь зарегистрирован, сессия открыта.
+          description: Пользователь зарегистрирован, сессия открыта. Если открыть сессию не удалось, cookies не выставляются - клиент должен отправить пользователя на логин.
           headers:
             Set-Cookie:
               $ref: '#/components/headers/SessionCookies'

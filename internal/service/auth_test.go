@@ -167,8 +167,12 @@ func TestRegister_Errors(t *testing.T) {
 
 	sessions := newFakeSessions()
 	sessions.createErr = errors.New("redis down")
-	if _, err := newTestService(&fakeUsers{createID: 1}, sessions, false).Register(ctx, validRegisterInput()); err == nil {
-		t.Error("session error must be returned")
+	res, err := newTestService(&fakeUsers{createID: 1}, sessions, false).Register(ctx, validRegisterInput())
+	if !errors.Is(err, ErrSessionNotOpened) {
+		t.Errorf("session error: err = %v, want ErrSessionNotOpened", err)
+	}
+	if res.UserID != 1 || res.Tokens != (Tokens{}) {
+		t.Errorf("session error: result = %+v, want UserID only", res)
 	}
 }
 

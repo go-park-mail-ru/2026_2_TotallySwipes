@@ -75,41 +75,18 @@ func (r *ProfileRepo) CreateProfile(ctx context.Context, input *model.ProfileInp
 	}
 	defer tx.Rollback()
 
-	var profileID int64
-
-	err = tx.QueryRowContext(ctx,
-		`INSERT INTO profile (user_id) VALUES ($1) RETURNING id`, input.UserID,
-	).Scan(&profileID)
-
+	profileID, err := insertProfile(ctx, tx, input.UserID)
 	if err != nil {
-		return 0, fmt.Errorf("create profile user_id=%d: insert profile: %w", input.UserID, err)
+		return 0, err
 	}
 
-	version := input.CurrentVersion
-	_, err = tx.ExecContext(ctx,
-		`INSERT INTO profile_version (
-		    profile_id, revision, birth_date, sex, search_sex, search_age_from, search_age_to, dating_goal, about_me
-		) VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8)`,
-		profileID, version.BirthDate, version.Sex, version.SearchSex,
-		version.SearchAgeFrom, version.SearchAgeTo, version.DatingGoal, version.AboutMe,
-	)
-
-	if err != nil {
-		return 0, fmt.Errorf("create profile id=%d: insert version: %w", profileID, err)
+	if err := insertProfileVersion(ctx, tx, profileID, &input.CurrentVersion); err != nil {
+		return 0, err
 	}
 
 	if psycho := input.CurrentPsycho; psycho != nil {
-		_, err = tx.ExecContext(ctx,
-			`INSERT INTO profile_psycho (
-			    profile_id, revision, test_id,
-			    openness, conscientiousness, extraversion, agreeableness, neuroticism
-			) VALUES ($1, 1, $2, $3, $4, $5, $6, $7)`,
-			profileID, psycho.TestID,
-			psycho.Openness, psycho.Conscientiousness, psycho.Extraversion, psycho.Agreeableness, psycho.Neuroticism,
-		)
-
-		if err != nil {
-			return 0, fmt.Errorf("create profile id=%d: insert psycho test: %w", profileID, err)
+		if err := insertProfilePsycho(ctx, tx, profileID, psycho); err != nil {
+			return 0, err
 		}
 	}
 
@@ -132,40 +109,16 @@ func (r *ProfileRepo) AddProfileVersion(ctx context.Context, profileID int64, in
 	}
 	defer tx.Rollback()
 
-	var tempID int64
-	err = tx.QueryRowContext(ctx, `SELECT id FROM profile WHERE id = $1 FOR UPDATE;`, profileID).Scan(&tempID)
-
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
+	if err := lockProfile(ctx, tx, profileID); err != nil {
+		return fmt.Errorf("add profile version: %w", err)
 	}
 
-	if err != nil {
-		return fmt.Errorf("add profile version profile_id=%d: lock profile: %w", profileID, err)
+	if err := insertProfileVersion(ctx, tx, profileID, input); err != nil {
+		return err
 	}
 
-	_, err = tx.ExecContext(ctx,
-		`INSERT INTO profile_version (
-		profile_id, revision, birth_date,
-		sex, search_sex, search_age_from, search_age_to, dating_goal, about_me)
-		SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6, $7, $8 FROM profile_version
-		WHERE profile_id = $1;`,
-		profileID,
-		input.BirthDate,
-		input.Sex,
-		input.SearchSex,
-		input.SearchAgeFrom,
-		input.SearchAgeTo,
-		input.DatingGoal,
-		input.AboutMe)
-
-	if err != nil {
-		return fmt.Errorf("add profile version profile_id=%d: insert: %w", profileID, err)
-	}
-
-	_, err = tx.ExecContext(ctx, `UPDATE profile SET updated_at = CURRENT_TIMESTAMP WHERE id = $1;`, profileID)
-
-	if err != nil {
-		return fmt.Errorf("add profile version profile_id=%d: update profile timestamp: %w", profileID, err)
+	if err := touchProfile(ctx, tx, profileID); err != nil {
+		return err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -187,39 +140,16 @@ func (r *ProfileRepo) AddProfilePsycho(ctx context.Context, profileID int64, inp
 	}
 	defer tx.Rollback()
 
-	var tempID int64
-	err = tx.QueryRowContext(ctx, `SELECT id FROM profile WHERE id = $1 FOR UPDATE`, profileID).Scan(&tempID)
-
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
+	if err := lockProfile(ctx, tx, profileID); err != nil {
+		return fmt.Errorf("add psycho test: %w", err)
 	}
 
-	if err != nil {
-		return fmt.Errorf("add psycho test profile_id=%d: lock profile: %w", profileID, err)
+	if err := insertProfilePsycho(ctx, tx, profileID, input); err != nil {
+		return err
 	}
 
-	_, err = tx.ExecContext(ctx,
-		`INSERT INTO profile_psycho (
-		profile_id, revision, test_id, openness,
-		conscientiousness, extraversion, agreeableness, neuroticism)
-		SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6, $7 FROM profile_psycho
-		WHERE profile_id = $1;`,
-		profileID,
-		input.TestID,
-		input.Openness,
-		input.Conscientiousness,
-		input.Extraversion,
-		input.Agreeableness,
-		input.Neuroticism)
-
-	if err != nil {
-		return fmt.Errorf("add psycho test profile_id=%d: insert: %w", profileID, err)
-	}
-
-	_, err = tx.ExecContext(ctx, `UPDATE profile SET updated_at = CURRENT_TIMESTAMP WHERE id = $1;`, profileID)
-
-	if err != nil {
-		return fmt.Errorf("add psycho test profile_id=%d: update profile timestamp: %w", profileID, err)
+	if err := touchProfile(ctx, tx, profileID); err != nil {
+		return err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -246,8 +176,8 @@ func (r *ProfileRepo) SetProfileTags(ctx context.Context, profileID int64, tagID
 	}
 
 	for _, id := range tagIDs {
-		if _, err = tx.ExecContext(ctx, `INSERT INTO profile_tag (profile_id, tag_id) VALUES ($1, $2)`, profileID, id); err != nil {
-			return fmt.Errorf("set profile tags profile_id=%d: insert tag_id=%d: %w", profileID, id, err)
+		if err := insertProfileTag(ctx, tx, profileID, id); err != nil {
+			return err
 		}
 	}
 
@@ -289,6 +219,79 @@ func (r *ProfileRepo) AddProfilePhotos(ctx context.Context, profileID int64, pho
 		return fmt.Errorf("AddProfilePhotos: commit transaction: %w", err)
 	}
 	return nil
+}
+
+// Хелперы ниже работают внутри чужой транзакции, их переиспользуют
+// и методы ProfileRepo, и регистрация (CreateUserWithProfile)
+
+func insertProfile(ctx context.Context, tx *sql.Tx, userID int64) (int64, error) {
+	var profileID int64
+	err := tx.QueryRowContext(ctx,
+		`INSERT INTO profile (user_id) VALUES ($1) RETURNING id`, userID,
+	).Scan(&profileID)
+	if err != nil {
+		return 0, fmt.Errorf("insert profile user_id=%d: %w", userID, err)
+	}
+	return profileID, nil
+}
+
+// insertProfileVersion добавляет следующую ревизию (для нового профиля - первую).
+// Пустой about_me хранится как NULL
+func insertProfileVersion(ctx context.Context, tx *sql.Tx, profileID int64, v *model.ProfileVersionInput) error {
+	_, err := tx.ExecContext(ctx,
+		`INSERT INTO profile_version (
+		    profile_id, revision, birth_date,
+		    sex, search_sex, search_age_from, search_age_to, dating_goal, about_me)
+		SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6, $7, $8 FROM profile_version
+		WHERE profile_id = $1`,
+		profileID, v.BirthDate, v.Sex, v.SearchSex,
+		v.SearchAgeFrom, v.SearchAgeTo, v.DatingGoal, nullIfEmpty(v.AboutMe),
+	)
+	if err != nil {
+		return fmt.Errorf("insert profile version profile_id=%d: %w", profileID, err)
+	}
+	return nil
+}
+
+// insertProfilePsycho добавляет следующую ревизию результатов психотеста
+// (для нового профиля - первую)
+func insertProfilePsycho(ctx context.Context, tx *sql.Tx, profileID int64, p *model.ProfilePsychoInput) error {
+	_, err := tx.ExecContext(ctx,
+		`INSERT INTO profile_psycho (
+		    profile_id, revision, test_id,
+		    openness, conscientiousness, extraversion, agreeableness, neuroticism)
+		SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6, $7 FROM profile_psycho
+		WHERE profile_id = $1`,
+		profileID, p.TestID,
+		p.Openness, p.Conscientiousness, p.Extraversion, p.Agreeableness, p.Neuroticism,
+	)
+	if err != nil {
+		return fmt.Errorf("insert profile psycho profile_id=%d: %w", profileID, err)
+	}
+	return nil
+}
+
+func insertProfileTag(ctx context.Context, tx *sql.Tx, profileID, tagID int64) error {
+	_, err := tx.ExecContext(ctx,
+		`INSERT INTO profile_tag (profile_id, tag_id) VALUES ($1, $2)`, profileID, tagID)
+	if err != nil {
+		return fmt.Errorf("insert profile tag profile_id=%d tag_id=%d: %w", profileID, tagID, err)
+	}
+	return nil
+}
+
+// upsertTag возвращает id тега по имени, создавая его при необходимости
+func upsertTag(ctx context.Context, tx *sql.Tx, name string) (int64, error) {
+	var tagID int64
+	err := tx.QueryRowContext(ctx,
+		`INSERT INTO tag (name) VALUES ($1)
+		 ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+		 RETURNING id`, name,
+	).Scan(&tagID)
+	if err != nil {
+		return 0, fmt.Errorf("upsert tag %q: %w", name, err)
+	}
+	return tagID, nil
 }
 
 func lockProfile(ctx context.Context, tx *sql.Tx, profileID int64) error {
@@ -344,13 +347,14 @@ func getProfileVersionAndPsycho(ctx context.Context, tx *sql.Tx, profileID int64
 	var psychoID, psychoProfileID, testID *int64
 	var recordedAt *time.Time
 	var psycho model.ProfilePsycho
+	var aboutMe sql.NullString
 
 	version := &profile.CurrentVersion
 
 	err := tx.QueryRowContext(ctx, query, profileID).Scan(
 		&profile.ID, &profile.UserID, &profile.CreatedAt, &profile.UpdatedAt,
 		&version.ID, &version.ProfileID, &version.BirthDate, &version.RecordedAt,
-		&version.Sex, &version.SearchSex, &version.SearchAgeFrom, &version.SearchAgeTo, &version.DatingGoal, &version.AboutMe,
+		&version.Sex, &version.SearchSex, &version.SearchAgeFrom, &version.SearchAgeTo, &version.DatingGoal, &aboutMe,
 		&psychoID, &psychoProfileID, &testID, &recordedAt,
 		&psycho.Openness, &psycho.Conscientiousness, &psycho.Extraversion, &psycho.Agreeableness, &psycho.Neuroticism,
 	)
@@ -362,6 +366,7 @@ func getProfileVersionAndPsycho(ctx context.Context, tx *sql.Tx, profileID int64
 	if err != nil {
 		return nil, fmt.Errorf("get current profile id=%d: %w", profileID, err)
 	}
+	version.AboutMe = aboutMe.String
 
 	if psychoID != nil {
 		psycho.ID = *psychoID

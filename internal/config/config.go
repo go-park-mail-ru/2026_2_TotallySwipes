@@ -27,7 +27,7 @@ type AuthConfig struct {
 	JWTSecret     string
 	JWTAccessTTL  time.Duration
 	JWTRefreshTTL time.Duration
-	CookieSecure bool
+	CookieSecure  bool
 }
 
 type HTTPConfig struct {

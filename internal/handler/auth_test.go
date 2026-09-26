@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -190,6 +191,24 @@ func TestRegisterHandler_EmailTaken(t *testing.T) {
 	}
 	if resp["error"].(map[string]any)["code"] != codeEmailAlreadyExists {
 		t.Errorf("resp = %v", resp)
+	}
+}
+
+func TestRegisterHandler_SessionNotOpened(t *testing.T) {
+	svc := &fakeAuth{
+		res: service.AuthResult{UserID: 12},
+		err: fmt.Errorf("%w: redis down", service.ErrSessionNotOpened),
+	}
+	rec, resp := doRegister(t, svc, validRegisterBody)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
+	}
+	if resp["user_id"] != float64(12) {
+		t.Errorf("body = %v", resp)
+	}
+	if cookies := rec.Result().Cookies(); len(cookies) != 0 {
+		t.Errorf("no session cookies expected, got %v", cookies)
 	}
 }
 
