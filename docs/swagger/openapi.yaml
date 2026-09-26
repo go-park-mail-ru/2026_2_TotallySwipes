@@ -47,6 +47,11 @@ paths:
                   description: Имя не должно состоять только из пробелов.
                   type: string
                   example: alex
+                about_me:
+                  type: string
+                  nullable: true
+                  description: Описание пользователя в анкете. Необязательное поле; отсутствие или null означает, что описание не задано.
+                  example: Люблю путешествия и настольные игры.
                 birth_date:
                   description: Реальная календарная дата в формате YYYY-MM-DD, не в будущем. На текущую дату пользователю должно исполниться 18 лет; проверяется сервером.
                   type: string
@@ -300,6 +305,7 @@ paths:
                         - user_id
                         - name
                         - age
+                        - about_me
                         - tags
                         - photos
                       properties:
@@ -315,6 +321,11 @@ paths:
                           description: Имя не должно состоять только из пробелов.
                           type: string
                           example: Аня
+                        about_me:
+                          type: string
+                          nullable: true
+                          description: Описание пользователя в анкете. null, если описание не задано.
+                          example: Люблю путешествия и настольные игры.
                         age:
                           minimum: 18
                           type: integer
