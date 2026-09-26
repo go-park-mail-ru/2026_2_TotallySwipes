@@ -373,6 +373,12 @@ func getProfileVersionAndPsycho(ctx context.Context, tx *sql.Tx, profileID int64
 		profile.CurrentPsycho = &psycho
 	}
 
+	err = tx.QueryRowContext(ctx, `SELECT name FROM "user" WHERE id = $1`, profile.UserID).Scan(&profile.Name)
+
+	if err != nil {
+		return nil, fmt.Errorf("get current profile id=%d: %w", profileID, err)
+	}
+
 	return &profile, nil
 }
 
