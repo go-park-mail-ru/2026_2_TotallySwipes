@@ -1,0 +1,800 @@
+// Полная физическая модель Totally Swipes.
+// PostgreSQL.
+
+Project totally_swipes {
+  database_type: 'PostgreSQL'
+  Note: '''
+  Физическая модель сервиса знакомств Totally Swipes.
+
+  История анкет хранится в profile_version.
+  История психологических тестирований — в profile_psycho и user_answer.
+
+  Файлы фотографий хранятся в S3-совместимом хранилище.
+  База данных хранит только уникальный storage_key.
+
+  Межтабличные проверки и правила неизменяемости истории
+  описаны в relations.md.
+  '''
+}
+
+
+/* =========================================================
+   USER
+   ========================================================= */
+
+Table "user" {
+  id bigint [pk, not null]
+  name text [not null]
+  email text [not null, unique]
+  password_hash text [not null]
+  birth_date date [not null]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  checks {
+    `id > 0` [name: 'user_id_positive']
+
+    `char_length(name) BETWEEN 1 AND 100
+      AND name ~ '[^[:space:]]'`
+      [name: 'user_name_valid']
+
+    `char_length(email) BETWEEN 1 AND 254
+      AND email !~ '[[:space:]]'`
+      [name: 'user_email_valid']
+
+    `password_hash ~ '[^[:space:]]'`
+      [name: 'user_password_hash_nonblank']
+
+    `isfinite(birth_date)`
+      [name: 'user_birth_date_finite']
+
+    `isfinite(created_at)`
+      [name: 'user_created_at_finite']
+
+    `isfinite(updated_at)`
+      [name: 'user_updated_at_finite']
+
+    `updated_at >= created_at`
+      [name: 'user_updated_not_before_created']
+  }
+}
+
+
+/* =========================================================
+   PROFILE
+   ========================================================= */
+
+Table "profile" {
+  id bigint [pk, not null]
+  user_id bigint [not null, unique]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  checks {
+    `id > 0`
+      [name: 'profile_id_positive']
+
+    `isfinite(created_at)`
+      [name: 'profile_created_at_finite']
+
+    `isfinite(updated_at)`
+      [name: 'profile_updated_at_finite']
+
+    `updated_at >= created_at`
+      [name: 'profile_updated_not_before_created']
+  }
+
+  Note: 'created_at — создание анкеты; updated_at — последнее изменение анкеты: новая версия или готовый результат теста, отображаемый на карточке. Обновляется в той же транзакции; начало теста и промежуточные ответы его не меняют.'
+}
+
+
+/* =========================================================
+   PROFILE VERSION
+   ========================================================= */
+
+Table "profile_version" {
+  id bigint [pk, not null]
+  profile_id bigint [not null]
+
+  revision integer [not null]
+  recorded_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  birth_date date [not null]
+  sex text [not null]
+  dating_goal text [not null]
+  about_me text [null]
+
+  search_sex text [not null]
+  search_age_from integer [not null]
+  search_age_to integer [not null]
+
+  indexes {
+    (profile_id, revision) [unique]
+  }
+
+  checks {
+    `id > 0`
+      [name: 'profile_version_id_positive']
+
+    `revision > 0`
+      [name: 'profile_version_revision_positive']
+
+    `isfinite(recorded_at)`
+      [name: 'profile_version_recorded_at_finite']
+
+    `isfinite(birth_date)`
+      [name: 'profile_version_birth_date_finite']
+
+    `sex IN ('male', 'female')`
+      [name: 'profile_version_sex_valid']
+
+    `search_sex IN ('male', 'female', 'all')`
+      [name: 'profile_version_search_sex_valid']
+
+    `search_age_from >= 18
+      AND search_age_to >= search_age_from`
+      [name: 'profile_version_search_age_valid']
+  }
+
+  Note: 'Неизменяемая версия анкеты. recorded_at — время создания версии. Отдельные created_at и updated_at не используются. Добавление версии обновляет profile.updated_at в той же транзакции.'
+}
+
+
+/* =========================================================
+   PSYCHO TEST
+   ========================================================= */
+
+Table "test" {
+  id bigint [pk, not null]
+  name text [not null]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  checks {
+    `id > 0`
+      [name: 'test_id_positive']
+
+    `char_length(name) BETWEEN 1 AND 200
+      AND name ~ '[^[:space:]]'`
+      [name: 'test_name_valid']
+
+    `isfinite(created_at)`
+      [name: 'test_created_at_finite']
+
+    `isfinite(updated_at)`
+      [name: 'test_updated_at_finite']
+
+    `updated_at >= created_at`
+      [name: 'test_updated_not_before_created']
+  }
+}
+
+
+Table "question" {
+  id bigint [pk, not null]
+  test_id bigint [not null]
+
+  operation_id integer [not null]
+  body text [not null]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  checks {
+    `id > 0`
+      [name: 'question_id_positive']
+
+    `operation_id > 0`
+      [name: 'question_operation_positive']
+
+    `char_length(body) BETWEEN 1 AND 2000
+      AND body ~ '[^[:space:]]'`
+      [name: 'question_body_valid']
+
+    `isfinite(created_at)`
+      [name: 'question_created_at_finite']
+
+    `isfinite(updated_at)`
+      [name: 'question_updated_at_finite']
+
+    `updated_at >= created_at`
+      [name: 'question_updated_not_before_created']
+  }
+}
+
+
+Table "profile_psycho" {
+  id bigint [pk, not null]
+
+  profile_id bigint [not null]
+  test_id bigint [not null]
+
+  revision integer [not null]
+
+  recorded_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  openness numeric [null]
+  conscientiousness numeric [null]
+  extraversion numeric [null]
+  agreeableness numeric [null]
+  neuroticism numeric [null]
+
+  indexes {
+    (profile_id, revision) [unique]
+  }
+
+  checks {
+    `id > 0`
+      [name: 'profile_psycho_id_positive']
+
+    `revision > 0`
+      [name: 'profile_psycho_revision_positive']
+
+    `isfinite(recorded_at)`
+      [name: 'profile_psycho_recorded_at_finite']
+
+    `
+    (
+      openness IS NULL
+      AND conscientiousness IS NULL
+      AND extraversion IS NULL
+      AND agreeableness IS NULL
+      AND neuroticism IS NULL
+    )
+    OR
+    (
+      openness IS NOT NULL
+      AND conscientiousness IS NOT NULL
+      AND extraversion IS NOT NULL
+      AND agreeableness IS NOT NULL
+      AND neuroticism IS NOT NULL
+    )
+    `
+      [name: 'profile_psycho_scores_complete']
+
+    `
+      openness <> 'NaN'::numeric
+      AND openness <> 'Infinity'::numeric
+      AND openness <> '-Infinity'::numeric
+    `
+      [name: 'profile_psycho_openness_finite']
+
+    `
+      conscientiousness <> 'NaN'::numeric
+      AND conscientiousness <> 'Infinity'::numeric
+      AND conscientiousness <> '-Infinity'::numeric
+    `
+      [name: 'profile_psycho_conscientiousness_finite']
+
+    `
+      extraversion <> 'NaN'::numeric
+      AND extraversion <> 'Infinity'::numeric
+      AND extraversion <> '-Infinity'::numeric
+    `
+      [name: 'profile_psycho_extraversion_finite']
+
+    `
+      agreeableness <> 'NaN'::numeric
+      AND agreeableness <> 'Infinity'::numeric
+      AND agreeableness <> '-Infinity'::numeric
+    `
+      [name: 'profile_psycho_agreeableness_finite']
+
+    `
+      neuroticism <> 'NaN'::numeric
+      AND neuroticism <> 'Infinity'::numeric
+      AND neuroticism <> '-Infinity'::numeric
+    `
+      [name: 'profile_psycho_neuroticism_finite']
+  }
+
+  Note: 'recorded_at — время создания записи прохождения; не меняется при сохранении ответов и завершении. Отдельное время завершения не хранится. Готовый результат, отображаемый на карточке, обновляет profile.updated_at в той же транзакции; промежуточные ответы — нет. Завершённый результат неизменяем.'
+}
+
+
+Table "user_answer" {
+  profile_psycho_id bigint [not null]
+  question_id bigint [not null]
+
+  answer_value smallint [not null]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (profile_psycho_id, question_id) [pk]
+  }
+
+  checks {
+    `answer_value BETWEEN 0 AND 7`
+      [name: 'user_answer_value_valid']
+
+    `isfinite(created_at)`
+      [name: 'user_answer_created_at_finite']
+
+    `isfinite(updated_at)`
+      [name: 'user_answer_updated_at_finite']
+
+    `updated_at >= created_at`
+      [name: 'user_answer_updated_not_before_created']
+  }
+}
+
+
+/* =========================================================
+   SUBSCRIPTIONS
+   ========================================================= */
+
+Table "plan" {
+  id bigint [pk, not null]
+  name text [not null, unique]
+
+  ads_enabled boolean [not null, default: true]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  checks {
+    `id > 0`
+      [name: 'plan_id_positive']
+
+    `char_length(name) BETWEEN 1 AND 100
+      AND name ~ '[^[:space:]]'`
+      [name: 'plan_name_valid']
+
+    `isfinite(created_at)`
+      [name: 'plan_created_at_finite']
+
+    `isfinite(updated_at)`
+      [name: 'plan_updated_at_finite']
+
+    `updated_at >= created_at`
+      [name: 'plan_updated_not_before_created']
+  }
+}
+
+
+Table "subscription" {
+  id bigint [pk, not null]
+
+  user_id bigint [not null]
+  plan_id bigint [not null]
+
+  starts_at timestamptz [not null]
+  ends_at timestamptz [not null]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  checks {
+    `id > 0`
+      [name: 'subscription_id_positive']
+
+    `isfinite(starts_at) AND isfinite(ends_at)`
+      [name: 'subscription_period_finite']
+
+    `ends_at > starts_at`
+      [name: 'subscription_period_valid']
+
+    `isfinite(created_at)`
+      [name: 'subscription_created_at_finite']
+
+    `isfinite(updated_at)`
+      [name: 'subscription_updated_at_finite']
+
+    `updated_at >= created_at`
+      [name: 'subscription_updated_not_before_created']
+  }
+}
+
+
+/* =========================================================
+   TAGS
+   ========================================================= */
+
+Table "tag" {
+  id bigint [pk, not null]
+  name text [not null, unique]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  checks {
+    `id > 0`
+      [name: 'tag_id_positive']
+
+    `char_length(name) BETWEEN 1 AND 100
+      AND name ~ '[^[:space:]]'`
+      [name: 'tag_name_valid']
+
+    `isfinite(created_at)`
+      [name: 'tag_created_at_finite']
+
+    `isfinite(updated_at)`
+      [name: 'tag_updated_at_finite']
+
+    `updated_at >= created_at`
+      [name: 'tag_updated_not_before_created']
+  }
+}
+
+
+Table "profile_tag" {
+  profile_id bigint [not null]
+  tag_id bigint [not null]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (profile_id, tag_id) [pk]
+  }
+
+  checks {
+    `isfinite(created_at)`
+      [name: 'profile_tag_created_at_finite']
+
+    `isfinite(updated_at)`
+      [name: 'profile_tag_updated_at_finite']
+
+    `updated_at >= created_at`
+      [name: 'profile_tag_updated_not_before_created']
+  }
+}
+
+
+/* =========================================================
+   REPORTS
+   ========================================================= */
+
+Table "report_type" {
+  id bigint [pk, not null]
+
+  name text [not null, unique]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  checks {
+    `id > 0`
+      [name: 'report_type_id_positive']
+
+    `char_length(name) BETWEEN 1 AND 100
+      AND name ~ '[^[:space:]]'`
+      [name: 'report_type_name_valid']
+
+    `isfinite(created_at)`
+      [name: 'report_type_created_at_finite']
+
+    `isfinite(updated_at)`
+      [name: 'report_type_updated_at_finite']
+
+    `updated_at >= created_at`
+      [name: 'report_type_updated_not_before_created']
+  }
+}
+
+
+Table "report" {
+  id bigint [pk, not null]
+
+  author_id bigint [not null]
+  reported_user_id bigint [not null]
+  report_type_id bigint [not null]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (author_id, reported_user_id, report_type_id) [unique]
+  }
+
+  checks {
+    `id > 0`
+      [name: 'report_id_positive']
+
+    `author_id <> reported_user_id`
+      [name: 'report_not_self']
+
+    `isfinite(created_at)`
+      [name: 'report_created_at_finite']
+
+    `isfinite(updated_at)`
+      [name: 'report_updated_at_finite']
+
+    `updated_at >= created_at`
+      [name: 'report_updated_not_before_created']
+  }
+}
+
+
+/* =========================================================
+   PHOTOS
+   ========================================================= */
+
+Table "photo" {
+  id bigint [pk, not null]
+
+  profile_id bigint [not null]
+
+  storage_key text [not null, unique]
+
+  position smallint [not null]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (profile_id, position) [unique]
+  }
+
+  checks {
+    `id > 0`
+      [name: 'photo_id_positive']
+
+    `storage_key ~ '[^[:space:]]'
+      AND char_length(storage_key) <= 1024`
+      [name: 'photo_storage_key_valid']
+
+    `position > 0`
+      [name: 'photo_position_positive']
+
+    `isfinite(created_at)`
+      [name: 'photo_created_at_finite']
+
+    `isfinite(updated_at)`
+      [name: 'photo_updated_at_finite']
+
+    `updated_at >= created_at`
+      [name: 'photo_updated_not_before_created']
+  }
+}
+
+
+/* =========================================================
+   PHOTO COMMENTS
+   ========================================================= */
+
+Table "photo_comment" {
+  id bigint [pk, not null]
+
+  author_id bigint [not null]
+  photo_id bigint [not null]
+
+  body text [not null]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  checks {
+    `id > 0`
+      [name: 'photo_comment_id_positive']
+
+    `char_length(body) BETWEEN 1 AND 2000
+      AND body ~ '[^[:space:]]'`
+      [name: 'photo_comment_body_valid']
+
+    `isfinite(created_at)`
+      [name: 'photo_comment_created_at_finite']
+
+    `isfinite(updated_at)`
+      [name: 'photo_comment_updated_at_finite']
+
+    `updated_at >= created_at`
+      [name: 'photo_comment_updated_not_before_created']
+  }
+}
+
+
+/* =========================================================
+   LIKES
+   ========================================================= */
+
+Table "profile_like" {
+  id bigint [pk, not null]
+
+  author_id bigint [not null]
+  profile_id bigint [not null]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (author_id, profile_id) [unique]
+  }
+
+  checks {
+    `id > 0`
+      [name: 'profile_like_id_positive']
+
+    `isfinite(created_at)`
+      [name: 'profile_like_created_at_finite']
+
+    `isfinite(updated_at)`
+      [name: 'profile_like_updated_at_finite']
+
+    `updated_at >= created_at`
+      [name: 'profile_like_updated_not_before_created']
+  }
+}
+
+
+/* =========================================================
+   MATCH
+   ========================================================= */
+
+Table "match" {
+  id bigint [pk, not null]
+
+  first_user_id bigint [not null]
+  second_user_id bigint [not null]
+
+  access_to_message boolean [not null, default: true]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (first_user_id, second_user_id) [unique]
+  }
+
+  checks {
+    `id > 0`
+      [name: 'match_id_positive']
+
+    `first_user_id < second_user_id`
+      [name: 'match_users_canonical_order']
+
+    `isfinite(created_at)`
+      [name: 'match_created_at_finite']
+
+    `isfinite(updated_at)`
+      [name: 'match_updated_at_finite']
+
+    `updated_at >= created_at`
+      [name: 'match_updated_not_before_created']
+  }
+}
+
+
+/* =========================================================
+   MESSAGE
+   ========================================================= */
+
+Table "message" {
+  id bigint [pk, not null]
+
+  match_id bigint [not null]
+  sender_id bigint [not null]
+
+  body text [not null]
+
+  created_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamptz [not null, default: `CURRENT_TIMESTAMP`]
+
+  checks {
+    `id > 0`
+      [name: 'message_id_positive']
+
+    `char_length(body) BETWEEN 1 AND 10000
+      AND body ~ '[^[:space:]]'`
+      [name: 'message_body_valid']
+
+    `isfinite(created_at)`
+      [name: 'message_created_at_finite']
+
+    `isfinite(updated_at)`
+      [name: 'message_updated_at_finite']
+
+    `updated_at >= created_at`
+      [name: 'message_updated_not_before_created']
+  }
+}
+
+
+/* =========================================================
+   REFERENCES
+   ========================================================= */
+
+Ref profile_owner:
+  "user".id - "profile".user_id
+  [delete: cascade, update: restrict]
+
+Ref version_owner:
+  "profile_version".profile_id > "profile".id
+  [delete: cascade, update: restrict]
+
+Ref psycho_owner:
+  "profile_psycho".profile_id > "profile".id
+  [delete: cascade, update: restrict]
+
+Ref psycho_test:
+  "profile_psycho".test_id > "test".id
+  [delete: restrict, update: restrict]
+
+Ref question_test:
+  "question".test_id > "test".id
+  [delete: restrict, update: restrict]
+
+Ref answer_result:
+  "user_answer".profile_psycho_id > "profile_psycho".id
+  [delete: cascade, update: restrict]
+
+Ref answer_question:
+  "user_answer".question_id > "question".id
+  [delete: restrict, update: restrict]
+
+
+Ref subscription_user:
+  "subscription".user_id > "user".id
+  [delete: cascade, update: restrict]
+
+Ref subscription_plan:
+  "subscription".plan_id > "plan".id
+  [delete: restrict, update: restrict]
+
+
+Ref profile_tag_profile:
+  "profile_tag".profile_id > "profile".id
+  [delete: cascade, update: restrict]
+
+Ref profile_tag_tag:
+  "profile_tag".tag_id > "tag".id
+  [delete: restrict, update: restrict]
+
+
+Ref report_author:
+  "report".author_id > "user".id
+  [delete: cascade, update: restrict]
+
+Ref report_target:
+  "report".reported_user_id > "user".id
+  [delete: cascade, update: restrict]
+
+Ref report_type_ref:
+  "report".report_type_id > "report_type".id
+  [delete: restrict, update: restrict]
+
+
+Ref photo_profile:
+  "photo".profile_id > "profile".id
+  [delete: cascade, update: restrict]
+
+
+Ref photo_comment_author:
+  "photo_comment".author_id > "user".id
+  [delete: cascade, update: restrict]
+
+Ref photo_comment_photo:
+  "photo_comment".photo_id > "photo".id
+  [delete: cascade, update: restrict]
+
+
+Ref profile_like_author:
+  "profile_like".author_id > "user".id
+  [delete: cascade, update: restrict]
+
+Ref profile_like_profile:
+  "profile_like".profile_id > "profile".id
+  [delete: cascade, update: restrict]
+
+
+Ref match_first_user:
+  "match".first_user_id > "user".id
+  [delete: cascade, update: restrict]
+
+Ref match_second_user:
+  "match".second_user_id > "user".id
+  [delete: cascade, update: restrict]
+
+
+Ref message_match:
+  "message".match_id > "match".id
+  [delete: cascade, update: restrict]
+
+Ref message_sender:
+  "message".sender_id > "user".id
+  [delete: cascade, update: restrict]
