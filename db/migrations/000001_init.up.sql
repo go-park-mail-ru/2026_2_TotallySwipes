@@ -37,6 +37,7 @@ CREATE TABLE "profile_version" (
     "birth_date" DATE NOT NULL,
     "sex" TEXT NOT NULL,
     "dating_goal" TEXT NOT NULL,
+    "about_me" TEXT,
     "search_sex" TEXT NOT NULL,
     "search_age_from" INTEGER NOT NULL,
     "search_age_to" INTEGER NOT NULL,
