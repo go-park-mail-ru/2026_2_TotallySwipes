@@ -177,6 +177,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, codeValidationError, "Некорректные данные",
 			map[string]string{"password": validate.ErrPasswordTooLong.Error()})
 		return
+	case errors.Is(err, service.ErrSessionNotOpened):
+		// Аккаунт уже есть, но выдать токены не получилось
+		slog.Error("register user: session not opened", "user_id", res.UserID, "error", err)
+		writeJSON(w, http.StatusCreated, AuthResponse{
+			UserID:           res.UserID,
+			ProfileCompleted: res.ProfileCompleted,
+		})
+		return
 	case err != nil:
 		slog.Error("register user", "error", err)
 		writeError(w, http.StatusInternalServerError, codeInternalError, msgInternalError, nil)
@@ -199,8 +207,7 @@ func (r *LoginRequest) Normalize() {
 	r.Email = normalizeEmail(r.Email)
 }
 
-// normalizeEmail нужен, чтобы Alex@Mail.ru и alex@mail.ru были одним аккаунтом:
-// в БД email сравнивается с учётом регистра
+// normalizeEmail приводит строку к lower case и тримит ее
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }

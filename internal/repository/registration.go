@@ -43,40 +43,22 @@ func (r *UserRepo) CreateUserWithProfile(ctx context.Context, user *model.UserIn
 		return 0, fmt.Errorf("create user: insert user: %w", err)
 	}
 
-	var profileID int64
-	err = tx.QueryRowContext(ctx,
-		`INSERT INTO profile (user_id) VALUES ($1) RETURNING id`, userID,
-	).Scan(&profileID)
+	profileID, err := insertProfile(ctx, tx, userID)
 	if err != nil {
-		return 0, fmt.Errorf("create user id=%d: insert profile: %w", userID, err)
+		return 0, fmt.Errorf("create user id=%d: %w", userID, err)
 	}
 
-	_, err = tx.ExecContext(ctx,
-		`INSERT INTO profile_version (
-		    profile_id, revision, birth_date, sex, search_sex, search_age_from, search_age_to, dating_goal, about_me
-		) VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8)`,
-		profileID, version.BirthDate, version.Sex, version.SearchSex,
-		version.SearchAgeFrom, version.SearchAgeTo, version.DatingGoal, nullIfEmpty(version.AboutMe),
-	)
-	if err != nil {
-		return 0, fmt.Errorf("create user id=%d: insert profile version: %w", userID, err)
+	if err := insertProfileVersion(ctx, tx, profileID, version); err != nil {
+		return 0, fmt.Errorf("create user id=%d: %w", userID, err)
 	}
 
 	for _, name := range tags {
-		var tagID int64
-		err = tx.QueryRowContext(ctx,
-			`INSERT INTO tag (name) VALUES ($1)
-			 ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
-			 RETURNING id`, name,
-		).Scan(&tagID)
+		tagID, err := upsertTag(ctx, tx, name)
 		if err != nil {
-			return 0, fmt.Errorf("create user id=%d: upsert tag %q: %w", userID, name, err)
+			return 0, fmt.Errorf("create user id=%d: %w", userID, err)
 		}
-
-		if _, err = tx.ExecContext(ctx,
-			`INSERT INTO profile_tag (profile_id, tag_id) VALUES ($1, $2)`, profileID, tagID,
-		); err != nil {
-			return 0, fmt.Errorf("create user id=%d: insert profile tag %q: %w", userID, name, err)
+		if err := insertProfileTag(ctx, tx, profileID, tagID); err != nil {
+			return 0, fmt.Errorf("create user id=%d: %w", userID, err)
 		}
 	}
 
