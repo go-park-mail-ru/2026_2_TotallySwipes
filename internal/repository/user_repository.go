@@ -2,58 +2,39 @@ package repository
 
 import (
 	"context"
+
 	"database/sql"
+	"dating-app/internal/model"
 	"errors"
 	"fmt"
-	"time"
 )
 
 var (
 	ErrNotFound = fmt.Errorf("not found")
 )
 
-type User struct {
-	ID           int64
-	Name         string
-	Email        string
-	PasswordHash string
-	BirthDate    time.Time
-}
-
-type UserInput struct {
-	Name         string
-	Email        string
-	PasswordHash string
-	BirthDate    time.Time
-}
-
-type UpdateUserInput struct {
-	Name         string
-	Email        string
-	PasswordHash string
-	BirthDate    time.Time
-}
-
 type UserRepository interface {
-	CreateUser(ctx context.Context, tx *sql.Tx, user *User) error
-	GetUserByEmail(ctx context.Context, email string) (*User, error)
-	GetUserByID(ctx context.Context, id int64) (*User, error)
+	CreateUser(ctx context.Context, input *model.UserInput) error
+	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
+	GetUserByID(ctx context.Context, id int64) (*model.User, error)
 
-	UpdateUser(ctx context.Context, tx *sql.Tx, id int64, input *UpdateUserInput) (*User, error)
-	DeleteUserByID(ctx context.Context, tx *sql.Tx, id int64) error
+	UpdateUser(ctx context.Context, id int64, input *model.UpdateUserInput) (*model.User, error)
+	DeleteUserByID(ctx context.Context, id int64) error
 }
 
 type UserRepo struct {
 	db *sql.DB
 }
 
+var _ UserRepository = (*UserRepo)(nil)
+
 func NewUserRepository(db *sql.DB) *UserRepo {
 	return &UserRepo{db: db}
 }
 
-func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*User, error) {
+func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*model.User, error) {
 
-	user := User{}
+	user := model.User{}
 
 	err := r.db.QueryRowContext(ctx,
 		`SELECT id, name, email, password_hash, birth_date FROM "user" WHERE id = $1`,
@@ -70,9 +51,9 @@ func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*User, error) {
 	return &user, nil
 }
 
-func (r *UserRepo) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+func (r *UserRepo) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
 
-	user := User{}
+	user := model.User{}
 
 	err := r.db.QueryRowContext(ctx,
 		`SELECT id, name, email, password_hash, birth_date FROM "user" WHERE email = $1`,
@@ -85,18 +66,20 @@ func (r *UserRepo) GetUserByEmail(ctx context.Context, email string) (*User, err
 	return &user, nil
 }
 
-func (r *UserRepo) CreateUser(ctx context.Context, tx *sql.Tx, input *UserInput) error {
-
-	if tx == nil {
-		return fmt.Errorf("create user: transaction is nil")
-	}
+func (r *UserRepo) CreateUser(ctx context.Context, input *model.UserInput) error {
 
 	if input == nil {
 		return fmt.Errorf("create user: input is nil")
 	}
 
-	_, err := tx.ExecContext(ctx,
-		`INSERT INTO "user" (id, name, email, password_hash, birth_date) VALUES ($1, $2, $3, $4, $5)`,
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("CreateUser: begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx,
+		`INSERT INTO "user" (name, email, password_hash, birth_date) VALUES ($1, $2, $3, $4)`,
 		input.Name,
 		input.Email,
 		input.PasswordHash,
@@ -107,22 +90,27 @@ func (r *UserRepo) CreateUser(ctx context.Context, tx *sql.Tx, input *UserInput)
 		return fmt.Errorf("add user: %w", err)
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("CreateUser: commit transaction: %w", err)
+	}
 	return nil
 }
 
-func (r *UserRepo) UpdateUser(ctx context.Context, tx *sql.Tx, id int64, input *UpdateUserInput) (*User, error) {
-
-	if tx == nil {
-		return nil, fmt.Errorf("update user: transaction is nil")
-	}
+func (r *UserRepo) UpdateUser(ctx context.Context, id int64, input *model.UpdateUserInput) (*model.User, error) {
 
 	if input == nil {
 		return nil, fmt.Errorf("update user: input is nil")
 	}
 
-	var user User
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("UpdateUser: begin transaction: %w", err)
+	}
+	defer tx.Rollback()
 
-	err := tx.QueryRowContext(ctx,
+	var user model.User
+
+	err = tx.QueryRowContext(ctx,
 		`UPDATE "user"
 		SET name = $1, email = $2, password_hash = $3, birth_date = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5 RETURNING id, name, email, password_hash, birth_date`,
 		input.Name,
@@ -140,14 +128,19 @@ func (r *UserRepo) UpdateUser(ctx context.Context, tx *sql.Tx, id int64, input *
 		return nil, fmt.Errorf("update user: %w", err)
 	}
 
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("UpdateUser: commit transaction: %w", err)
+	}
 	return &user, nil
 }
 
-func (r *UserRepo) DeleteUserByID(ctx context.Context, tx *sql.Tx, id int64) error {
+func (r *UserRepo) DeleteUserByID(ctx context.Context, id int64) error {
 
-	if tx == nil {
-		return fmt.Errorf("delete user id=%d: transaction is nil", id)
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("DeleteUserByID: begin transaction: %w", err)
 	}
+	defer tx.Rollback()
 
 	res, err := tx.ExecContext(ctx, `DELETE FROM "user" WHERE id = $1`, id)
 
@@ -165,5 +158,8 @@ func (r *UserRepo) DeleteUserByID(ctx context.Context, tx *sql.Tx, id int64) err
 		return ErrNotFound
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("DeleteUserByID: commit transaction: %w", err)
+	}
 	return nil
 }

@@ -2,138 +2,35 @@ package repository
 
 import (
 	"context"
+
 	"database/sql"
+	"dating-app/internal/model"
 	"errors"
 	"fmt"
 	"time"
 )
 
-type DatingGoal string
-
-const (
-	DatingGoalRelationship DatingGoal = "relationship"
-	DatingGoalFriendship   DatingGoal = "friendship"
-	DatingGoalCasual       DatingGoal = "casual"
-)
-
-type Sex string
-
-const (
-	SexMale   Sex = "male"
-	SexFemale Sex = "female"
-)
-
-type SearchSex string
-
-const (
-	SearchSexMale   SearchSex = "male"
-	SearchSexFemale SearchSex = "female"
-	SearchSexAll    SearchSex = "all"
-)
-
-type Tag struct {
-	ID   int64
-	Name string
-}
-
-type PhotoInput struct {
-	StorageKey string
-	Position   int
-}
-
-type Photo struct {
-	ID         int64
-	StorageKey string
-	Position   int
-}
-
-type Profile struct {
-	ID             int64
-	UserID         int64
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	CurrentVersion ProfileVersion
-	CurrentPsycho  *ProfilePsycho
-
-	Tags   []Tag
-	Photos []Photo
-}
-
-type ProfileInput struct {
-	UserID         int64
-	CurrentVersion ProfileVersionInput
-	CurrentPsycho  *ProfilePsychoInput
-}
-
-type ProfileVersion struct {
-	ID            int64
-	ProfileID     int64
-	BirthDate     time.Time
-	DatingGoal    DatingGoal
-	RecordedAt    time.Time
-	Sex           Sex
-	SearchSex     SearchSex
-	SearchAgeFrom int
-	SearchAgeTo   int
-}
-
-type ProfileVersionInput struct {
-	ProfileID     int64
-	BirthDate     time.Time
-	DatingGoal    DatingGoal
-	RecordedAt    time.Time
-	Sex           Sex
-	SearchSex     SearchSex
-	SearchAgeFrom int
-	SearchAgeTo   int
-}
-
-type ProfilePsycho struct {
-	ID                int64
-	ProfileID         int64
-	TestID            int64
-	RecordedAt        time.Time
-	Openness          *float64
-	Conscientiousness *float64
-	Extraversion      *float64
-	Agreeableness     *float64
-	Neuroticism       *float64
-}
-
-type ProfilePsychoInput struct {
-	ProfileID         int64
-	TestID            int64
-	RecordedAt        time.Time
-	Openness          *float64
-	Conscientiousness *float64
-	Extraversion      *float64
-	Agreeableness     *float64
-	Neuroticism       *float64
-}
-
 type ProfileRepository interface {
-	GetByIDCurrentProfile(ctx context.Context, id int64) (*Profile, error)
+	GetByIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error)
 
-	CreateProfile(ctx context.Context, tx *sql.Tx, input *ProfileInput) (int64, error)
+	CreateProfile(ctx context.Context, input *model.ProfileInput) (int64, error)
 
-	AddProfileVersion(ctx context.Context, tx *sql.Tx, profileID int64, version *ProfileVersionInput) error
-	AddProfilePsycho(ctx context.Context, tx *sql.Tx, profileID int64, psycho *ProfilePsychoInput) error
+	AddProfileVersion(ctx context.Context, profileID int64, version *model.ProfileVersionInput) error
+	AddProfilePsycho(ctx context.Context, profileID int64, psycho *model.ProfilePsychoInput) error
 
-	SetProfileTags(ctx context.Context, tx *sql.Tx, profileID int64, tagIDs []int64) error
-	AddProfilePhotos(ctx context.Context, tx *sql.Tx, profileID int64, photos []PhotoInput) error
+	SetProfileTags(ctx context.Context, profileID int64, tagIDs []int64) error
+	AddProfilePhotos(ctx context.Context, profileID int64, photos []model.PhotoInput) error
 }
 
 type ProfileRepo struct {
 	db *sql.DB
 }
 
-var _ ProfileRepository = (*ProfileRepo)(nil)
-
 func NewProfileRepository(db *sql.DB) *ProfileRepo {
 	return &ProfileRepo{db: db}
 }
 
-func (r *ProfileRepo) GetByIDCurrentProfile(ctx context.Context, id int64) (*Profile, error) {
+func (r *ProfileRepo) GetByIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error) {
 
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 
@@ -162,26 +59,25 @@ func (r *ProfileRepo) GetByIDCurrentProfile(ctx context.Context, id int64) (*Pro
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("get current profile id=%d: commit read: %w", id, err)
 	}
+
 	return profile, nil
 }
 
-func (r *ProfileRepo) CreateProfile(ctx context.Context, tx *sql.Tx, input *ProfileInput) (int64, error) {
-
-	if tx == nil {
-		return 0, fmt.Errorf("create profile: transaction is nil")
-	}
+func (r *ProfileRepo) CreateProfile(ctx context.Context, input *model.ProfileInput) (int64, error) {
 
 	if input == nil {
 		return 0, fmt.Errorf("create profile: input is nil")
 	}
 
-	if input.CurrentPsycho != nil && input.CurrentPsycho.TestID <= 0 {
-		return 0, fmt.Errorf("create profile: test_id must be positive")
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("CreateProfile: begin transaction: %w", err)
 	}
+	defer tx.Rollback()
 
 	var profileID int64
 
-	err := tx.QueryRowContext(ctx,
+	err = tx.QueryRowContext(ctx,
 		`INSERT INTO profile (user_id) VALUES ($1) RETURNING id`, input.UserID,
 	).Scan(&profileID)
 
@@ -192,10 +88,10 @@ func (r *ProfileRepo) CreateProfile(ctx context.Context, tx *sql.Tx, input *Prof
 	version := input.CurrentVersion
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO profile_version (
-		    profile_id, revision, birth_date, sex, search_sex, search_age_from, search_age_to, dating_goal
-		) VALUES ($1, 1, $2, $3, $4, $5, $6, $7)`,
+		    profile_id, revision, birth_date, sex, search_sex, search_age_from, search_age_to, dating_goal, aboutme
+		) VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8)`,
 		profileID, version.BirthDate, version.Sex, version.SearchSex,
-		version.SearchAgeFrom, version.SearchAgeTo, version.DatingGoal,
+		version.SearchAgeFrom, version.SearchAgeTo, version.DatingGoal, version.AboutMe,
 	)
 
 	if err != nil {
@@ -217,21 +113,27 @@ func (r *ProfileRepo) CreateProfile(ctx context.Context, tx *sql.Tx, input *Prof
 		}
 	}
 
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("CreateProfile: commit transaction: %w", err)
+	}
+
 	return profileID, nil
 }
 
-func (r *ProfileRepo) AddProfileVersion(ctx context.Context, tx *sql.Tx, profileID int64, input *ProfileVersionInput) error {
+func (r *ProfileRepo) AddProfileVersion(ctx context.Context, profileID int64, input *model.ProfileVersionInput) error {
 
 	if input == nil {
 		return fmt.Errorf("add profile version: input is nil")
 	}
 
-	if tx == nil {
-		return fmt.Errorf("write profile: transaction is nil")
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("AddProfileVersion: begin transaction: %w", err)
 	}
+	defer tx.Rollback()
 
 	var tempID int64
-	err := tx.QueryRowContext(ctx, `SELECT id FROM profile WHERE id = $1 FOR UPDATE;`, profileID).Scan(&tempID)
+	err = tx.QueryRowContext(ctx, `SELECT id FROM profile WHERE id = $1 FOR UPDATE;`, profileID).Scan(&tempID)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
@@ -244,8 +146,8 @@ func (r *ProfileRepo) AddProfileVersion(ctx context.Context, tx *sql.Tx, profile
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO profile_version (
 		profile_id, revision, birth_date,
-		sex, search_sex, search_age_from, search_age_to, dating_goal)
-		SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6, $7 FROM profile_version
+		sex, search_sex, search_age_from, search_age_to, dating_goal, aboutme)
+		SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6, $7, $8 FROM profile_version
 		WHERE profile_id = $1;`,
 		profileID,
 		input.BirthDate,
@@ -253,7 +155,8 @@ func (r *ProfileRepo) AddProfileVersion(ctx context.Context, tx *sql.Tx, profile
 		input.SearchSex,
 		input.SearchAgeFrom,
 		input.SearchAgeTo,
-		input.DatingGoal)
+		input.DatingGoal,
+		input.AboutMe)
 
 	if err != nil {
 		return fmt.Errorf("add profile version profile_id=%d: insert: %w", profileID, err)
@@ -265,25 +168,27 @@ func (r *ProfileRepo) AddProfileVersion(ctx context.Context, tx *sql.Tx, profile
 		return fmt.Errorf("add profile version profile_id=%d: update profile timestamp: %w", profileID, err)
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("AddProfileVersion: commit transaction: %w", err)
+	}
+
 	return nil
 }
 
-func (r *ProfileRepo) AddProfilePsycho(ctx context.Context, tx *sql.Tx, profileID int64, input *ProfilePsychoInput) error {
+func (r *ProfileRepo) AddProfilePsycho(ctx context.Context, profileID int64, input *model.ProfilePsychoInput) error {
 
 	if input == nil {
 		return fmt.Errorf("add psycho test: input is nil")
 	}
 
-	if input.Openness == nil || input.Conscientiousness == nil || input.Extraversion == nil || input.Agreeableness == nil || input.Neuroticism == nil {
-		return fmt.Errorf("add psycho test profile_id=%d: all five Big Five scores are required", profileID)
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("AddProfilePsycho: begin transaction: %w", err)
 	}
-
-	if tx == nil {
-		return fmt.Errorf("write profile: transaction is nil")
-	}
+	defer tx.Rollback()
 
 	var tempID int64
-	err := tx.QueryRowContext(ctx, `SELECT id FROM profile WHERE id = $1 FOR UPDATE`, profileID).Scan(&tempID)
+	err = tx.QueryRowContext(ctx, `SELECT id FROM profile WHERE id = $1 FOR UPDATE`, profileID).Scan(&tempID)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
@@ -317,68 +222,73 @@ func (r *ProfileRepo) AddProfilePsycho(ctx context.Context, tx *sql.Tx, profileI
 		return fmt.Errorf("add psycho test profile_id=%d: update profile timestamp: %w", profileID, err)
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("AddProfilePsycho: commit transaction: %w", err)
+	}
+
 	return nil
 }
 
-func (r *ProfileRepo) SetProfileTags(ctx context.Context, tx *sql.Tx, profileID int64, tagIDs []int64) error {
+func (r *ProfileRepo) SetProfileTags(ctx context.Context, profileID int64, tagIDs []int64) error {
 
-	if tx == nil {
-		return fmt.Errorf("set profile tags: transaction is nil")
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("SetProfileTags: begin transaction: %w", err)
 	}
-
-	seen := make(map[int64]bool, len(tagIDs))
-	for _, id := range tagIDs {
-		if id <= 0 || seen[id] {
-			return fmt.Errorf("set profile tags: tag IDs must be positive and unique")
-		}
-		seen[id] = true
-	}
+	defer tx.Rollback()
 
 	if err := lockProfile(ctx, tx, profileID); err != nil {
 		return fmt.Errorf("set profile tags: %w", err)
 	}
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM profile_tag WHERE profile_id = $1`, profileID); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM profile_tag WHERE profile_id = $1`, profileID); err != nil {
 		return fmt.Errorf("set profile tags profile_id=%d: delete: %w", profileID, err)
 	}
 
 	for _, id := range tagIDs {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO profile_tag (profile_id, tag_id) VALUES ($1, $2)`, profileID, id); err != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO profile_tag (profile_id, tag_id) VALUES ($1, $2)`, profileID, id); err != nil {
 			return fmt.Errorf("set profile tags profile_id=%d: insert tag_id=%d: %w", profileID, id, err)
 		}
 	}
 
-	return touchProfile(ctx, tx, profileID)
+	if err := touchProfile(ctx, tx, profileID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("SetProfileTags: commit transaction: %w", err)
+	}
+	return nil
 }
 
-func (r *ProfileRepo) AddProfilePhotos(ctx context.Context, tx *sql.Tx, profileID int64, photos []PhotoInput) error {
+func (r *ProfileRepo) AddProfilePhotos(ctx context.Context, profileID int64, photos []model.PhotoInput) error {
 
 	if len(photos) == 0 {
 		return nil
 	}
 
-	if tx == nil {
-		return fmt.Errorf("add profile photos: transaction is nil")
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("AddProfilePhotos: begin transaction: %w", err)
 	}
-
-	for _, photo := range photos {
-
-		if photo.StorageKey == "" || photo.Position <= 0 || photo.Position > 10 {
-			return fmt.Errorf("add profile photos: expected non empty storage key and position between 1 and 10")
-		}
-	}
+	defer tx.Rollback()
 
 	if err := lockProfile(ctx, tx, profileID); err != nil {
 		return fmt.Errorf("add profile photos: %w", err)
 	}
 
 	for _, photo := range photos {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO photo (profile_id, storage_key, position) VALUES ($1, $2, $3)`, profileID, photo.StorageKey, photo.Position); err != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO photo (profile_id, storage_key, position) VALUES ($1, $2, $3)`, profileID, photo.StorageKey, photo.Position); err != nil {
 			return fmt.Errorf("add profile photos profile_id=%d: insert: %w", profileID, err)
 		}
 	}
 
-	return touchProfile(ctx, tx, profileID)
+	if err := touchProfile(ctx, tx, profileID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("AddProfilePhotos: commit transaction: %w", err)
+	}
+	return nil
 }
 
 func lockProfile(ctx context.Context, tx *sql.Tx, profileID int64) error {
@@ -404,17 +314,17 @@ func touchProfile(ctx context.Context, tx *sql.Tx, profileID int64) error {
 	return nil
 }
 
-func getProfileVersionAndPsycho(ctx context.Context, tx *sql.Tx, profileID int64) (*Profile, error) {
+func getProfileVersionAndPsycho(ctx context.Context, tx *sql.Tx, profileID int64) (*model.Profile, error) {
 	const query = `
 		SELECT p.id, p.user_id, p.created_at, p.updated_at,
 		       v.id, v.profile_id, v.birth_date, v.recorded_at,
-		       v.sex, v.search_sex, v.search_age_from, v.search_age_to, v.dating_goal,
+		       v.sex, v.search_sex, v.search_age_from, v.search_age_to, v.dating_goal, v.aboutme,
 		       ps.id, ps.profile_id, ps.test_id, ps.recorded_at,
 		       ps.openness, ps.conscientiousness, ps.extraversion, ps.agreeableness, ps.neuroticism
 		FROM profile AS p
 		JOIN LATERAL (
 		    SELECT id, profile_id, birth_date, recorded_at,
-		           sex, search_sex, search_age_from, search_age_to, dating_goal
+		           sex, search_sex, search_age_from, search_age_to, dating_goal, aboutme
 		    FROM profile_version
 		    WHERE profile_id = p.id
 		    ORDER BY revision DESC
@@ -430,17 +340,17 @@ func getProfileVersionAndPsycho(ctx context.Context, tx *sql.Tx, profileID int64
 		) AS ps ON true
 		WHERE p.id = $1`
 
-	var profile Profile
+	var profile model.Profile
 	var psychoID, psychoProfileID, testID *int64
 	var recordedAt *time.Time
-	var psycho ProfilePsycho
+	var psycho model.ProfilePsycho
 
 	version := &profile.CurrentVersion
 
 	err := tx.QueryRowContext(ctx, query, profileID).Scan(
 		&profile.ID, &profile.UserID, &profile.CreatedAt, &profile.UpdatedAt,
 		&version.ID, &version.ProfileID, &version.BirthDate, &version.RecordedAt,
-		&version.Sex, &version.SearchSex, &version.SearchAgeFrom, &version.SearchAgeTo, &version.DatingGoal,
+		&version.Sex, &version.SearchSex, &version.SearchAgeFrom, &version.SearchAgeTo, &version.DatingGoal, &version.AboutMe,
 		&psychoID, &psychoProfileID, &testID, &recordedAt,
 		&psycho.Openness, &psycho.Conscientiousness, &psycho.Extraversion, &psycho.Agreeableness, &psycho.Neuroticism,
 	)
@@ -464,7 +374,7 @@ func getProfileVersionAndPsycho(ctx context.Context, tx *sql.Tx, profileID int64
 	return &profile, nil
 }
 
-func getProfileTags(ctx context.Context, tx *sql.Tx, profileID int64) ([]Tag, error) {
+func getProfileTags(ctx context.Context, tx *sql.Tx, profileID int64) ([]model.Tag, error) {
 
 	rows, err := tx.QueryContext(ctx,
 		`SELECT t.id, t.name FROM tag AS t
@@ -475,9 +385,9 @@ func getProfileTags(ctx context.Context, tx *sql.Tx, profileID int64) ([]Tag, er
 	}
 	defer rows.Close()
 
-	tags := make([]Tag, 0)
+	tags := make([]model.Tag, 0)
 	for rows.Next() {
-		var tag Tag
+		var tag model.Tag
 		if err := rows.Scan(&tag.ID, &tag.Name); err != nil {
 			return nil, err
 		}
@@ -487,10 +397,11 @@ func getProfileTags(ctx context.Context, tx *sql.Tx, profileID int64) ([]Tag, er
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+
 	return tags, nil
 }
 
-func getProfilePhotos(ctx context.Context, tx *sql.Tx, profileID int64) ([]Photo, error) {
+func getProfilePhotos(ctx context.Context, tx *sql.Tx, profileID int64) ([]model.Photo, error) {
 
 	rows, err := tx.QueryContext(ctx,
 		`SELECT id, storage_key, position FROM photo WHERE profile_id = $1 ORDER BY position, id`, profileID)
@@ -500,9 +411,9 @@ func getProfilePhotos(ctx context.Context, tx *sql.Tx, profileID int64) ([]Photo
 	}
 	defer rows.Close()
 
-	photos := make([]Photo, 0)
+	photos := make([]model.Photo, 0)
 	for rows.Next() {
-		var photo Photo
+		var photo model.Photo
 		if err := rows.Scan(&photo.ID, &photo.StorageKey, &photo.Position); err != nil {
 			return nil, err
 		}
