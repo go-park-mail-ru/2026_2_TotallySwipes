@@ -57,7 +57,7 @@ func run() error {
 		auth.NewJWTIssuer(cfg.Auth.JWTSecret, cfg.Auth.JWTAccessTTL),
 		cfg.Auth.JWTRefreshTTL,
 	)
-	authHandler := handler.NewAuthHandler(authSvc)
+	authHandler := handler.NewAuthHandler(authSvc, cfg.Auth.CookieSecure)
 
 	r := mux.NewRouter()
 	r.HandleFunc("/health", handler.Health).Methods(http.MethodGet)

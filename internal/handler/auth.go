@@ -34,11 +34,12 @@ type AuthResponse struct {
 }
 
 type AuthHandler struct {
-	svc AuthService
+	svc          AuthService
+	cookieSecure bool
 }
 
-func NewAuthHandler(svc AuthService) *AuthHandler {
-	return &AuthHandler{svc: svc}
+func NewAuthHandler(svc AuthService, cookieSecure bool) *AuthHandler {
+	return &AuthHandler{svc: svc, cookieSecure: cookieSecure}
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
@@ -50,37 +51,31 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	return true
 }
 
-func setSessionCookies(w http.ResponseWriter, t service.Tokens) {
-	http.SetCookie(w, sessionCookie(accessTokenCookie, "/", t.Access, t.AccessExpiresAt))
-	http.SetCookie(w, sessionCookie(refreshTokenCookie, refreshTokenCookiePath, t.Refresh, t.RefreshExpiresAt))
+func (h *AuthHandler) setSessionCookies(w http.ResponseWriter, t service.Tokens) {
+	http.SetCookie(w, h.sessionCookie(accessTokenCookie, "/", t.Access, t.AccessExpiresAt))
+	http.SetCookie(w, h.sessionCookie(refreshTokenCookie, refreshTokenCookiePath, t.Refresh, t.RefreshExpiresAt))
 }
 
-func clearSessionCookies(w http.ResponseWriter) {
+func (h *AuthHandler) clearSessionCookies(w http.ResponseWriter) {
 	for _, c := range []*http.Cookie{
-		sessionCookie(accessTokenCookie, "/", "", time.Time{}),
-		sessionCookie(refreshTokenCookie, refreshTokenCookiePath, "", time.Time{}),
+		h.sessionCookie(accessTokenCookie, "/", "", time.Time{}),
+		h.sessionCookie(refreshTokenCookie, refreshTokenCookiePath, "", time.Time{}),
 	} {
 		c.MaxAge = -1
 		http.SetCookie(w, c)
 	}
 }
 
-func sessionCookie(name, path, value string, expires time.Time) *http.Cookie {
+func (h *AuthHandler) sessionCookie(name, path, value string, expires time.Time) *http.Cookie {
 	return &http.Cookie{
 		Name:     name,
 		Value:    value,
 		Path:     path,
 		Expires:  expires,
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   h.cookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	}
-}
-
-var datingGoalByIntent = map[string]model.DatingGoal{
-	"Ищу общение":   model.DatingGoalFriendship,
-	"Ищу половинку": model.DatingGoalRelationship,
-	"Ищу встречи":   model.DatingGoalCasual,
 }
 
 type RegisterRequest struct {
@@ -168,7 +163,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		BirthDate:     birthDate,
 		Sex:           model.Sex(req.Sex),
 		SearchSex:     model.SearchSex(req.SearchSex),
-		DatingGoal:    datingGoalByIntent[req.DatingIntent],
+		DatingGoal:    model.DatingGoalByIntent[req.DatingIntent],
 		AboutMe:       aboutMe,
 		SearchAgeFrom: req.SearchAgeFrom,
 		SearchAgeTo:   req.SearchAgeTo,
@@ -188,7 +183,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setSessionCookies(w, res.Tokens)
+	h.setSessionCookies(w, res.Tokens)
 	writeJSON(w, http.StatusCreated, AuthResponse{
 		UserID:           res.UserID,
 		ProfileCompleted: res.ProfileCompleted,
@@ -242,7 +237,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setSessionCookies(w, res.Tokens)
+	h.setSessionCookies(w, res.Tokens)
 	writeJSON(w, http.StatusOK, AuthResponse{
 		UserID:           res.UserID,
 		ProfileCompleted: res.ProfileCompleted,
@@ -252,7 +247,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 // Logout отвечает 204, даже без действующей сессии. Cookies чистятся всегда:
 // если отозвать сессию не удалось (500), клиент всё равно должен разлогиниться
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	clearSessionCookies(w)
+	h.clearSessionCookies(w)
 
 	// Ошибка тут только http.ErrNoCookie - тогда отзывать нечего
 	if c, err := r.Cookie(refreshTokenCookie); err == nil {

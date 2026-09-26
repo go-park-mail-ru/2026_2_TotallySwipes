@@ -10,6 +10,14 @@ const (
 	DatingGoalCasual       DatingGoal = "casual"
 )
 
+// DatingGoalByIntent - допустимые значения dating_intent из API и их цели.
+// Единственный источник правды и для валидации, и для сохранения
+var DatingGoalByIntent = map[string]DatingGoal{
+	"Ищу общение":   DatingGoalFriendship,
+	"Ищу половинку": DatingGoalRelationship,
+	"Ищу встречи":   DatingGoalCasual,
+}
+
 type Sex string
 
 const (

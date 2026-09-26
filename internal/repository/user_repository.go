@@ -7,6 +7,8 @@ import (
 	"dating-app/internal/model"
 	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 var (
@@ -65,13 +67,7 @@ func (r *UserRepo) CreateUser(ctx context.Context, input *model.UserInput) error
 		return fmt.Errorf("create user: input is nil")
 	}
 
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("CreateUser: begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	_, err = tx.ExecContext(ctx,
+	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO "user" (name, email, password_hash, birth_date) VALUES ($1, $2, $3, $4)`,
 		input.Name,
 		input.Email,
@@ -79,12 +75,12 @@ func (r *UserRepo) CreateUser(ctx context.Context, input *model.UserInput) error
 		input.BirthDate,
 	)
 
-	if err != nil {
-		return fmt.Errorf("add user: %w", err)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
+		return model.ErrEmailAlreadyExists
 	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("CreateUser: commit transaction: %w", err)
+	if err != nil {
+		return fmt.Errorf("create user: %w", err)
 	}
 	return nil
 }
