@@ -57,6 +57,24 @@ func TestValidatePassword(t *testing.T) {
 	}
 }
 
+func TestValidateLoginPassword(t *testing.T) {
+	tests := []struct {
+		in   string
+		want error
+	}{
+		{"x", nil},
+		{"abc", nil},
+		{strings.Repeat("я", 128), nil},
+		{"", ErrRequired},
+		{strings.Repeat("я", 129), ErrPasswordTooLong},
+	}
+	for _, tt := range tests {
+		if got := ValidateLoginPassword(tt.in); !errors.Is(got, tt.want) {
+			t.Errorf("ValidateLoginPassword(%q) = %v, want %v", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestValidateName(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -166,5 +184,29 @@ func TestValidateTags(t *testing.T) {
 		if got := ValidateTags(tt.in); !errors.Is(got, tt.want) {
 			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
 		}
+	}
+}
+
+func TestValidateSearchAge(t *testing.T) {
+	tests := []struct {
+		in   int
+		want error
+	}{
+		{18, nil},
+		{99, nil},
+		{17, ErrSearchAgeTooLow},
+		{0, ErrSearchAgeTooLow},
+	}
+	for _, tt := range tests {
+		if got := ValidateSearchAge(tt.in); !errors.Is(got, tt.want) {
+			t.Errorf("ValidateSearchAge(%d) = %v, want %v", tt.in, got, tt.want)
+		}
+	}
+
+	if err := ValidateSearchAgeRange(20, 20); err != nil {
+		t.Errorf("ValidateSearchAgeRange(20, 20) = %v, want nil", err)
+	}
+	if err := ValidateSearchAgeRange(30, 20); !errors.Is(err, ErrSearchAgeRange) {
+		t.Errorf("ValidateSearchAgeRange(30, 20) = %v, want %v", err, ErrSearchAgeRange)
 	}
 }

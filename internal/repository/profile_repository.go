@@ -88,7 +88,7 @@ func (r *ProfileRepo) CreateProfile(ctx context.Context, input *model.ProfileInp
 	version := input.CurrentVersion
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO profile_version (
-		    profile_id, revision, birth_date, sex, search_sex, search_age_from, search_age_to, dating_goal, aboutme
+		    profile_id, revision, birth_date, sex, search_sex, search_age_from, search_age_to, dating_goal, about_me
 		) VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8)`,
 		profileID, version.BirthDate, version.Sex, version.SearchSex,
 		version.SearchAgeFrom, version.SearchAgeTo, version.DatingGoal, version.AboutMe,
@@ -146,7 +146,7 @@ func (r *ProfileRepo) AddProfileVersion(ctx context.Context, profileID int64, in
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO profile_version (
 		profile_id, revision, birth_date,
-		sex, search_sex, search_age_from, search_age_to, dating_goal, aboutme)
+		sex, search_sex, search_age_from, search_age_to, dating_goal, about_me)
 		SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6, $7, $8 FROM profile_version
 		WHERE profile_id = $1;`,
 		profileID,
@@ -318,13 +318,13 @@ func getProfileVersionAndPsycho(ctx context.Context, tx *sql.Tx, profileID int64
 	const query = `
 		SELECT p.id, p.user_id, p.created_at, p.updated_at,
 		       v.id, v.profile_id, v.birth_date, v.recorded_at,
-		       v.sex, v.search_sex, v.search_age_from, v.search_age_to, v.dating_goal, v.aboutme,
+		       v.sex, v.search_sex, v.search_age_from, v.search_age_to, v.dating_goal, v.about_me,
 		       ps.id, ps.profile_id, ps.test_id, ps.recorded_at,
 		       ps.openness, ps.conscientiousness, ps.extraversion, ps.agreeableness, ps.neuroticism
 		FROM profile AS p
 		JOIN LATERAL (
 		    SELECT id, profile_id, birth_date, recorded_at,
-		           sex, search_sex, search_age_from, search_age_to, dating_goal, aboutme
+		           sex, search_sex, search_age_from, search_age_to, dating_goal, about_me
 		    FROM profile_version
 		    WHERE profile_id = p.id
 		    ORDER BY revision DESC

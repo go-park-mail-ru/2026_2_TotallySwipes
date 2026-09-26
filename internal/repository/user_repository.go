@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrNotFound = fmt.Errorf("not found")
+	ErrNotFound = model.ErrNotFound
 )
 
 type UserRepo struct {
@@ -47,6 +47,10 @@ func (r *UserRepo) GetUserByEmail(ctx context.Context, email string) (*model.Use
 	err := r.db.QueryRowContext(ctx,
 		`SELECT id, name, email, password_hash, birth_date FROM "user" WHERE email = $1`,
 		email).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.BirthDate)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
 
 	if err != nil {
 		return nil, fmt.Errorf("get user email=%s: %w", email, err)
