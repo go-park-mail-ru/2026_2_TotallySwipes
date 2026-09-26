@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -26,6 +27,7 @@ type AuthConfig struct {
 	JWTSecret     string
 	JWTAccessTTL  time.Duration
 	JWTRefreshTTL time.Duration
+	CookieSecure bool
 }
 
 type HTTPConfig struct {
@@ -91,10 +93,16 @@ func loadAuthConfig(jwtSecret string) (AuthConfig, error) {
 		return AuthConfig{}, err
 	}
 
+	cookieSecure, err := envBoolOrDefault("COOKIE_SECURE", true)
+	if err != nil {
+		return AuthConfig{}, err
+	}
+
 	return AuthConfig{
 		JWTSecret:     jwtSecret,
 		JWTAccessTTL:  accessTTL,
 		JWTRefreshTTL: refreshTTL,
+		CookieSecure:  cookieSecure,
 	}, nil
 }
 
@@ -144,6 +152,18 @@ func requireEnv(key string, missing *[]string) string {
 		*missing = append(*missing, key)
 	}
 	return v
+}
+
+func envBoolOrDefault(key string, def bool) (bool, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return def, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("invalid %s %q: %w", key, v, err)
+	}
+	return b, nil
 }
 
 func envDurationOrDefault(key string, def time.Duration, allowZero bool) (time.Duration, error) {

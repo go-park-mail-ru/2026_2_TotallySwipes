@@ -114,7 +114,7 @@ const validRegisterBody = `{
 
 func doRegister(t *testing.T, svc *fakeAuth, body string) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
-	return do(t, NewAuthHandler(svc).Register, "/api/v1/auth/register", body)
+	return do(t, NewAuthHandler(svc, true).Register, "/api/v1/auth/register", body)
 }
 
 func TestRegisterHandler_Created(t *testing.T) {
@@ -314,7 +314,7 @@ func TestLoginRequestValidate(t *testing.T) {
 
 func doLogin(t *testing.T, svc *fakeAuth, body string) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
-	return do(t, NewAuthHandler(svc).Login, "/api/v1/auth/login", body)
+	return do(t, NewAuthHandler(svc, true).Login, "/api/v1/auth/login", body)
 }
 
 func TestLoginHandler_OK(t *testing.T) {
@@ -359,7 +359,7 @@ func TestLoginHandler_Errors(t *testing.T) {
 
 func TestLogoutHandler(t *testing.T) {
 	svc := &fakeAuth{}
-	h := NewAuthHandler(svc).Logout
+	h := NewAuthHandler(svc, true).Logout
 
 	rec, _ := do(t, h, "/api/v1/auth/logout", "", &http.Cookie{Name: refreshTokenCookie, Value: "ref"})
 	if rec.Code != http.StatusNoContent || svc.logout != "ref" {
@@ -369,12 +369,12 @@ func TestLogoutHandler(t *testing.T) {
 
 	// Без cookie - всё равно 204, сервис не вызывается
 	svc = &fakeAuth{}
-	rec, _ = do(t, NewAuthHandler(svc).Logout, "/api/v1/auth/logout", "")
+	rec, _ = do(t, NewAuthHandler(svc, true).Logout, "/api/v1/auth/logout", "")
 	if rec.Code != http.StatusNoContent || svc.called {
 		t.Errorf("no cookie: status = %d, called = %v", rec.Code, svc.called)
 	}
 
-	rec, resp := do(t, NewAuthHandler(&fakeAuth{err: errors.New("redis down")}).Logout, "/api/v1/auth/logout", "",
+	rec, resp := do(t, NewAuthHandler(&fakeAuth{err: errors.New("redis down")}, true).Logout, "/api/v1/auth/logout", "",
 		&http.Cookie{Name: refreshTokenCookie, Value: "ref"})
 	if rec.Code != http.StatusInternalServerError || errCode(resp) != codeInternalError {
 		t.Errorf("service error: status = %d", rec.Code)

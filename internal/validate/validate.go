@@ -8,6 +8,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"dating-app/internal/model"
 )
 
 const (
@@ -64,9 +66,8 @@ var emailRe = regexp.MustCompile("^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@" +
 	"(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$")
 
 var (
-	sexValues          = []string{"male", "female"}
-	searchSexValues    = []string{"male", "female", "all"}
-	datingIntentValues = []string{"Ищу общение", "Ищу половинку", "Ищу встречи"}
+	sexValues       = []string{"male", "female"}
+	searchSexValues = []string{"male", "female", "all"}
 )
 
 // ValidateEmail ожидает уже обрезанную по краям строку
@@ -172,7 +173,13 @@ func ValidateSearchSex(s string) error {
 }
 
 func ValidateDatingIntent(s string) error {
-	return oneOf(s, datingIntentValues, ErrDatingIntent)
+	if s == "" {
+		return ErrRequired
+	}
+	if _, ok := model.DatingGoalByIntent[s]; !ok {
+		return ErrDatingIntent
+	}
+	return nil
 }
 
 // ValidateSearchAge - граница возраста для поиска анкет
