@@ -22,6 +22,8 @@ const (
 	tagMaxLen    = 30
 
 	minAge = 18
+	// maxSearchAge - верхняя граница возраста в фильтре поиска
+	maxSearchAge = 100
 
 	// DateLayout - формат birth_date в запросах
 	DateLayout = "2006-01-02"
@@ -47,8 +49,9 @@ var (
 	ErrSearchSex    = errors.New("допустимые значения: male, female, all")
 	ErrDatingIntent = errors.New("недопустимая цель знакомства")
 
-	ErrSearchAgeTooLow = errors.New("возраст для поиска должен быть не меньше 18")
-	ErrSearchAgeRange  = errors.New("верхняя граница возраста не может быть меньше нижней")
+	ErrSearchAgeTooLow  = errors.New("возраст для поиска должен быть не меньше 18")
+	ErrSearchAgeTooHigh = errors.New("возраст для поиска должен быть не больше 100")
+	ErrSearchAgeRange   = errors.New("верхняя граница возраста не может быть меньше нижней")
 
 	ErrTagsTooMany = errors.New("не больше 10 тегов")
 	ErrTagsNotUniq = errors.New("теги не должны повторяться")
@@ -176,6 +179,9 @@ func ValidateDatingIntent(s string) error {
 func ValidateSearchAge(age int) error {
 	if age < minAge {
 		return ErrSearchAgeTooLow
+	}
+	if age > maxSearchAge {
+		return ErrSearchAgeTooHigh
 	}
 	return nil
 }

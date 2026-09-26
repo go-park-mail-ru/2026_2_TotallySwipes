@@ -29,7 +29,7 @@ paths:
                 email:
                   minLength: 1
                   maxLength: 254
-                  description: Пробелы по краям удаляются до проверки формата и поиска аккаунта.
+                  description: Пробелы по краям удаляются, регистр приводится к нижнему до проверки формата и поиска аккаунта.
                   type: string
                   format: email
                   example: alex@example.com
@@ -81,11 +81,13 @@ paths:
                 search_age_from:
                   type: integer
                   minimum: 18
+                  maximum: 100
                   description: Нижняя граница возраста для поиска анкет.
                   example: 18
                 search_age_to:
                   type: integer
                   minimum: 18
+                  maximum: 100
                   description: Верхняя граница возраста для поиска анкет, не меньше search_age_from.
                   example: 30
                 tags:
@@ -183,7 +185,7 @@ paths:
                 email:
                   minLength: 1
                   maxLength: 254
-                  description: Пробелы по краям удаляются до проверки формата и поиска аккаунта.
+                  description: Пробелы по краям удаляются, регистр приводится к нижнему до проверки формата и поиска аккаунта.
                   type: string
                   format: email
 

@@ -98,9 +98,9 @@ type RegisterRequest struct {
 }
 
 // Normalize приводит поля к виду, в котором их проверяют и сохраняют:
-// email обрезается по краям, пароль не трогается
+// email обрезается по краям и приводится к нижнему регистру, пароль не трогается
 func (r *RegisterRequest) Normalize() {
-	r.Email = strings.TrimSpace(r.Email)
+	r.Email = normalizeEmail(r.Email)
 }
 
 // Validate собирает ошибки по всем полям сразу, чтобы клиент получил их
@@ -201,7 +201,13 @@ type LoginRequest struct {
 }
 
 func (r *LoginRequest) Normalize() {
-	r.Email = strings.TrimSpace(r.Email)
+	r.Email = normalizeEmail(r.Email)
+}
+
+// normalizeEmail нужен, чтобы Alex@Mail.ru и alex@mail.ru были одним аккаунтом:
+// в БД email сравнивается с учётом регистра
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }
 
 func (r LoginRequest) Validate() map[string]string {
@@ -243,8 +249,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Logout по контракту всегда отвечает 204, даже без действующей сессии
+// Logout отвечает 204, даже без действующей сессии. Cookies чистятся всегда:
+// если отозвать сессию не удалось (500), клиент всё равно должен разлогиниться
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	clearSessionCookies(w)
+
 	// Ошибка тут только http.ErrNoCookie - тогда отзывать нечего
 	if c, err := r.Cookie(refreshTokenCookie); err == nil {
 		if err := h.svc.Logout(r.Context(), c.Value); err != nil {
@@ -254,6 +263,5 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	clearSessionCookies(w)
 	w.WriteHeader(http.StatusNoContent)
 }
