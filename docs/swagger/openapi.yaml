@@ -23,6 +23,8 @@ paths:
                 - sex
                 - search_sex
                 - dating_intent
+                - search_age_from
+                - search_age_to
               properties:
                 email:
                   minLength: 1
@@ -76,6 +78,16 @@ paths:
                     - Ищу половинку
                     - Ищу встречи
                   example: Ищу половинку
+                search_age_from:
+                  type: integer
+                  minimum: 18
+                  description: Нижняя граница возраста для поиска анкет.
+                  example: 18
+                search_age_to:
+                  type: integer
+                  minimum: 18
+                  description: Верхняя граница возраста для поиска анкет, не меньше search_age_from.
+                  example: 30
                 tags:
                   maxItems: 10
                   uniqueItems: true
@@ -90,7 +102,10 @@ paths:
                     - gaming
       responses:
         '201':
-          description: Пользователь зарегистрирован
+          description: Пользователь зарегистрирован, сессия открыта.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookies'
           content:
             application/json:
               schema:
@@ -184,7 +199,10 @@ paths:
         '400':
           $ref: '#/components/responses/ValidationError'
         '200':
-          description: Вход выполнен успешно
+          description: Вход выполнен успешно, сессия открыта.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookies'
           content:
             application/json:
               schema:
@@ -244,6 +262,11 @@ paths:
       responses:
         '204':
           description: Сессия завершена. Тело ответа отсутствует.
+          headers:
+            Set-Cookie:
+              description: Cookie access_token и refresh_token удаляются (Max-Age=0).
+              schema:
+                type: string
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -442,6 +465,15 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
 components:
+  headers:
+    SessionCookies:
+      description: |
+        Две HttpOnly cookie сессии (Secure, SameSite=Lax), клиенту их читать не нужно:
+        - access_token - JWT, Path=/, живёт JWT_ACCESS_TTL (по умолчанию 15 минут);
+        - refresh_token - непрозрачный токен, Path=/api/v1/auth, живёт JWT_REFRESH_TTL (по умолчанию 30 дней).
+      schema:
+        type: string
+        example: access_token=eyJhbGciOi...; Path=/; HttpOnly; Secure; SameSite=Lax
   responses:
     Unauthorized:
       description: Сессия отсутствует, истекла или отозвана. Необходимо войти заново.

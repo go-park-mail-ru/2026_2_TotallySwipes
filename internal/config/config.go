@@ -9,12 +9,17 @@ import (
 
 type Config struct {
 	Database DatabaseConfig
+	Redis    RedisConfig
 	Auth     AuthConfig
 	HTTP     HTTPConfig
 }
 
 type DatabaseConfig struct {
 	URL string
+}
+
+type RedisConfig struct {
+	Addr string
 }
 
 type AuthConfig struct {
@@ -33,6 +38,8 @@ type HTTPConfig struct {
 
 const (
 	defaultPort = "8080"
+
+	defaultRedisAddr = "localhost:6379"
 
 	defaultJWTAccessTTL  = 15 * time.Minute
 	defaultJWTRefreshTTL = 30 * 24 * time.Hour
@@ -68,6 +75,7 @@ func Load() (*Config, error) {
 
 	return &Config{
 		Database: DatabaseConfig{URL: databaseURL},
+		Redis:    loadRedisConfig(),
 		Auth:     auth,
 		HTTP:     httpCfg,
 	}, nil
@@ -88,6 +96,12 @@ func loadAuthConfig(jwtSecret string) (AuthConfig, error) {
 		JWTAccessTTL:  accessTTL,
 		JWTRefreshTTL: refreshTTL,
 	}, nil
+}
+
+func loadRedisConfig() RedisConfig {
+	return RedisConfig{
+		Addr: envOrDefault("REDIS_ADDR", defaultRedisAddr),
+	}
 }
 
 func loadHTTPConfig() (HTTPConfig, error) {

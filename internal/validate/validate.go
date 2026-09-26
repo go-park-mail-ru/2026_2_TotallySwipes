@@ -47,6 +47,9 @@ var (
 	ErrSearchSex    = errors.New("допустимые значения: male, female, all")
 	ErrDatingIntent = errors.New("недопустимая цель знакомства")
 
+	ErrSearchAgeTooLow = errors.New("возраст для поиска должен быть не меньше 18")
+	ErrSearchAgeRange  = errors.New("верхняя граница возраста не может быть меньше нижней")
+
 	ErrTagsTooMany = errors.New("не больше 10 тегов")
 	ErrTagsNotUniq = errors.New("теги не должны повторяться")
 	ErrTagInvalid  = errors.New("тег должен быть от 1 до 30 символов и не состоять только из пробелов")
@@ -105,6 +108,18 @@ func ValidatePassword(s string) error {
 	return nil
 }
 
+// ValidateLoginPassword - при логине только непустой и не длиннее 128,
+// правила сложности не проверяем
+func ValidateLoginPassword(s string) error {
+	if s == "" {
+		return ErrRequired
+	}
+	if utf8.RuneCountInString(s) > passwordMaxLen {
+		return ErrPasswordTooLong
+	}
+	return nil
+}
+
 func ValidateName(s string) error {
 	if s == "" {
 		return ErrRequired
@@ -155,6 +170,21 @@ func ValidateSearchSex(s string) error {
 
 func ValidateDatingIntent(s string) error {
 	return oneOf(s, datingIntentValues, ErrDatingIntent)
+}
+
+// ValidateSearchAge - граница возраста для поиска анкет
+func ValidateSearchAge(age int) error {
+	if age < minAge {
+		return ErrSearchAgeTooLow
+	}
+	return nil
+}
+
+func ValidateSearchAgeRange(from, to int) error {
+	if to < from {
+		return ErrSearchAgeRange
+	}
+	return nil
 }
 
 // ValidateTags - теги необязательны, nil и пустой список допустимы
