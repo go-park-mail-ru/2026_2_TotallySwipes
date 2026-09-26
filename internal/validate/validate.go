@@ -23,12 +23,10 @@ const (
 	tagsMaxCount = 10
 	tagMaxLen    = 30
 
-	minAge = 18
-	// maxSearchAge - верхняя граница возраста в фильтре поиска
-	maxSearchAge = 100
+	minAge = 18 // нижняя граница в принципе на сервисе
+	maxSearchAge = 100 // верхняя граница возраста в фильтре поиска
 
-	// DateLayout - формат birth_date в запросах
-	DateLayout = "2006-01-02"
+	DateLayout = "2006-01-02" // формат birth_date в запросах
 )
 
 var (
