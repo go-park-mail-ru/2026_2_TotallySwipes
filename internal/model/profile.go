@@ -42,6 +42,7 @@ type Photo struct {
 }
 
 type Profile struct {
+	Name           string
 	ID             int64
 	UserID         int64
 	CreatedAt      time.Time
@@ -64,7 +65,7 @@ type ProfileVersion struct {
 	ProfileID     int64
 	BirthDate     time.Time
 	DatingGoal    DatingGoal
-	AboutMe       string
+	AboutMe       *string
 	RecordedAt    time.Time
 	Sex           Sex
 	SearchSex     SearchSex
@@ -75,7 +76,7 @@ type ProfileVersion struct {
 type ProfileVersionInput struct {
 	BirthDate     time.Time
 	DatingGoal    DatingGoal
-	AboutMe       string
+	AboutMe       *string
 	Sex           Sex
 	SearchSex     SearchSex
 	SearchAgeFrom int
