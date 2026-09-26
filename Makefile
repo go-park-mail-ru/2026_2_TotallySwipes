@@ -4,7 +4,7 @@ run:
 	set -a && . ./local.env && set +a && go run ./cmd/api
 
 up:
-	set -a && . ./docker.env && set +a && docker compose up postgres -d
+	set -a && . ./docker.env && set +a && docker compose up postgres redis -d
 
 up-all:
 	set -a && . ./docker.env && set +a && docker compose up --build
