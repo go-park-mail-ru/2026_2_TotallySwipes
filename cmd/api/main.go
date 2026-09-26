@@ -30,15 +30,15 @@ func main() {
 	h = middleware.Logging(h)
 
 	srv := &http.Server{
-		Addr:              ":" + cfg.Port,
+		Addr:              ":" + cfg.HTTP.Port,
 		Handler:           h,
-		ReadHeaderTimeout: cfg.HTTPReadHeaderTimeout,
-		ReadTimeout:       cfg.HTTPReadTimeout,
-		WriteTimeout:      cfg.HTTPWriteTimeout,
-		IdleTimeout:       cfg.HTTPIdleTimeout,
+		ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout,
+		ReadTimeout:       cfg.HTTP.ReadTimeout,
+		WriteTimeout:      cfg.HTTP.WriteTimeout,
+		IdleTimeout:       cfg.HTTP.IdleTimeout,
 	}
 
-	slog.Info("starting server", "port", cfg.Port)
+	slog.Info("starting server", "port", cfg.HTTP.Port)
 	if err := srv.ListenAndServe(); err != nil {
 		slog.Error("server stopped", "error", err)
 		os.Exit(1)
