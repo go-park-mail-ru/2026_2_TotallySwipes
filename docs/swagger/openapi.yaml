@@ -242,24 +242,139 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /api/v1/psychotest:
+  /api/v1/tests/current:
     get:
-      summary: Получить психологический тест (заглушка)
-      description: Контракт психологического теста будет описан позднее.
+      summary: Получить текущий тест для расчёта совместимости
+      description: >-
+        Требуется действующая сессия; пользователь определяется middleware.
+        Сервер выбирает опубликованный тест (TIPI или Mini-IPIP).
+        Клиент отображает вопросы и answer_options в полученном порядке,
+        не фиксируя число вопросов или шкалу. GET не создаёт прохождение.
+        test_id определяет неизменяемые вопросы, шкалу и правила расчёта.
       responses:
-        '501':
-          description: Психологический тест пока не реализован.
+        '200':
+          description: Полный тест с вопросами и общей шкалой ответов.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompatibilityTest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Текущий опубликованный тест не настроен.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: ACTIVE_TEST_NOT_FOUND
+                  message: Текущий тест не настроен
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/tests/{test_id}/results:
     post:
-      summary: Отправить ответы психологического теста (заглушка)
-      description: Формат запроса и контракт сохранения ответов будут описаны позднее.
+      summary: Сохранить ответы теста и рассчитать показатели Big Five
+      description: >-
+        Пользователь определяется middleware, его профиль находится сервером.
+        Клиент передаёт только ответы; методика, шкала и правила расчёта определяются
+        сервером по test_id из GET. Ранее опубликованный тест остаётся доступен
+        для отправки, даже если текущий тест сменился.
+        Требуется ровно один допустимый ответ на каждый вопрос, без повторов и чужих ID.
+        Ответы и пять показателей Big Five сохраняются атомарно в новом прохождении.
+        Эти показатели используются сервисом совместимости при формировании feed;
+        POST не возвращает совместимость с конкретным пользователем.
+        Каждый успешный POST создаёт новое прохождение, автоматические повторы
+        после сетевой ошибки не предусмотрены.
+      parameters:
+        - name: test_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/TestIdentifier'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestAnswers'
+            example:
+              answers:
+                - question_id: '101'
+                  value: 4
+                - question_id: '102'
+                  value: 2
       responses:
-        '501':
-          description: Отправка ответов психологического теста пока не реализована.
+        '201':
+          description: Ответы и рассчитанные показатели сохранены.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Некорректный JSON, типы, неизвестные поля или формат test_id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: INVALID_REQUEST
+                  message: Некорректный JSON, типы, неизвестные поля или формат test_id.
+        '404':
+          description: Тест не существует или не опубликован.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: TEST_NOT_FOUND
+                  message: Тест не существует или не опубликован.
+        '409':
+          description: Для прохождения теста необходимо создать профиль.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: PROFILE_REQUIRED
+                  message: Для прохождения теста необходимо создать профиль.
+        '415':
+          description: Требуется Content-Type application/json.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: UNSUPPORTED_MEDIA_TYPE
+                  message: Требуется Content-Type application/json.
+        '422':
+          description: Неполный набор ответов, повторные или чужие вопросы либо недопустимые значения.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: INVALID_ANSWERS
+                  message: Неполный набор ответов, повторные или чужие вопросы либо недопустимые значения.
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /api/v1/feed:
     get:
       summary: Получить ленту анкет
+      description: >-
+        Текущий пользователь определяется middleware авторизации; его ID не передаётся
+        в параметрах запроса. Backend находит анкету текущего пользователя и передаёт
+        её показатели Big Five вместе с показателями каждого кандидата в сервис
+        совместимости. Рассчитанное значение возвращается в compatibility каждой карточки.
       parameters:
         - name: limit
           in: query
@@ -300,6 +415,9 @@ paths:
                         - user_id
                         - name
                         - age
+                        - about_me
+                        - dating_intent
+                        - compatibility
                         - tags
                         - photos
                       properties:
@@ -315,6 +433,30 @@ paths:
                           description: Имя не должно состоять только из пробелов.
                           type: string
                           example: Аня
+                        about_me:
+                          type: string
+                          nullable: true
+                          description: Описание пользователя в анкете. null, если описание не задано.
+                          example: Люблю путешествия и настольные игры.
+                        dating_intent:
+                          type: string
+                          description: Цель знакомства пользователя в карточке.
+                          enum:
+                            - Ищу общение
+                            - Ищу половинку
+                            - Ищу встречи
+                          example: Ищу половинку
+                        compatibility:
+                          type: number
+                          format: double
+                          minimum: 0
+                          maximum: 1
+                          description: >-
+                            Совместимость с текущим пользователем, рассчитанная сервисом
+                            совместимости. Чем выше значение, тем выше совместимость;
+                            0 — минимальная, 1 — максимальная. Значение не является
+                            вероятностью успешных отношений.
+                          example: 0.87
                         age:
                           minimum: 18
                           type: integer
@@ -355,6 +497,8 @@ paths:
                     nullable: true
                     description: Курсор следующей порции. null, если продолжения нет.
                     example: 42
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '500':
           description: Не удалось загрузить ленту из-за ошибки сервера
           content:
@@ -431,6 +575,114 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
 components:
+  schemas:
+    TestIdentifier:
+      type: string
+      pattern: '^[1-9][0-9]*$'
+      description: Положительный BIGINT в виде десятичной строки, не более 9223372036854775807.
+      example: '1'
+    CompatibilityTest:
+      type: object
+      required: [test_id, title, instructions, answer_options, questions]
+      properties:
+        test_id:
+          $ref: '#/components/schemas/TestIdentifier'
+        title:
+          type: string
+          example: Психологическая анкета
+        instructions:
+          type: string
+          example: Для каждого утверждения выберите один вариант ответа.
+        answer_options:
+          type: array
+          minItems: 1
+          description: Общая шкала для всех вопросов; value уникальны и задаются определением теста.
+          items:
+            type: object
+            required: [value, label]
+            properties:
+              value:
+                type: integer
+                example: 1
+              label:
+                type: string
+                example: Совсем не согласен
+        questions:
+          type: array
+          minItems: 1
+          description: Полный список вопросов в порядке отображения; id уникальны.
+          items:
+            type: object
+            required: [id, body]
+            properties:
+              id:
+                $ref: '#/components/schemas/TestIdentifier'
+              body:
+                type: string
+                example: Текст утверждения
+    TestAnswers:
+      type: object
+      additionalProperties: false
+      required: [answers]
+      properties:
+        answers:
+          type: array
+          minItems: 1
+          description: Все ответы теста; порядок не важен. Повторы question_id запрещены.
+          items:
+            type: object
+            additionalProperties: false
+            required: [question_id, value]
+            properties:
+              question_id:
+                $ref: '#/components/schemas/TestIdentifier'
+              value:
+                type: integer
+                description: Одно из значений answer_options выбранного теста. Ноль не означает пропуск.
+                example: 4
+    TestResult:
+      type: object
+      required: [result_id, test_id, revision, completed_at]
+      properties:
+        result_id:
+          $ref: '#/components/schemas/TestIdentifier'
+        test_id:
+          $ref: '#/components/schemas/TestIdentifier'
+        revision:
+          type: integer
+          minimum: 1
+          description: Номер прохождения профиля, а не версия методики.
+          example: 1
+        completed_at:
+          type: string
+          format: date-time
+          example: '2026-09-25T12:00:00Z'
+    TestError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: INVALID_ANSWERS
+            message:
+              type: string
+              example: Необходимо ответить на все вопросы теста.
+            details:
+              type: array
+              description: Детали ошибок отдельных ответов для INVALID_ANSWERS.
+              items:
+                type: object
+                required: [question_id, code]
+                properties:
+                  question_id:
+                    $ref: '#/components/schemas/TestIdentifier'
+                  code:
+                    type: string
+                    enum: [MISSING_ANSWER, DUPLICATE_QUESTION, QUESTION_NOT_IN_TEST, VALUE_OUT_OF_RANGE]
   responses:
     Unauthorized:
       description: Сессия отсутствует, истекла или отозвана. Необходимо войти заново.
