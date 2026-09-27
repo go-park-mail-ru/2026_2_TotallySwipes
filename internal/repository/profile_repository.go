@@ -35,6 +35,9 @@ func (r *ProfileRepo) GetByUserIDCurrentProfile(ctx context.Context, userID int6
 
 	var profileID int64
 	err := r.db.QueryRowContext(ctx, "SELECT id FROM profile WHERE user_id = $1", userID).Scan(&profileID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
 
 	if err != nil {
 		return nil, fmt.Errorf("get current profile by user id=%d: %w", userID, err)

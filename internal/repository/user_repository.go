@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrNotFound = fmt.Errorf("not found")
+	ErrNotFound = model.ErrNotFound
 )
 
 type UserRepo struct {
