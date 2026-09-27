@@ -3,6 +3,7 @@ package handler
 import (
 	"dating-app/internal/service"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -36,6 +37,11 @@ type FeedHandler struct {
 
 func (h *FeedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Метод не поддерживается")
+		return
+	}
 	query := r.URL.Query()
 
 	limit := 10
@@ -48,7 +54,7 @@ func (h *FeedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		value, err := strconv.Atoi(values[0])
 
-		if err != nil || value < 1 {
+		if err != nil || value < 1 || value > 10 {
 			WriteError(w, http.StatusBadRequest,
 				"VALIDATION_ERROR", "limit должен быть целым числом от 1 до 10")
 			return
@@ -61,7 +67,7 @@ func (h *FeedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if values, exists := query["cursor"]; exists {
 		if len(values) != 1 {
-			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Параметр limit должен быть указан один раз")
+			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Параметр cursor должен быть указан один раз")
 			return
 		}
 
@@ -75,16 +81,25 @@ func (h *FeedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		cursor = &value
 	}
 
-	r.Context()
-
 	//Загулшка userID
 	var userID int64 = 1
 
 	page, err := h.profileSvc.GetNextFeed(r.Context(), userID, limit, cursor)
 
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError,
-			"сам вставь", "внутрянка")
+		switch {
+		case errors.Is(err, service.ErrInvalidFeedRequest):
+			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные параметры ленты")
+		case errors.Is(err, service.ErrProfileRequired):
+			WriteError(w, http.StatusConflict, "PROFILE_REQUIRED", "Для просмотра ленты необходимо создать профиль")
+		default:
+			WriteError(w, http.StatusInternalServerError, "FEED_LOAD_FAILED", "Не удалось загрузить ленту")
+		}
+		return
+	}
+
+	if page == nil {
+		WriteError(w, http.StatusInternalServerError, "FEED_LOAD_FAILED", "Не удалось загрузить ленту")
 		return
 	}
 

@@ -172,12 +172,13 @@ func (m *feedRepositoryMock) GetProfilesByCursorAndLimit(ctx context.Context, id
 }
 
 type feedCompatibilityMock struct {
+	CompatibilityService
 	t         *testing.T
 	calculate func(model.BigFive, model.BigFive) (float64, error)
 	calls     int
 }
 
-func (m *feedCompatibilityMock) Calculate(a, b model.BigFive) (float64, error) {
+func (m *feedCompatibilityMock) CalculateDistance(a, b model.BigFive) (float64, error) {
 	m.t.Helper()
 	m.calls++
 	if m.calculate == nil {

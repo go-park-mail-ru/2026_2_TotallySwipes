@@ -3,12 +3,16 @@ package service
 import (
 	"context"
 	"dating-app/internal/model"
+	"errors"
 	"fmt"
 	"time"
 )
 
 type ProfileService interface {
 	GetNextFeed(ctx context.Context, userID int64, limit int, cursor *int64) (*model.FeedPage, error)
+
+	AddProfilePsycho(ctx context.Context, profileID int64, psycho *model.ProfilePsychoInput) error
+	GetByUserIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error)
 }
 
 type ProfileRepository interface {
@@ -51,13 +55,20 @@ func NewProfileService(repo ProfileRepository, svc CompatibilityService, media L
 	return &ProfileServiceImpl{profileRepo: repo, compatibilitySvc: svc, media: media}
 }
 
+func (s *ProfileServiceImpl) GetByUserIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error) {
+	return s.profileRepo.GetByUserIDCurrentProfile(ctx, id)
+}
+
 func (s *ProfileServiceImpl) GetNextFeed(ctx context.Context, userID int64, limit int, cursor *int64) (*model.FeedPage, error) {
 
-	if userID <= 0 || limit < 1 || (cursor != nil && *cursor <= 0) {
-		return nil, fmt.Errorf("get feed: invalid user ID, limit or cursor")
+	if userID <= 0 || limit < 1 || limit > 10 || (cursor != nil && *cursor <= 0) {
+		return nil, fmt.Errorf("%w: invalid user ID, limit or cursor", ErrInvalidFeedRequest)
 	}
 
 	userProfile, err := s.profileRepo.GetByUserIDCurrentProfile(ctx, userID)
+	if errors.Is(err, model.ErrNotFound) {
+		return nil, ErrProfileRequired
+	}
 	if err != nil {
 		return nil, fmt.Errorf("get feed viewer profile: %w", err)
 	}
@@ -78,7 +89,7 @@ func (s *ProfileServiceImpl) GetNextFeed(ctx context.Context, userID int64, limi
 		profileVector, candidateHasTest := feedBigFive(profile.CurrentPsycho)
 		var compatibilityRes *float64
 		if userHasTest && candidateHasTest {
-			compatibility, err := s.compatibilitySvc.Calculate(userVector, profileVector)
+			compatibility, err := s.compatibilitySvc.CalculateDistance(*userVector, *profileVector)
 			if err != nil {
 				return nil, fmt.Errorf("get feed compatibility user id=%d: %w", profile.UserID, err)
 			}
@@ -123,15 +134,18 @@ func calculateAge(birthDate, today time.Time) int {
 	return age
 }
 
-// feedBigFive distinguishes missing test data from a valid zero score.
-func feedBigFive(psycho *model.ProfilePsycho) (model.BigFive, bool) {
+func feedBigFive(psycho *model.ProfilePsycho) (*model.BigFive, bool) {
 	if psycho == nil || psycho.Openness == nil || psycho.Conscientiousness == nil ||
 		psycho.Extraversion == nil || psycho.Agreeableness == nil || psycho.Neuroticism == nil {
-		return model.BigFive{}, false
+		return nil, false
 	}
-	return model.BigFive{
+	return &model.BigFive{
 		Openness: psycho.Openness, Conscientiousness: psycho.Conscientiousness,
 		Extraversion: psycho.Extraversion, Agreeableness: psycho.Agreeableness,
 		Neuroticism: psycho.Neuroticism,
 	}, true
+}
+
+func (s *ProfileServiceImpl) AddProfilePsycho(ctx context.Context, profileID int64, psycho *model.ProfilePsychoInput) error {
+	return s.profileRepo.AddProfilePsycho(ctx, profileID, psycho)
 }

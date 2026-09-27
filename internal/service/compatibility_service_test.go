@@ -45,7 +45,7 @@ func TestCompatibilityServiceCalculate(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := &CompatibilityServiceImpl{}
-			got, err := svc.Calculate(tc.first, tc.second)
+			got, err := svc.CalculateDistance(tc.first, tc.second)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected error")
@@ -58,7 +58,7 @@ func TestCompatibilityServiceCalculate(t *testing.T) {
 			if math.IsNaN(got) || math.Abs(got-tc.want) > 1e-12 {
 				t.Fatalf("score=%v, want %v", got, tc.want)
 			}
-			reverse, err := svc.Calculate(tc.second, tc.first)
+			reverse, err := svc.CalculateDistance(tc.second, tc.first)
 			if err != nil || math.IsNaN(reverse) || math.Abs(reverse-got) > 1e-12 {
 				t.Fatalf("asymmetric result: %v, error=%v", reverse, err)
 			}
