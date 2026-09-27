@@ -13,6 +13,7 @@ type ProfileService interface {
 
 type ProfileRepository interface {
 	GetByIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error)
+	GetByUserIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error)
 
 	CreateProfile(ctx context.Context, input *model.ProfileInput) (int64, error)
 
@@ -41,12 +42,13 @@ func (p *LocalPhotoURLProvider) GetURL(ctx context.Context, storageKey string) (
 }
 
 type ProfileServiceImpl struct {
-	profileRepo ProfileRepository
-	media       LocalPhotoURLProvider
+	profileRepo      ProfileRepository
+	media            LocalPhotoURLProvider
+	compatibilitySvc CompatibilityService
 }
 
-func NewProfileService(repo ProfileRepository, media LocalPhotoURLProvider) *ProfileServiceImpl {
-	return &ProfileServiceImpl{profileRepo: repo, media: media}
+func NewProfileService(repo ProfileRepository, svc CompatibilityService, media LocalPhotoURLProvider) *ProfileServiceImpl {
+	return &ProfileServiceImpl{profileRepo: repo, compatibilitySvc: svc, media: media}
 }
 
 func (s *ProfileServiceImpl) GetNextFeed(ctx context.Context, userID int64, limit int, cursor *int64) (*model.FeedPage, error) {
@@ -54,6 +56,15 @@ func (s *ProfileServiceImpl) GetNextFeed(ctx context.Context, userID int64, limi
 	if userID <= 0 || limit < 1 || (cursor != nil && *cursor <= 0) {
 		return nil, fmt.Errorf("get feed: invalid user ID, limit or cursor")
 	}
+
+	userProfile, err := s.profileRepo.GetByUserIDCurrentProfile(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get feed viewer profile: %w", err)
+	}
+	if userProfile == nil {
+		return nil, fmt.Errorf("get feed: viewer profile is nil")
+	}
+	userVector, userHasTest := feedBigFive(userProfile.CurrentPsycho)
 
 	profiles, nextCursor, err := s.profileRepo.GetProfilesByCursorAndLimit(ctx, userID, limit, cursor)
 
@@ -64,12 +75,23 @@ func (s *ProfileServiceImpl) GetNextFeed(ctx context.Context, userID int64, limi
 	page := &model.FeedPage{Items: make([]model.FeedItem, 0, len(profiles)), NextCursor: nextCursor}
 	for _, profile := range profiles {
 
+		profileVector, candidateHasTest := feedBigFive(profile.CurrentPsycho)
+		var compatibilityRes *float64
+		if userHasTest && candidateHasTest {
+			compatibility, err := s.compatibilitySvc.Calculate(userVector, profileVector)
+			if err != nil {
+				return nil, fmt.Errorf("get feed compatibility user id=%d: %w", profile.UserID, err)
+			}
+			compatibilityRes = &compatibility
+		}
+
 		item := model.FeedItem{
 			UserID: profile.UserID, Name: profile.Name,
-			Age:     calculateAge(profile.CurrentVersion.BirthDate, time.Now()),
-			AboutMe: profile.CurrentVersion.AboutMe,
-			Tags:    make([]string, 0, len(profile.Tags)),
-			Photos:  make([]model.FeedPhoto, 0, len(profile.Photos)),
+			Age:           calculateAge(profile.CurrentVersion.BirthDate, time.Now()),
+			AboutMe:       profile.CurrentVersion.AboutMe,
+			Compatibility: compatibilityRes,
+			Tags:          make([]string, 0, len(profile.Tags)),
+			Photos:        make([]model.FeedPhoto, 0, len(profile.Photos)),
 		}
 
 		for _, tag := range profile.Tags {
@@ -99,4 +121,17 @@ func calculateAge(birthDate, today time.Time) int {
 		age--
 	}
 	return age
+}
+
+// feedBigFive distinguishes missing test data from a valid zero score.
+func feedBigFive(psycho *model.ProfilePsycho) (model.BigFive, bool) {
+	if psycho == nil || psycho.Openness == nil || psycho.Conscientiousness == nil ||
+		psycho.Extraversion == nil || psycho.Agreeableness == nil || psycho.Neuroticism == nil {
+		return model.BigFive{}, false
+	}
+	return model.BigFive{
+		Openness: psycho.Openness, Conscientiousness: psycho.Conscientiousness,
+		Extraversion: psycho.Extraversion, Agreeableness: psycho.Agreeableness,
+		Neuroticism: psycho.Neuroticism,
+	}, true
 }

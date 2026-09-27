@@ -95,6 +95,14 @@ type ProfilePsycho struct {
 	Neuroticism       *float64
 }
 
+type BigFive struct {
+	Openness          *float64
+	Conscientiousness *float64
+	Extraversion      *float64
+	Agreeableness     *float64
+	Neuroticism       *float64
+}
+
 type ProfilePsychoInput struct {
 	TestID            int64
 	Openness          *float64
