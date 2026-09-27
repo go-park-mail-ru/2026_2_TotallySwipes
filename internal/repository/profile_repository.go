@@ -31,6 +31,18 @@ func NewProfileRepository(db *sql.DB) *ProfileRepo {
 	return &ProfileRepo{db: db}
 }
 
+func (r *ProfileRepo) GetByUserIDCurrentProfile(ctx context.Context, userID int64) (*model.Profile, error) {
+
+	var profileID int64
+	err := r.db.QueryRowContext(ctx, "SELECT id FROM profile WHERE user_id = $1", userID).Scan(&profileID)
+
+	if err != nil {
+		return nil, fmt.Errorf("get current profile by user id=%d: %w", userID, err)
+	}
+
+	return r.GetByIDCurrentProfile(ctx, profileID)
+}
+
 func (r *ProfileRepo) GetByIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error) {
 
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
@@ -399,12 +411,17 @@ func (r *ProfileRepo) GetProfilesByCursorAndLimit(ctx context.Context, userID in
 		`
 		SELECT p.id, p.user_id, p.created_at, p.updated_at, u.name,
 		v.id, v.profile_id, v.birth_date, v.recorded_at, v.sex, v.search_sex,
-		v.search_age_from, v.search_age_to, v.dating_goal, v.about_me
+		v.search_age_from, v.search_age_to, v.dating_goal, v.about_me,
+		ps.id, ps.profile_id, ps.test_id, ps.recorded_at,
+		ps.openness, ps.conscientiousness, ps.extraversion, ps.agreeableness, ps.neuroticism
 		FROM profile AS p
 		JOIN "user" AS u ON u.id = p.user_id
 		JOIN LATERAL (
 		SELECT * FROM profile_version WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
 		) AS v ON true
+		LEFT JOIN LATERAL (
+		SELECT * FROM profile_psycho WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
+		) AS ps ON true
 		WHERE u.id > $1 AND u.id <> $2
 		ORDER BY u.id ASC LIMIT $3`, afterID, userID, limit+1)
 
@@ -416,11 +433,23 @@ func (r *ProfileRepo) GetProfilesByCursorAndLimit(ctx context.Context, userID in
 	profiles := make([]model.Profile, 0)
 	for rows.Next() {
 		var p model.Profile
+		var psycho model.ProfilePsycho
+		var psychoID, psychoProfileID, testID *int64
+		var recordedAt *time.Time
 		v := &p.CurrentVersion
 		if err := rows.Scan(&p.ID, &p.UserID, &p.CreatedAt, &p.UpdatedAt, &p.Name,
 			&v.ID, &v.ProfileID, &v.BirthDate, &v.RecordedAt, &v.Sex, &v.SearchSex,
-			&v.SearchAgeFrom, &v.SearchAgeTo, &v.DatingGoal, &v.AboutMe); err != nil {
+			&v.SearchAgeFrom, &v.SearchAgeTo, &v.DatingGoal, &v.AboutMe,
+			&psychoID, &psychoProfileID, &testID, &recordedAt,
+			&psycho.Openness, &psycho.Conscientiousness, &psycho.Extraversion,
+			&psycho.Agreeableness, &psycho.Neuroticism); err != nil {
 			return nil, nil, fmt.Errorf("feed: scan profile: %w", err)
+		}
+
+		if psychoID != nil {
+			psycho.ID, psycho.ProfileID, psycho.TestID = *psychoID, *psychoProfileID, *testID
+			psycho.RecordedAt = *recordedAt
+			p.CurrentPsycho = &psycho
 		}
 
 		p.Tags = make([]model.Tag, 0)
