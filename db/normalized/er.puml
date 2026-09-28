@@ -1,0 +1,188 @@
+@startuml
+title Totally Swipes — история анкет и психологических тестов
+hide circle
+skinparam linetype ortho
+skinparam shadowing false
+' Ограничения: schema.dbml. Описание, зависимости и правила истории: relations.md.
+
+entity "user" as app_user {
+  id
+  name
+  email
+  password_hash
+  birth_date
+}
+
+entity "profile" as profile {
+  id
+  user_id
+  created_at
+  updated_at
+}
+
+entity "profile_version" as profile_version {
+  id
+  profile_id
+  revision
+  recorded_at
+  birth_date
+  sex
+  dating_goal
+  about_me
+  search_sex
+  search_age_from
+  search_age_to
+}
+
+entity "test" as psycho_test {
+  id
+  name
+}
+
+entity "question" as question {
+  id
+  test_id
+  operation_id
+  body
+}
+
+entity "profile_psycho" as profile_psycho {
+  id
+  profile_id
+  test_id
+  revision
+  recorded_at
+  openness
+  conscientiousness
+  extraversion
+  agreeableness
+  neuroticism
+}
+
+entity "user_answer" as user_answer {
+  profile_psycho_id
+  question_id
+  answer_value
+}
+
+
+entity "plan" as subscription_plan {
+  id
+  name
+  ads_enabled
+}
+
+entity "subscription" as subscription {
+  id
+  user_id
+  plan_id
+  starts_at
+  ends_at
+}
+
+
+entity "tag" as tag {
+  id
+  name
+}
+
+entity "profile_tag" as profile_tag {
+  profile_id
+  tag_id
+}
+
+entity "report_type" as report_type {
+  id
+  name
+}
+
+entity "report" as report {
+  id
+  author_id
+  reported_user_id
+  report_type_id
+}
+
+entity "photo" as photo {
+  id
+  profile_id
+  storage_key
+}
+
+entity "photo_comment" as photo_comment {
+  id
+  author_id
+  photo_id
+  body
+}
+
+entity "profile_like" as profile_like {
+  id
+  author_id
+  profile_id
+}
+
+entity "match" as user_match {
+  id
+  first_user_id
+  second_user_id
+  access_tomessage
+}
+
+entity "message" as message {
+  id
+  match_id
+  sender_id
+  body
+}
+
+
+
+app_user ||--|| profile : "анкета"
+profile ||--|{ profile_version : "версии анкеты"
+profile ||--o{ profile_psycho : "прохождения тестов"
+psycho_test ||--o{ profile_psycho : "результаты"
+psycho_test ||--o{ question : "вопросы"
+profile_psycho ||--o{ user_answer : "ответы прохождения"
+question ||--o{ user_answer : "ответы на вопрос"
+
+
+app_user ||--o{ photo_comment : "автор"
+photo ||--o{ photo_comment : "комментарии к фото"
+app_user ||--o{ profile_like : "автор лайка"
+profile ||--o{ profile_like : "полученные лайки"
+app_user ||--o{ message : "отправитель"
+app_user ||--o{ user_match : "первый участник"
+app_user ||--o{ user_match : "второй участник"
+user_match ||--o{ message : "переписка"
+
+profile ||--o{ photo : "фотографии"
+app_user ||--o{ subscription : "периоды подписки"
+subscription_plan ||--o{ subscription : "назначения тарифа"
+profile ||--o{ profile_tag : "выбранные теги"
+tag ||--o{ profile_tag : "выбран в анкетах"
+app_user ||--o{ report : "автор жалобы"
+app_user ||--o{ report : "на кого жалуются"
+report_type ||--o{ report : "тип жалобы"
+
+
+note right of profile
+  updated_at меняется при новой версии анкеты
+  или готовом результате теста на карточке.
+  Изменение данных и времени — одна транзакция.
+  Начало теста и промежуточные ответы его не меняют.
+end note
+
+note right of profile_version
+  recorded_at — создание неизменяемой версии.
+  created_at и updated_at отсутствуют.
+end note
+
+note right of profile_psycho
+  recorded_at — создание записи прохождения.
+  При завершении не меняется.
+  Отдельное время завершения не хранится.
+  created_at и updated_at отсутствуют.
+end note
+
+@enduml
