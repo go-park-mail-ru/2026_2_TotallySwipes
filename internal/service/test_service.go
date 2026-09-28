@@ -40,6 +40,7 @@ func (s *TestServiceImpl) SubmitTestAnswers(ctx context.Context, userID int64, a
 	if answers == nil || answers.TestID <= 0 {
 		return nil, ErrInvalidTestRequest
 	}
+
 	profile, err := s.profileSvc.GetByUserIDCurrentProfile(ctx, userID)
 	if errors.Is(err, model.ErrNotFound) {
 		return nil, ErrProfileRequired
@@ -52,6 +53,7 @@ func (s *TestServiceImpl) SubmitTestAnswers(ctx context.Context, userID int64, a
 	if profile == nil {
 		return nil, fmt.Errorf("submit test answers: profile service returned nil")
 	}
+
 	profileID := profile.ID
 	test, err := s.testRepo.GetCurrentTest(ctx)
 	if errors.Is(err, model.ErrNotFound) {
@@ -65,9 +67,11 @@ func (s *TestServiceImpl) SubmitTestAnswers(ctx context.Context, userID int64, a
 	if test == nil {
 		return nil, fmt.Errorf("submit test answers: repository returned nil test")
 	}
+
 	if test.ID != answers.TestID {
 		return nil, ErrTestNotFound
 	}
+
 	bigFive, err := s.compatibilitySvc.CalculateBigFive(test, answers)
 	if err != nil {
 		return nil, fmt.Errorf("submit test answers: calculate: %w", err)
