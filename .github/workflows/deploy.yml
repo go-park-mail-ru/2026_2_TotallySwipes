@@ -1,0 +1,89 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image name
+        id: image
+        run: |
+          name="ghcr.io/${GITHUB_REPOSITORY,,}/api:${GITHUB_SHA}"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "API_IMAGE=$name" >> "$GITHUB_ENV"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.image.outputs.name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Set up SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host server
+            HostName $SSH_HOST
+            User ubuntu
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+          EOF
+
+      - name: Upload config
+        env:
+          DOCKER_ENV: ${{ secrets.DOCKER_ENV }}
+        run: |
+          ssh server 'mkdir -p ~/app'
+          rsync -az --delete docker-compose.yml db server:~/app/
+          printf '%s\nAPI_IMAGE=%s\n' "$DOCKER_ENV" "$API_IMAGE" | ssh server 'umask 077 && cat > ~/app/docker.env'
+
+      - name: Deploy
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh server "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
+          ssh server bash -s <<'EOF'
+          set -euo pipefail
+          cd ~/app
+          set -a && . ./docker.env && set +a
+
+          docker compose pull api
+          docker logout ghcr.io
+
+          docker compose up -d --wait postgres redis
+          docker compose --profile tools run --rm migrate -path=/migrations -database "$DATABASE_URL" up
+          docker compose up -d --no-build --remove-orphans api
+          docker image prune -f
+
+          docker compose ps
+          EOF
