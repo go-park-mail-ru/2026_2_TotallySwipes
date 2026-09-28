@@ -120,7 +120,7 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (AuthResul
 		&model.ProfileVersionInput{
 			BirthDate:     in.BirthDate,
 			DatingGoal:    in.DatingGoal,
-			AboutMe:       in.AboutMe,
+			AboutMe:       optionalAboutMe(in.AboutMe),
 			Sex:           in.Sex,
 			SearchSex:     in.SearchSex,
 			SearchAgeFrom: in.SearchAgeFrom,
@@ -237,4 +237,12 @@ func (s *AuthService) matchDummy(password string) {
 		s.dummyHash, _ = s.hasher.Hash("dummy-password-1")
 	})
 	_, _ = s.hasher.Matches(s.dummyHash, password)
+}
+
+// Preserve registration semantics: an empty description is stored as NULL.
+func optionalAboutMe(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }

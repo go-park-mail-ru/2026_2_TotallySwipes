@@ -1,6 +1,7 @@
 package validate
 
 import (
+	. "dating-app/internal/validate"
 	"errors"
 	"strings"
 	"testing"
@@ -110,16 +111,16 @@ func TestValidateAgeAt(t *testing.T) {
 		{"29 февраля, 18 уже есть", date(2008, 2, 29), nil},
 	}
 	for _, tt := range tests {
-		if got := validateAgeAt(tt.birth, now); !errors.Is(got, tt.want) {
-			t.Errorf("%s: validateAgeAt(%v) = %v, want %v", tt.name, tt.birth, got, tt.want)
+		if got := ValidateAgeAt(tt.birth, now); !errors.Is(got, tt.want) {
+			t.Errorf("%s: ValidateAgeAt(%v) = %v, want %v", tt.name, tt.birth, got, tt.want)
 		}
 	}
 
 	leap := date(2008, 2, 29)
-	if err := validateAgeAt(leap, date(2026, 2, 28)); !errors.Is(err, ErrUnderage) {
+	if err := ValidateAgeAt(leap, date(2026, 2, 28)); !errors.Is(err, ErrUnderage) {
 		t.Errorf("29.02 на 28.02: got %v, want %v", err, ErrUnderage)
 	}
-	if err := validateAgeAt(leap, date(2026, 3, 1)); err != nil {
+	if err := ValidateAgeAt(leap, date(2026, 3, 1)); err != nil {
 		t.Errorf("29.02 на 01.03: got %v, want nil", err)
 	}
 }

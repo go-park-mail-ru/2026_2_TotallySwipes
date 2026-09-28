@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	. "dating-app/internal/repository"
 	"errors"
 	"testing"
 	"time"

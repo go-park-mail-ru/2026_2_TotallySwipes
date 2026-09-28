@@ -1,6 +1,7 @@
 package auth
 
 import (
+	. "dating-app/internal/auth"
 	"errors"
 	"strings"
 	"testing"
@@ -35,8 +36,7 @@ func TestJWTIssuer_ParseRejects(t *testing.T) {
 		t.Errorf("wrong secret: err = %v", err)
 	}
 
-	expired := NewJWTIssuer("secret", time.Minute)
-	expired.now = func() time.Time { return time.Now().Add(-time.Hour) }
+	expired := NewJWTIssuer("secret", -time.Hour)
 	old, _, _ := expired.Issue(12, "sess")
 	if _, _, err := j.Parse(old); !errors.Is(err, ErrInvalidToken) {
 		t.Errorf("expired: err = %v", err)

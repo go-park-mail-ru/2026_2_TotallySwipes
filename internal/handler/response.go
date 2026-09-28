@@ -45,3 +45,13 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 func writeError(w http.ResponseWriter, status int, code, message string, fields map[string]string) {
 	writeJSON(w, status, errorResponse{Error: errorBody{Code: code, Message: message, Fields: fields}})
 }
+
+// Write sends a JSON response using the shared response encoder.
+func Write(w http.ResponseWriter, status int, data any) {
+	writeJSON(w, status, data)
+}
+
+// WriteError sends an error without field-level validation details.
+func WriteError(w http.ResponseWriter, status int, code, message string) {
+	writeError(w, status, code, message, nil)
+}

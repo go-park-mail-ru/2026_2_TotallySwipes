@@ -50,6 +50,7 @@ type Photo struct {
 }
 
 type Profile struct {
+	Name           string
 	ID             int64
 	UserID         int64
 	CreatedAt      time.Time
@@ -72,7 +73,7 @@ type ProfileVersion struct {
 	ProfileID     int64
 	BirthDate     time.Time
 	DatingGoal    DatingGoal
-	AboutMe       string
+	AboutMe       *string
 	RecordedAt    time.Time
 	Sex           Sex
 	SearchSex     SearchSex
@@ -83,7 +84,7 @@ type ProfileVersion struct {
 type ProfileVersionInput struct {
 	BirthDate     time.Time
 	DatingGoal    DatingGoal
-	AboutMe       string
+	AboutMe       *string
 	Sex           Sex
 	SearchSex     SearchSex
 	SearchAgeFrom int
@@ -95,6 +96,14 @@ type ProfilePsycho struct {
 	ProfileID         int64
 	TestID            int64
 	RecordedAt        time.Time
+	Openness          *float64
+	Conscientiousness *float64
+	Extraversion      *float64
+	Agreeableness     *float64
+	Neuroticism       *float64
+}
+
+type BigFive struct {
 	Openness          *float64
 	Conscientiousness *float64
 	Extraversion      *float64

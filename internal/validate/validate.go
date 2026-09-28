@@ -23,7 +23,7 @@ const (
 	tagsMaxCount = 10
 	tagMaxLen    = 30
 
-	minAge = 18 // нижняя граница в принципе на сервисе
+	minAge       = 18  // нижняя граница в принципе на сервисе
 	maxSearchAge = 100 // верхняя граница возраста в фильтре поиска
 
 	DateLayout = "2006-01-02" // формат birth_date в запросах
@@ -137,10 +137,11 @@ func ValidateName(s string) error {
 
 // ValidateAge проверяет, что на момент вызова пользователю есть 18 лет
 func ValidateAge(birthDate time.Time) error {
-	return validateAgeAt(birthDate, time.Now())
+	return ValidateAgeAt(birthDate, time.Now())
 }
 
-func validateAgeAt(birthDate, now time.Time) error {
+// ValidateAgeAt checks the minimum age using the supplied reference date.
+func ValidateAgeAt(birthDate, now time.Time) error {
 	birth := time.Date(birthDate.Year(), birthDate.Month(), birthDate.Day(), 0, 0, 0, 0, time.UTC)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	if birth.AddDate(minAge, 0, 0).After(today) {
