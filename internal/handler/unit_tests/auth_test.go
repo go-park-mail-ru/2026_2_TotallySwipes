@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	. "dating-app/internal/handler"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -85,8 +86,8 @@ func checkSessionCookies(t *testing.T, rec *httptest.ResponseRecorder) {
 		got[c.Name] = c
 	}
 	for name, want := range map[string]struct{ value, path string }{
-		accessTokenCookie:  {"acc", "/"},
-		refreshTokenCookie: {"ref", refreshTokenCookiePath},
+		"access_token":  {"acc", "/"},
+		"refresh_token": {"ref", "/api/v1/auth"},
 	} {
 		c, ok := got[name]
 		if !ok {
@@ -142,7 +143,7 @@ func TestRegisterHandler_Created(t *testing.T) {
 
 func TestRegisterHandler_PasswordTooLongForHash(t *testing.T) {
 	rec, resp := doRegister(t, &fakeAuth{err: model.ErrPasswordTooLong}, validRegisterBody)
-	if rec.Code != http.StatusBadRequest || errCode(resp) != codeValidationError {
+	if rec.Code != http.StatusBadRequest || errCode(resp) != "VALIDATION_ERROR" {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
 	}
 }
@@ -158,7 +159,7 @@ func TestRegisterHandler_ValidationError(t *testing.T) {
 		t.Error("service must not be called on invalid input")
 	}
 	e := resp["error"].(map[string]any)
-	if e["code"] != codeValidationError {
+	if e["code"] != "VALIDATION_ERROR" {
 		t.Errorf("code = %v", e["code"])
 	}
 	fields, _ := e["fields"].(map[string]any)
@@ -176,7 +177,7 @@ func TestRegisterHandler_BadJSON(t *testing.T) {
 		if rec.Code != http.StatusBadRequest || svc.called {
 			t.Errorf("body %s: status = %d, called = %v", body, rec.Code, svc.called)
 		}
-		if resp["error"].(map[string]any)["code"] != codeValidationError {
+		if resp["error"].(map[string]any)["code"] != "VALIDATION_ERROR" {
 			t.Errorf("body %s: resp = %v", body, resp)
 		}
 	}
@@ -189,7 +190,7 @@ func TestRegisterHandler_EmailTaken(t *testing.T) {
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	if resp["error"].(map[string]any)["code"] != codeEmailAlreadyExists {
+	if resp["error"].(map[string]any)["code"] != "EMAIL_ALREADY_EXISTS" {
 		t.Errorf("resp = %v", resp)
 	}
 }
@@ -220,7 +221,7 @@ func TestRegisterHandler_InternalError(t *testing.T) {
 		t.Fatalf("status = %d", rec.Code)
 	}
 	e := resp["error"].(map[string]any)
-	if e["code"] != codeInternalError || strings.Contains(rec.Body.String(), "db is down") {
+	if e["code"] != "INTERNAL_SERVER_ERROR" || strings.Contains(rec.Body.String(), "db is down") {
 		t.Errorf("internal details must not leak: %s", rec.Body)
 	}
 }
@@ -360,10 +361,10 @@ func TestLoginHandler_Errors(t *testing.T) {
 		status int
 		code   string
 	}{
-		{"битый JSON", `{`, nil, http.StatusBadRequest, codeValidationError},
-		{"невалидные поля", `{"email": "nope"}`, nil, http.StatusBadRequest, codeValidationError},
-		{"неверный пароль", `{"email": "a@b.ru", "password": "x"}`, service.ErrInvalidCredentials, http.StatusUnauthorized, codeInvalidCredentials},
-		{"ошибка сервиса", `{"email": "a@b.ru", "password": "x"}`, errors.New("db down"), http.StatusInternalServerError, codeInternalError},
+		{"битый JSON", `{`, nil, http.StatusBadRequest, "VALIDATION_ERROR"},
+		{"невалидные поля", `{"email": "nope"}`, nil, http.StatusBadRequest, "VALIDATION_ERROR"},
+		{"неверный пароль", `{"email": "a@b.ru", "password": "x"}`, service.ErrInvalidCredentials, http.StatusUnauthorized, "INVALID_CREDENTIALS"},
+		{"ошибка сервиса", `{"email": "a@b.ru", "password": "x"}`, errors.New("db down"), http.StatusInternalServerError, "INTERNAL_SERVER_ERROR"},
 	}
 	for _, tt := range tests {
 		rec, resp := doLogin(t, &fakeAuth{err: tt.err}, tt.body)
@@ -380,7 +381,7 @@ func TestLogoutHandler(t *testing.T) {
 	svc := &fakeAuth{}
 	h := NewAuthHandler(svc, true).Logout
 
-	rec, _ := do(t, h, "/api/v1/auth/logout", "", &http.Cookie{Name: refreshTokenCookie, Value: "ref"})
+	rec, _ := do(t, h, "/api/v1/auth/logout", "", &http.Cookie{Name: "refresh_token", Value: "ref"})
 	if rec.Code != http.StatusNoContent || svc.logout != "ref" {
 		t.Fatalf("status = %d, logout(%q)", rec.Code, svc.logout)
 	}
@@ -394,8 +395,8 @@ func TestLogoutHandler(t *testing.T) {
 	}
 
 	rec, resp := do(t, NewAuthHandler(&fakeAuth{err: errors.New("redis down")}, true).Logout, "/api/v1/auth/logout", "",
-		&http.Cookie{Name: refreshTokenCookie, Value: "ref"})
-	if rec.Code != http.StatusInternalServerError || errCode(resp) != codeInternalError {
+		&http.Cookie{Name: "refresh_token", Value: "ref"})
+	if rec.Code != http.StatusInternalServerError || errCode(resp) != "INTERNAL_SERVER_ERROR" {
 		t.Errorf("service error: status = %d", rec.Code)
 	}
 	assertSessionCleared(t, rec)
@@ -405,7 +406,7 @@ func assertSessionCleared(t *testing.T, rec *httptest.ResponseRecorder) {
 	t.Helper()
 	cleared := 0
 	for _, c := range rec.Result().Cookies() {
-		if (c.Name == accessTokenCookie || c.Name == refreshTokenCookie) && c.MaxAge < 0 {
+		if (c.Name == "access_token" || c.Name == "refresh_token") && c.MaxAge < 0 {
 			cleared++
 		}
 	}

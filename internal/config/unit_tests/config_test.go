@@ -1,6 +1,7 @@
 package config
 
 import (
+	. "dating-app/internal/config"
 	"strings"
 	"testing"
 	"time"

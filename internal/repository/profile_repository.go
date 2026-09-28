@@ -18,6 +18,21 @@ func NewProfileRepository(db *sql.DB) *ProfileRepo {
 	return &ProfileRepo{db: db}
 }
 
+func (r *ProfileRepo) GetByUserIDCurrentProfile(ctx context.Context, userID int64) (*model.Profile, error) {
+
+	var profileID int64
+	err := r.db.QueryRowContext(ctx, "SELECT id FROM profile WHERE user_id = $1", userID).Scan(&profileID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("get current profile by user id=%d: %w", userID, err)
+	}
+
+	return r.GetByIDCurrentProfile(ctx, profileID)
+}
+
 func (r *ProfileRepo) GetByIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error) {
 
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
@@ -33,12 +48,12 @@ func (r *ProfileRepo) GetByIDCurrentProfile(ctx context.Context, id int64) (*mod
 		return nil, err
 	}
 
-	profile.Tags, err = getProfileTags(ctx, tx, id)
+	profile.Tags, err = loadTags(ctx, tx, id)
 
 	if err != nil {
 		return nil, fmt.Errorf("get current profile id=%d: tags: %w", id, err)
 	}
-	profile.Photos, err = getProfilePhotos(ctx, tx, id)
+	profile.Photos, err = loadPhoto(ctx, tx, id)
 
 	if err != nil {
 		return nil, fmt.Errorf("get current profile id=%d: photos: %w", id, err)
@@ -249,7 +264,7 @@ func insertProfileVersion(ctx context.Context, tx *sql.Tx, profileID int64, v *m
 		SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6, $7, $8 FROM profile_version
 		WHERE profile_id = $1`,
 		profileID, v.BirthDate, v.Sex, v.SearchSex,
-		v.SearchAgeFrom, v.SearchAgeTo, v.DatingGoal, nullIfEmpty(v.AboutMe),
+		v.SearchAgeFrom, v.SearchAgeTo, v.DatingGoal, v.AboutMe,
 	)
 	if err != nil {
 		return fmt.Errorf("insert profile version profile_id=%d: %w", profileID, err)
@@ -327,12 +342,13 @@ func touchProfile(ctx context.Context, tx *sql.Tx, profileID int64) error {
 
 func getProfileVersionAndPsycho(ctx context.Context, tx *sql.Tx, profileID int64) (*model.Profile, error) {
 	const query = `
-		SELECT p.id, p.user_id, p.created_at, p.updated_at,
+		SELECT p.id, p.user_id, p.created_at, p.updated_at, u.name,
 		       v.id, v.profile_id, v.birth_date, v.recorded_at,
 		       v.sex, v.search_sex, v.search_age_from, v.search_age_to, v.dating_goal, v.about_me,
 		       ps.id, ps.profile_id, ps.test_id, ps.recorded_at,
 		       ps.openness, ps.conscientiousness, ps.extraversion, ps.agreeableness, ps.neuroticism
 		FROM profile AS p
+		JOIN "user" AS u ON u.id = p.user_id
 		JOIN LATERAL (
 		    SELECT id, profile_id, birth_date, recorded_at,
 		           sex, search_sex, search_age_from, search_age_to, dating_goal, about_me
@@ -360,7 +376,7 @@ func getProfileVersionAndPsycho(ctx context.Context, tx *sql.Tx, profileID int64
 	version := &profile.CurrentVersion
 
 	err := tx.QueryRowContext(ctx, query, profileID).Scan(
-		&profile.ID, &profile.UserID, &profile.CreatedAt, &profile.UpdatedAt,
+		&profile.ID, &profile.UserID, &profile.CreatedAt, &profile.UpdatedAt, &profile.Name,
 		&version.ID, &version.ProfileID, &version.BirthDate, &version.RecordedAt,
 		&version.Sex, &version.SearchSex, &version.SearchAgeFrom, &version.SearchAgeTo, &version.DatingGoal, &aboutMe,
 		&psychoID, &psychoProfileID, &testID, &recordedAt,
@@ -374,7 +390,9 @@ func getProfileVersionAndPsycho(ctx context.Context, tx *sql.Tx, profileID int64
 	if err != nil {
 		return nil, fmt.Errorf("get current profile id=%d: %w", profileID, err)
 	}
-	version.AboutMe = aboutMe.String
+	if aboutMe.Valid {
+		version.AboutMe = &aboutMe.String
+	}
 
 	if psychoID != nil {
 		psycho.ID = *psychoID
@@ -384,10 +402,126 @@ func getProfileVersionAndPsycho(ctx context.Context, tx *sql.Tx, profileID int64
 		profile.CurrentPsycho = &psycho
 	}
 
+	err = tx.QueryRowContext(ctx, `SELECT name FROM "user" WHERE id = $1`, profile.UserID).Scan(&profile.Name)
+
+	if err != nil {
+		return nil, fmt.Errorf("get current profile id=%d: %w", profileID, err)
+	}
+
 	return &profile, nil
 }
 
-func getProfileTags(ctx context.Context, tx *sql.Tx, profileID int64) ([]model.Tag, error) {
+func (r *ProfileRepo) GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.Profile, *int64, error) {
+
+	afterID := int64(0)
+	if cursor != nil {
+		afterID = *cursor
+	}
+
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return nil, nil, fmt.Errorf("feed: begin read: %w", err)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx,
+		`
+		SELECT p.id, p.user_id, p.created_at, p.updated_at, u.name,
+		v.id, v.profile_id, v.birth_date, v.recorded_at, v.sex, v.search_sex,
+		v.search_age_from, v.search_age_to, v.dating_goal, v.about_me,
+		ps.id, ps.profile_id, ps.test_id, ps.recorded_at,
+		ps.openness, ps.conscientiousness, ps.extraversion, ps.agreeableness, ps.neuroticism
+		FROM profile AS p
+		JOIN "user" AS u ON u.id = p.user_id
+		JOIN LATERAL (
+		SELECT * FROM profile_version WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
+		) AS v ON true
+		LEFT JOIN LATERAL (
+		SELECT * FROM profile_psycho WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
+		) AS ps ON true
+		WHERE u.id > $1 AND u.id <> $2
+		ORDER BY u.id ASC LIMIT $3`, afterID, userID, limit+1)
+
+	if err != nil {
+		return nil, nil, fmt.Errorf("feed: select profiles: %w", err)
+	}
+	defer rows.Close()
+
+	profiles := make([]model.Profile, 0)
+	for rows.Next() {
+		var p model.Profile
+		var psycho model.ProfilePsycho
+		var psychoID, psychoProfileID, testID *int64
+		var recordedAt *time.Time
+		v := &p.CurrentVersion
+		if err := rows.Scan(&p.ID, &p.UserID, &p.CreatedAt, &p.UpdatedAt, &p.Name,
+			&v.ID, &v.ProfileID, &v.BirthDate, &v.RecordedAt, &v.Sex, &v.SearchSex,
+			&v.SearchAgeFrom, &v.SearchAgeTo, &v.DatingGoal, &v.AboutMe,
+			&psychoID, &psychoProfileID, &testID, &recordedAt,
+			&psycho.Openness, &psycho.Conscientiousness, &psycho.Extraversion,
+			&psycho.Agreeableness, &psycho.Neuroticism); err != nil {
+			return nil, nil, fmt.Errorf("feed: scan profile: %w", err)
+		}
+
+		if psychoID != nil {
+			psycho.ID, psycho.ProfileID, psycho.TestID = *psychoID, *psychoProfileID, *testID
+			psycho.RecordedAt = *recordedAt
+			p.CurrentPsycho = &psycho
+		}
+
+		p.Tags = make([]model.Tag, 0)
+		p.Photos = make([]model.Photo, 0)
+		profiles = append(profiles, p)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("feed: read profiles: %w", err)
+	}
+
+	var nextCursor *int64 = nil
+	if len(profiles) > limit {
+		profiles = profiles[:limit]
+		id := profiles[len(profiles)-1].UserID
+		nextCursor = &id
+	}
+
+	profiles, err = loadFeedRelations(ctx, tx, profiles)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, nil, fmt.Errorf("feed: commit read: %w", err)
+	}
+
+	return profiles, nextCursor, nil
+}
+
+func loadFeedRelations(ctx context.Context, tx *sql.Tx, profiles []model.Profile) ([]model.Profile, error) {
+
+	for i := range profiles {
+
+		profile := &profiles[i]
+
+		tags, err := loadTags(ctx, tx, profile.ID)
+		if err != nil {
+			return nil, fmt.Errorf("load profile id=%d tags: %w", profile.ID, err)
+		}
+
+		profile.Tags = tags
+
+		photos, err := loadPhoto(ctx, tx, profile.ID)
+		if err != nil {
+			return nil, fmt.Errorf("load profile id=%d photos: %w", profile.ID, err)
+		}
+
+		profile.Photos = photos
+	}
+
+	return profiles, nil
+}
+
+func loadTags(ctx context.Context, tx *sql.Tx, profileID int64) ([]model.Tag, error) {
 
 	rows, err := tx.QueryContext(ctx,
 		`SELECT t.id, t.name FROM tag AS t
@@ -414,7 +548,7 @@ func getProfileTags(ctx context.Context, tx *sql.Tx, profileID int64) ([]model.T
 	return tags, nil
 }
 
-func getProfilePhotos(ctx context.Context, tx *sql.Tx, profileID int64) ([]model.Photo, error) {
+func loadPhoto(ctx context.Context, tx *sql.Tx, profileID int64) ([]model.Photo, error) {
 
 	rows, err := tx.QueryContext(ctx,
 		`SELECT id, storage_key, position FROM photo WHERE profile_id = $1 ORDER BY position, id`, profileID)
