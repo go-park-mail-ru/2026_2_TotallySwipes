@@ -2,11 +2,33 @@ package handler
 
 import (
 	"dating-app/internal/middleware"
+	"dating-app/internal/model"
 	"dating-app/internal/service"
 	"errors"
 	"net/http"
 	"strconv"
 )
+
+type FeedPage struct {
+	Items      []FeedItem `json:"items"`
+	NextCursor *int64     `json:"next_cursor"`
+}
+
+type FeedItem struct {
+	UserID        int64             `json:"user_id"`
+	Name          string            `json:"name"`
+	Age           int               `json:"age"`
+	DatingIntent  model.DatingGoal  `json:"dating_intent"`
+	Compatibility *float64          `json:"compatibility"`
+	AboutMe       *string           `json:"about_me"`
+	Tags          []string          `json:"tags"`
+	Photos        []model.FeedPhoto `json:"photos"`
+}
+
+type FeedPhoto struct {
+	ID  int64  `json:"id"`
+	URL string `json:"url"`
+}
 
 type FeedHandler struct {
 	profileSvc service.ProfileService
@@ -87,5 +109,23 @@ func (h *FeedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	Write(w, http.StatusOK, page)
+	response := FeedPage{
+		Items:      make([]FeedItem, 0, len(page.Items)),
+		NextCursor: page.NextCursor,
+	}
+
+	for _, item := range page.Items {
+		response.Items = append(response.Items, FeedItem{
+			UserID:        item.UserID,
+			Name:          item.Name,
+			Age:           item.Age,
+			DatingIntent:  item.DatingIntent,
+			Compatibility: item.Compatibility,
+			AboutMe:       item.AboutMe,
+			Tags:          item.Tags,
+			Photos:        item.Photos,
+		})
+	}
+
+	Write(w, http.StatusOK, response)
 }

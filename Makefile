@@ -20,3 +20,14 @@ migrate-create:
 
 test:
 	go test ./...
+
+.PHONY: local-up local-seed local-down
+local-up:
+	docker compose -f docker-compose.local.yml up -d --wait
+
+local-seed:
+	python3 db/seeds/prepare_demo_photos.py
+	docker compose -f docker-compose.local.yml exec -T postgres psql -v ON_ERROR_STOP=1 -U app -d dating_app < db/seeds/demo_profiles.sql
+
+local-down:
+	docker compose -f docker-compose.local.yml down

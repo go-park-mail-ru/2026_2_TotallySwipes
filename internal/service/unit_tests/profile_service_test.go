@@ -91,7 +91,7 @@ func TestProfileServiceGetNextFeed(t *testing.T) {
 				}
 				return tc.scores[calc.calls-1], nil
 			}
-			svc := NewProfileService(repo, calc, LocalPhotoURLProvider{})
+			svc := NewProfileService(repo, calc, NewLocalPhotoURLProvider("https://media.example"))
 			page, err := svc.GetNextFeed(ctx, tc.userID, tc.limit, tc.cursor)
 			if repo.viewerCalls != tc.wantViewerCalls || repo.feedCalls != tc.wantFeedCalls || calc.calls != tc.wantCalcCalls {
 				t.Fatalf("calls: viewer=%d feed=%d calc=%d", repo.viewerCalls, repo.feedCalls, calc.calls)
@@ -228,7 +228,7 @@ func TestProfileServiceFeedItemMapping(t *testing.T) {
 			tags:       []model.Tag{{ID: 4, Name: "music"}, {ID: 9, Name: "sport"}},
 			photos:     []model.Photo{{ID: 8, StorageKey: "first.jpg", Position: 0}, {ID: 3, StorageKey: "second.jpg", Position: 1}},
 			wantTags:   []string{"music", "sport"},
-			wantPhotos: []model.FeedPhoto{{ID: 8, URL: "https://media.example/uploads/first.jpg"}, {ID: 3, URL: "https://media.example/uploads/second.jpg"}},
+			wantPhotos: []model.FeedPhoto{{ID: 8, URL: "https://media.example/cats/first.jpg"}, {ID: 3, URL: "https://media.example/cats/second.jpg"}},
 		},
 	}
 	for _, tc := range tests {
@@ -243,7 +243,7 @@ func TestProfileServiceFeedItemMapping(t *testing.T) {
 				},
 			}
 			calc := &feedCompatibilityMock{t: t}
-			svc := NewProfileService(repo, calc, *NewLocalPhotoURLProvider("https://media.example"))
+			svc := NewProfileService(repo, calc, NewLocalPhotoURLProvider("https://media.example"))
 			page, err := svc.GetNextFeed(context.Background(), 7, 10, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -256,5 +256,45 @@ func TestProfileServiceFeedItemMapping(t *testing.T) {
 				t.Fatal("unexpected dependency calls")
 			}
 		})
+	}
+}
+
+func TestLocalPhotoURLProvider(t *testing.T) {
+	for _, tc := range []struct {
+		name, key, want string
+		wantErr         bool
+	}{
+		{"filename", "image_1.jpg", "http://localhost:8080/cats/image_1.jpg", false},
+		{"nested and escaped", "profile/my photo.jpg", "http://localhost:8080/cats/profile/my%20photo.jpg", false},
+		{"empty", "", "", true},
+		{"parent path", "../secret", "", true},
+		{"absolute path", "/image_1.jpg", "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := NewLocalPhotoURLProvider("http://localhost:8080/")
+			got, err := provider.GetURL(context.Background(), tc.key)
+			if (err != nil) != tc.wantErr || got != tc.want {
+				t.Fatalf("GetURL() = %q, %v; want %q, error=%v", got, err, tc.want, tc.wantErr)
+			}
+		})
+	}
+}
+
+type failingURLProvider struct{ err error }
+
+func (p failingURLProvider) GetURL(context.Context, string) (string, error) { return "", p.err }
+
+func TestProfileServicePropagatesURLProviderError(t *testing.T) {
+	failure := errors.New("URL provider failed")
+	repo := &feedRepositoryMock{t: t,
+		viewer: func(context.Context, int64) (*model.Profile, error) { return &model.Profile{}, nil },
+		feed: func(context.Context, int64, int, *int64) ([]model.Profile, *int64, error) {
+			return []model.Profile{{Photos: []model.Photo{{ID: 1, StorageKey: "image_1.jpg"}}}}, nil, nil
+		},
+	}
+	svc := NewProfileService(repo, &feedCompatibilityMock{t: t}, failingURLProvider{err: failure})
+	page, err := svc.GetNextFeed(context.Background(), 7, 10, nil)
+	if page != nil || !errors.Is(err, failure) {
+		t.Fatalf("page=%v, err=%v; want provider error", page, err)
 	}
 }
