@@ -25,7 +25,7 @@ func NewTestRepository(db *sql.DB, currentTest model.Test) *TestRepo {
 
 func (r *TestRepo) GetCurrentTest(ctx context.Context) (*model.Test, error) {
 	if r.currentTest.ID <= 0 {
-		return nil, ErrNotFound
+		return nil, model.ErrNotFound
 	}
 
 	if r.currentTest.Methodology == "" {
@@ -38,7 +38,7 @@ func (r *TestRepo) GetCurrentTest(ctx context.Context) (*model.Test, error) {
 	err := r.db.QueryRowContext(ctx, `SELECT name FROM test WHERE id = $1`, result.ID).Scan(&result.Title)
 
 	if err == sql.ErrNoRows {
-		return nil, ErrNotFound
+		return nil, model.ErrNotFound
 	}
 
 	if err != nil {
@@ -89,7 +89,7 @@ func (r *TestRepo) SaveTestResult(ctx context.Context, profileID int64, answers 
 	var lockedID int64
 	err = tx.QueryRowContext(ctx, `SELECT id FROM profile WHERE id = $1 FOR UPDATE`, profileID).Scan(&lockedID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
+		return nil, model.ErrNotFound
 	}
 
 	if err != nil {

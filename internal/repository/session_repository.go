@@ -63,7 +63,7 @@ func (r *SessionRepo) Create(ctx context.Context, s *model.Session) error {
 func (r *SessionRepo) GetByTokenHash(ctx context.Context, tokenHash string) (*model.Session, error) {
 	id, err := r.rdb.Get(ctx, sessionHashKey(tokenHash)).Result()
 	if errors.Is(err, redis.Nil) {
-		return nil, ErrNotFound
+		return nil, model.ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get session by hash: %w", err)
@@ -74,7 +74,7 @@ func (r *SessionRepo) GetByTokenHash(ctx context.Context, tokenHash string) (*mo
 		return nil, fmt.Errorf("get session id=%s: %w", id, err)
 	}
 	if len(fields) == 0 {
-		return nil, ErrNotFound
+		return nil, model.ErrNotFound
 	}
 
 	userID, err := strconv.ParseInt(fields["user_id"], 10, 64)

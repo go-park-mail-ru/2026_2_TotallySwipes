@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"dating-app/internal/handler/dto"
 	"dating-app/internal/middleware"
 	"dating-app/internal/model"
 	"dating-app/internal/service"
@@ -10,36 +11,19 @@ import (
 	"mime"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gorilla/mux"
 )
 
-type SubmitTestAnswersRequest struct {
-	Answers []TestAnswerRequest `json:"answers"`
-}
-
-type TestAnswerRequest struct {
-	QuestionID string `json:"question_id"`
-	Value      *int   `json:"value"`
-}
-
-type TestAnswersHandler struct {
+type PostTestResultsHandler struct {
 	testSvc service.TestService
 }
 
-func NewTestAnswersHandler(svc service.TestService) *TestAnswersHandler {
-	return &TestAnswersHandler{testSvc: svc}
+func NewPostTestResultsHandler(svc service.TestService) *PostTestResultsHandler {
+	return &PostTestResultsHandler{testSvc: svc}
 }
 
-type SubmitTestAnswersResponse struct {
-	ResultID    string    `json:"result_id"`
-	TestID      string    `json:"test_id"`
-	Revision    int       `json:"revision"`
-	CompletedAt time.Time `json:"completed_at"`
-}
-
-func (h *TestAnswersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *PostTestResultsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -67,7 +51,7 @@ func (h *TestAnswersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var input SubmitTestAnswersRequest
+	var input dto.SubmitTestAnswersRequest
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 
@@ -113,13 +97,13 @@ func (h *TestAnswersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidTestRequest):
+		case errors.Is(err, model.ErrInvalidTestRequest):
 			WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "Некорректный запрос")
-		case errors.Is(err, service.ErrTestNotFound):
+		case errors.Is(err, model.ErrTestNotFound):
 			WriteError(w, http.StatusNotFound, "TEST_NOT_FOUND", "Тест не найден")
-		case errors.Is(err, service.ErrProfileRequired):
+		case errors.Is(err, model.ErrProfileRequired):
 			WriteError(w, http.StatusConflict, "PROFILE_REQUIRED", "Для прохождения теста необходимо создать профиль")
-		case errors.Is(err, service.ErrInvalidAnswers):
+		case errors.Is(err, model.ErrInvalidAnswers):
 			WriteError(w, http.StatusUnprocessableEntity, "INVALID_ANSWERS", "Проверьте полноту и допустимость ответов")
 		default:
 			WriteError(w, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", "Не удалось сохранить результаты теста")
@@ -132,7 +116,7 @@ func (h *TestAnswersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := SubmitTestAnswersResponse{
+	response := dto.SubmitTestAnswersResponse{
 		ResultID:    strconv.FormatInt(result.ID, 10),
 		TestID:      strconv.FormatInt(result.TestID, 10),
 		Revision:    result.Revision,

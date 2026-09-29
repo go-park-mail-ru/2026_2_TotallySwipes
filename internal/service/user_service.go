@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"dating-app/internal/model"
 )
@@ -34,21 +35,39 @@ func NewUserService(repo UserRepository) *UserServiceImpl {
 }
 
 func (s *UserServiceImpl) CreateUser(ctx context.Context, input *model.UserInput) error {
-	return s.userRepo.CreateUser(ctx, input)
+	if err := s.userRepo.CreateUser(ctx, input); err != nil {
+		return fmt.Errorf("create user: %w", err)
+	}
+	return nil
 }
 
 func (s *UserServiceImpl) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
-	return s.userRepo.GetUserByEmail(ctx, email)
+	user, err := s.userRepo.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, fmt.Errorf("get user by email: %w", err)
+	}
+	return user, nil
 }
 
 func (s *UserServiceImpl) GetUserByID(ctx context.Context, id int64) (*model.User, error) {
-	return s.userRepo.GetUserByID(ctx, id)
+	user, err := s.userRepo.GetUserByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("get user by id: %w", err)
+	}
+	return user, nil
 }
 
 func (s *UserServiceImpl) UpdateUser(ctx context.Context, id int64, input *model.UpdateUserInput) (*model.User, error) {
-	return s.userRepo.UpdateUser(ctx, id, input)
+	user, err := s.userRepo.UpdateUser(ctx, id, input)
+	if err != nil {
+		return nil, fmt.Errorf("update user: %w", err)
+	}
+	return user, nil
 }
 
 func (s *UserServiceImpl) DeleteUserByID(ctx context.Context, id int64) error {
-	return s.userRepo.DeleteUser(ctx, id)
+	if err := s.userRepo.DeleteUser(ctx, id); err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+	return nil
 }

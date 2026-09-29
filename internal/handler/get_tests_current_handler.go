@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"dating-app/internal/handler/dto"
+	"dating-app/internal/model"
 	"dating-app/internal/service"
 	"errors"
 	"net/http"
@@ -15,22 +17,6 @@ func NewGetCurrentTestHandler(svc service.TestService) *GetCurrentTestHandler {
 	return &GetCurrentTestHandler{testSvc: svc}
 }
 
-type currentTestQuestion struct {
-	ID   string `json:"id"`
-	Body string `json:"body"`
-}
-type currentTestOption struct {
-	Value int    `json:"value"`
-	Label string `json:"label"`
-}
-type currentTestResponse struct {
-	TestID        string                `json:"test_id"`
-	Title         string                `json:"title"`
-	Instructions  string                `json:"instructions"`
-	AnswerOptions []currentTestOption   `json:"answer_options"`
-	Questions     []currentTestQuestion `json:"questions"`
-}
-
 func (h *GetCurrentTestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodGet {
@@ -40,7 +26,7 @@ func (h *GetCurrentTestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 	result, err := h.testSvc.GetCurrentTest(r.Context())
 
-	if errors.Is(err, service.ErrActiveTestNotFound) {
+	if errors.Is(err, model.ErrActiveTestNotFound) {
 		WriteError(w, http.StatusNotFound, "ACTIVE_TEST_NOT_FOUND", "Текущий тест не настроен")
 		return
 	}
@@ -51,18 +37,18 @@ func (h *GetCurrentTestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	response := currentTestResponse{
+	response := dto.CurrentTestResponse{
 		TestID: strconv.FormatInt(result.ID, 10), Title: result.Title, Instructions: result.Instructions,
-		AnswerOptions: make([]currentTestOption, 0, len(result.AnswerOptions)),
-		Questions:     make([]currentTestQuestion, 0, len(result.Questions)),
+		AnswerOptions: make([]dto.TestOption, 0, len(result.AnswerOptions)),
+		Questions:     make([]dto.TestQuestion, 0, len(result.Questions)),
 	}
 
 	for _, option := range result.AnswerOptions {
-		response.AnswerOptions = append(response.AnswerOptions, currentTestOption{Value: option.Value, Label: option.Label})
+		response.AnswerOptions = append(response.AnswerOptions, dto.TestOption{Value: option.Value, Label: option.Label})
 	}
 
 	for _, question := range result.Questions {
-		response.Questions = append(response.Questions, currentTestQuestion{ID: strconv.FormatInt(question.ID, 10), Body: question.Body})
+		response.Questions = append(response.Questions, dto.TestQuestion{ID: strconv.FormatInt(question.ID, 10), Body: question.Body})
 	}
 
 	Write(w, http.StatusOK, response)

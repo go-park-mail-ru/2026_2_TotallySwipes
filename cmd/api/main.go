@@ -69,14 +69,14 @@ func run() error {
 		urlProvider,
 	)
 
-	feedHandler := handler.NewFeedHandler(profileSvc)
+	feedHandler := handler.NewGetFeedHandler(profileSvc)
 	testRepo := repository.NewTestRepository(db, model.NewTIPITest(cfg.CurrentTestID))
 	testSvc := service.NewTestService(testRepo, profileSvc, &service.CompatibilityServiceImpl{})
 	getCurrentTestHandler := handler.NewGetCurrentTestHandler(testSvc)
-	testAnswersHandler := handler.NewTestAnswersHandler(testSvc)
+	testAnswersHandler := handler.NewPostTestResultsHandler(testSvc)
 
 	r := mux.NewRouter()
-	r.HandleFunc("/health", handler.Health).Methods(http.MethodGet)
+	r.HandleFunc("/health", handler.GetHealth).Methods(http.MethodGet)
 
 	files := http.FileServer(http.Dir("./db/data/cats"))
 	r.PathPrefix("/cats/").Handler(http.StripPrefix("/cats/", files)).Methods(http.MethodGet, http.MethodHead)

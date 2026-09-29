@@ -54,7 +54,7 @@ func TestProtectedTestRoutes(t *testing.T) {
 			r := mux.NewRouter()
 			requireAuth := middleware.Auth(issuer)
 			r.Handle("/api/v1/tests/current", requireAuth(handler.NewGetCurrentTestHandler(svc))).Methods(http.MethodGet)
-			r.Handle("/api/v1/tests/{test_id}/results", requireAuth(handler.NewTestAnswersHandler(svc))).Methods(http.MethodPost)
+			r.Handle("/api/v1/tests/{test_id}/results", requireAuth(handler.NewPostTestResultsHandler(svc))).Methods(http.MethodPost)
 			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
 			if tc.token != "" {
 				req.AddCookie(&http.Cookie{Name: "access_token", Value: tc.token})
