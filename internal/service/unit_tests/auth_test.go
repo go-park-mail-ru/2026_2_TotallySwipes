@@ -93,8 +93,8 @@ func newTestService(users *fakeUsers, sessions *fakeSessions, completed bool) *A
 	return NewAuthService(users, fakeProfiles{completed}, sessions, fakeHasher{}, fakeIssuer{}, time.Hour)
 }
 
-func validRegisterInput() RegisterInput {
-	return RegisterInput{
+func validRegisterInput() model.RegisterInput {
+	return model.RegisterInput{
 		Name:          "alex",
 		Email:         "alex@example.com",
 		Password:      "qwerty123",
@@ -110,7 +110,7 @@ func validRegisterInput() RegisterInput {
 }
 
 // checkSession проверяет, что выданный refresh-токен соответствует сохранённой сессии
-func checkSession(t *testing.T, sessions *fakeSessions, res AuthResult, userID int64) {
+func checkSession(t *testing.T, sessions *fakeSessions, res model.AuthResult, userID int64) {
 	t.Helper()
 	s, ok := sessions.byHash[auth.HashToken(res.Tokens.Refresh)]
 	if !ok {
@@ -169,10 +169,10 @@ func TestRegister_Errors(t *testing.T) {
 	sessions := newFakeSessions()
 	sessions.createErr = errors.New("redis down")
 	res, err := newTestService(&fakeUsers{createID: 1}, sessions, false).Register(ctx, validRegisterInput())
-	if !errors.Is(err, ErrSessionNotOpened) {
-		t.Errorf("session error: err = %v, want ErrSessionNotOpened", err)
+	if !errors.Is(err, model.ErrSessionNotOpened) {
+		t.Errorf("session error: err = %v, want model.ErrSessionNotOpened", err)
 	}
-	if res.UserID != 1 || res.Tokens != (Tokens{}) {
+	if res.UserID != 1 || res.Tokens != (model.Tokens{}) {
 		t.Errorf("session error: result = %+v, want UserID only", res)
 	}
 }
@@ -199,7 +199,7 @@ func TestLogin(t *testing.T) {
 	} {
 		sessions := newFakeSessions()
 		_, err := newTestService(users, sessions, false).Login(ctx, tc[0], tc[1])
-		if !errors.Is(err, ErrInvalidCredentials) {
+		if !errors.Is(err, model.ErrInvalidCredentials) {
 			t.Errorf("%s: err = %v", name, err)
 		}
 		if len(sessions.byHash) != 0 {
@@ -208,7 +208,7 @@ func TestLogin(t *testing.T) {
 	}
 
 	dbErr := errors.New("db down")
-	if _, err := newTestService(&fakeUsers{getErr: dbErr}, newFakeSessions(), false).Login(ctx, "a@b.ru", "x"); !errors.Is(err, dbErr) || errors.Is(err, ErrInvalidCredentials) {
+	if _, err := newTestService(&fakeUsers{getErr: dbErr}, newFakeSessions(), false).Login(ctx, "a@b.ru", "x"); !errors.Is(err, dbErr) || errors.Is(err, model.ErrInvalidCredentials) {
 		t.Errorf("db error must not look like invalid credentials: %v", err)
 	}
 }

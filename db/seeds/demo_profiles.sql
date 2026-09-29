@@ -3,10 +3,10 @@
 BEGIN;
 DO $seed$
 DECLARE
-    names text[] := ARRAY['Александр', 'Анна', 'Михаил', 'Мария', 'Даниил',
-        'София', 'Илья', 'Алиса', 'Максим', 'Полина',
-        'Артём', 'Екатерина', 'Никита', 'Дарья', 'Егор'];
-    tag_names text[] := ARRAY['music', 'sport', 'travel', 'books', 'movies', 'gaming', 'cooking', 'art'];
+    names text[] := ARRAY['Анна', 'Мария', 'София', 'Алиса', 'Полина',
+        'Екатерина', 'Дарья', 'Елизавета', 'Виктория', 'Анастасия',
+        'Ксения', 'Варвара', 'Вероника', 'Александра', 'Ульяна'];
+    tag_names text[] := ARRAY['музыка', 'спорт', 'путешествия', 'книги', 'кино', 'игры', 'кулинария', 'искусство'];
     demo_test_id bigint;
     new_user_id bigint;
     new_profile_id bigint;
@@ -29,9 +29,9 @@ BEGIN
         -- This fixture supports profile_psycho foreign keys, not GET/POST test flows.
         IF demo_test_id IS NULL THEN
             SELECT id INTO demo_test_id FROM test
-            WHERE name = '[demo seed] synthetic Big Five' ORDER BY id LIMIT 1;
+            WHERE name = '[демо] Синтетические показатели Большой пятёрки' ORDER BY id LIMIT 1;
             IF demo_test_id IS NULL THEN
-                INSERT INTO test (name) VALUES ('[demo seed] synthetic Big Five')
+                INSERT INTO test (name) VALUES ('[демо] Синтетические показатели Большой пятёрки')
                 RETURNING id INTO demo_test_id;
             END IF;
         END IF;
@@ -51,14 +51,11 @@ BEGIN
             new_profile_id,
             1,
             birth_date_value,
-            CASE
-                WHEN i % 2 = 1 THEN 'male'
-                ELSE 'female'
-            END,
+            'female',
             CASE i % 3
-                WHEN 0 THEN 'Ищу общение'
-                WHEN 1 THEN 'Ищу половинку'
-                WHEN 2 THEN 'Ищу встречи'
+                WHEN 0 THEN 'friendship'
+                WHEN 1 THEN 'relationship'
+                WHEN 2 THEN 'casual'
             END,
             'Тестовая анкета ' || names[i] || '. Люблю прогулки, музыку и новые знакомства.',
             'all',

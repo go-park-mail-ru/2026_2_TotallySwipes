@@ -23,7 +23,7 @@ func (r *ProfileRepo) GetByUserIDCurrentProfile(ctx context.Context, userID int6
 	var profileID int64
 	err := r.db.QueryRowContext(ctx, "SELECT id FROM profile WHERE user_id = $1", userID).Scan(&profileID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
+		return nil, model.ErrNotFound
 	}
 
 	if err != nil {
@@ -322,7 +322,7 @@ func lockProfile(ctx context.Context, tx *sql.Tx, profileID int64) error {
 	var id int64
 	err := tx.QueryRowContext(ctx, `SELECT id FROM profile WHERE id = $1 FOR UPDATE`, profileID).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
+		return model.ErrNotFound
 	}
 
 	if err != nil {
@@ -384,7 +384,7 @@ func getProfileVersionAndPsycho(ctx context.Context, tx *sql.Tx, profileID int64
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
+		return nil, model.ErrNotFound
 	}
 
 	if err != nil {

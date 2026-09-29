@@ -31,10 +31,12 @@ func NewTestService(repo TestRepository, profiles ProfileService, compatibility 
 func (s *TestServiceImpl) GetCurrentTest(ctx context.Context) (*model.Test, error) {
 	test, err := s.testRepo.GetCurrentTest(ctx)
 	if errors.Is(err, model.ErrNotFound) {
-		return nil, ErrActiveTestNotFound
+		return nil, fmt.Errorf("get current test: %w", model.ErrActiveTestNotFound)
 	}
+
 	if err != nil {
 		return nil, fmt.Errorf("get current test: %w", err)
+
 	}
 	return test, nil
 }
@@ -42,16 +44,16 @@ func (s *TestServiceImpl) GetCurrentTest(ctx context.Context) (*model.Test, erro
 func (s *TestServiceImpl) SubmitTestAnswers(ctx context.Context, userID int64, answers *model.TestAnswers) (*model.TestResult, error) {
 
 	if answers == nil || answers.TestID <= 0 {
-		return nil, ErrInvalidTestRequest
+		return nil, fmt.Errorf("submit test answers: invalid input: %w", model.ErrInvalidTestRequest)
 	}
 
 	profile, err := s.profileSvc.GetByUserIDCurrentProfile(ctx, userID)
 	if errors.Is(err, model.ErrNotFound) {
-		return nil, ErrProfileRequired
+		return nil, fmt.Errorf("submit test answers: get profile: %w", model.ErrProfileRequired)
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("SubmitTestAnswers : %w", err)
+		return nil, fmt.Errorf("submit test answers: get profile: %w", err)
 	}
 
 	if profile == nil {
@@ -61,11 +63,11 @@ func (s *TestServiceImpl) SubmitTestAnswers(ctx context.Context, userID int64, a
 	profileID := profile.ID
 	test, err := s.testRepo.GetCurrentTest(ctx)
 	if errors.Is(err, model.ErrNotFound) {
-		return nil, ErrTestNotFound
+		return nil, fmt.Errorf("submit test answers: find requested test: %w", model.ErrTestNotFound)
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("SubmitTestAnswers : %w", err)
+		return nil, fmt.Errorf("submit test answers: get current test: %w", err)
 	}
 
 	if test == nil {
@@ -73,7 +75,7 @@ func (s *TestServiceImpl) SubmitTestAnswers(ctx context.Context, userID int64, a
 	}
 
 	if test.ID != answers.TestID {
-		return nil, ErrTestNotFound
+		return nil, fmt.Errorf("submit test answers: find requested test: %w", model.ErrTestNotFound)
 	}
 
 	bigFive, err := s.compatibilitySvc.CalculateBigFive(test, answers)
@@ -88,10 +90,6 @@ func (s *TestServiceImpl) SubmitTestAnswers(ctx context.Context, userID int64, a
 		if err != nil {
 			return nil, fmt.Errorf("submit test answers: update indicators: %w", err)
 		}
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("SubmitTestAnswers : %w", err)
 	}
 
 	psychoInput := &model.ProfilePsychoInput{

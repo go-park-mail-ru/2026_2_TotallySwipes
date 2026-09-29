@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	. "dating-app/internal/handler"
+	"dating-app/internal/handler/dto"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,25 +16,24 @@ import (
 	"time"
 
 	"dating-app/internal/model"
-	"dating-app/internal/service"
 )
 
 type fakeAuth struct {
 	called   bool
-	got      service.RegisterInput
+	got      model.RegisterInput
 	email    string
 	password string
 	logout   string
-	res      service.AuthResult
+	res      model.AuthResult
 	err      error
 }
 
-func (f *fakeAuth) Register(_ context.Context, in service.RegisterInput) (service.AuthResult, error) {
+func (f *fakeAuth) Register(_ context.Context, in model.RegisterInput) (model.AuthResult, error) {
 	f.called, f.got = true, in
 	return f.res, f.err
 }
 
-func (f *fakeAuth) Login(_ context.Context, email, password string) (service.AuthResult, error) {
+func (f *fakeAuth) Login(_ context.Context, email, password string) (model.AuthResult, error) {
 	f.called, f.email, f.password = true, email, password
 	return f.res, f.err
 }
@@ -43,7 +43,7 @@ func (f *fakeAuth) Logout(_ context.Context, refreshToken string) error {
 	return f.err
 }
 
-var testTokens = service.Tokens{
+var testTokens = model.Tokens{
 	Access:           "acc",
 	AccessExpiresAt:  time.Now().Add(15 * time.Minute),
 	Refresh:          "ref",
@@ -120,7 +120,7 @@ func doRegister(t *testing.T, svc *fakeAuth, body string) (*httptest.ResponseRec
 }
 
 func TestRegisterHandler_Created(t *testing.T) {
-	svc := &fakeAuth{res: service.AuthResult{UserID: 12, Tokens: testTokens}}
+	svc := &fakeAuth{res: model.AuthResult{UserID: 12, Tokens: testTokens}}
 	rec, resp := doRegister(t, svc, validRegisterBody)
 
 	if rec.Code != http.StatusCreated {
@@ -197,8 +197,8 @@ func TestRegisterHandler_EmailTaken(t *testing.T) {
 
 func TestRegisterHandler_SessionNotOpened(t *testing.T) {
 	svc := &fakeAuth{
-		res: service.AuthResult{UserID: 12},
-		err: fmt.Errorf("%w: redis down", service.ErrSessionNotOpened),
+		res: model.AuthResult{UserID: 12},
+		err: fmt.Errorf("%w: redis down", model.ErrSessionNotOpened),
 	}
 	rec, resp := doRegister(t, svc, validRegisterBody)
 
@@ -226,8 +226,8 @@ func TestRegisterHandler_InternalError(t *testing.T) {
 	}
 }
 
-func validRegister() RegisterRequest {
-	return RegisterRequest{
+func validRegister() dto.RegisterRequest {
+	return dto.RegisterRequest{
 		Name:          "alex",
 		Email:         "alex@example.com",
 		Password:      "qwerty123",
@@ -248,7 +248,7 @@ func TestRegisterRequestValidate_OK(t *testing.T) {
 }
 
 func TestRegisterRequestValidate_CollectsAllFields(t *testing.T) {
-	var r RegisterRequest
+	var r dto.RegisterRequest
 	errs := r.Validate()
 
 	want := []string{"birth_date", "dating_intent", "email", "name", "password", "search_age_from", "search_age_to", "search_sex", "sex"}
@@ -291,7 +291,7 @@ func TestRegisterRequestNormalize(t *testing.T) {
 }
 
 func TestLoginRequestNormalize(t *testing.T) {
-	r := LoginRequest{Email: " Alex@Example.COM ", Password: " Qwerty123 "}
+	r := dto.LoginRequest{Email: " Alex@Example.COM ", Password: " Qwerty123 "}
 	r.Normalize()
 
 	if r.Email != "alex@example.com" {
@@ -317,13 +317,13 @@ func keys(m map[string]string) []string {
 func TestLoginRequestValidate(t *testing.T) {
 	tests := []struct {
 		name string
-		req  LoginRequest
+		req  dto.LoginRequest
 		want []string
 	}{
-		{"ok", LoginRequest{Email: "a@b.ru", Password: "x"}, nil},
-		{"пароль без правил сложности", LoginRequest{Email: "a@b.ru", Password: "abc"}, nil},
-		{"пусто", LoginRequest{}, []string{"email", "password"}},
-		{"кривой email", LoginRequest{Email: "nope", Password: "x"}, []string{"email"}},
+		{"ok", dto.LoginRequest{Email: "a@b.ru", Password: "x"}, nil},
+		{"пароль без правил сложности", dto.LoginRequest{Email: "a@b.ru", Password: "abc"}, nil},
+		{"пусто", dto.LoginRequest{}, []string{"email", "password"}},
+		{"кривой email", dto.LoginRequest{Email: "nope", Password: "x"}, []string{"email"}},
 	}
 	for _, tt := range tests {
 		if got := keys(tt.req.Validate()); !reflect.DeepEqual(got, tt.want) {
@@ -338,7 +338,7 @@ func doLogin(t *testing.T, svc *fakeAuth, body string) (*httptest.ResponseRecord
 }
 
 func TestLoginHandler_OK(t *testing.T) {
-	svc := &fakeAuth{res: service.AuthResult{UserID: 7, ProfileCompleted: true, Tokens: testTokens}}
+	svc := &fakeAuth{res: model.AuthResult{UserID: 7, ProfileCompleted: true, Tokens: testTokens}}
 	rec, resp := doLogin(t, svc, `{"email": " alex@example.com ", "password": "abc"}`)
 
 	if rec.Code != http.StatusOK {
@@ -363,7 +363,7 @@ func TestLoginHandler_Errors(t *testing.T) {
 	}{
 		{"битый JSON", `{`, nil, http.StatusBadRequest, "VALIDATION_ERROR"},
 		{"невалидные поля", `{"email": "nope"}`, nil, http.StatusBadRequest, "VALIDATION_ERROR"},
-		{"неверный пароль", `{"email": "a@b.ru", "password": "x"}`, service.ErrInvalidCredentials, http.StatusUnauthorized, "INVALID_CREDENTIALS"},
+		{"неверный пароль", `{"email": "a@b.ru", "password": "x"}`, model.ErrInvalidCredentials, http.StatusUnauthorized, "INVALID_CREDENTIALS"},
 		{"ошибка сервиса", `{"email": "a@b.ru", "password": "x"}`, errors.New("db down"), http.StatusInternalServerError, "INTERNAL_SERVER_ERROR"},
 	}
 	for _, tt := range tests {

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"dating-app/internal/handler/dto"
 	"dating-app/internal/middleware"
 	"dating-app/internal/model"
 	"dating-app/internal/service"
@@ -9,36 +10,15 @@ import (
 	"strconv"
 )
 
-type FeedPage struct {
-	Items      []FeedItem `json:"items"`
-	NextCursor *int64     `json:"next_cursor"`
-}
-
-type FeedItem struct {
-	UserID        int64             `json:"user_id"`
-	Name          string            `json:"name"`
-	Age           int               `json:"age"`
-	DatingIntent  model.DatingGoal  `json:"dating_intent"`
-	Compatibility *float64          `json:"compatibility"`
-	AboutMe       *string           `json:"about_me"`
-	Tags          []string          `json:"tags"`
-	Photos        []model.FeedPhoto `json:"photos"`
-}
-
-type FeedPhoto struct {
-	ID  int64  `json:"id"`
-	URL string `json:"url"`
-}
-
-type FeedHandler struct {
+type GetFeedHandler struct {
 	profileSvc service.ProfileService
 }
 
-func NewFeedHandler(svc service.ProfileService) *FeedHandler {
-	return &FeedHandler{profileSvc: svc}
+func NewGetFeedHandler(svc service.ProfileService) *GetFeedHandler {
+	return &GetFeedHandler{profileSvc: svc}
 }
 
-func (h *FeedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *GetFeedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -94,9 +74,9 @@ func (h *FeedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidFeedRequest):
+		case errors.Is(err, model.ErrInvalidFeedRequest):
 			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Некорректные параметры ленты")
-		case errors.Is(err, service.ErrProfileRequired):
+		case errors.Is(err, model.ErrProfileRequired):
 			WriteError(w, http.StatusConflict, "PROFILE_REQUIRED", "Для просмотра ленты необходимо создать профиль")
 		default:
 			WriteError(w, http.StatusInternalServerError, "FEED_LOAD_FAILED", "Не удалось загрузить ленту")
@@ -109,21 +89,34 @@ func (h *FeedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := FeedPage{
-		Items:      make([]FeedItem, 0, len(page.Items)),
+	response := dto.FeedResponse{
+		Items:      make([]dto.FeedItem, 0, len(page.Items)),
 		NextCursor: page.NextCursor,
 	}
 
 	for _, item := range page.Items {
-		response.Items = append(response.Items, FeedItem{
+		photos := make([]dto.FeedPhoto, 0, len(item.Photos))
+		for _, photo := range item.Photos {
+			photos = append(photos, dto.FeedPhoto{ID: photo.ID, URL: photo.URL})
+		}
+
+		intent := string(item.DatingIntent)
+		for label, goal := range model.DatingGoalByIntent {
+			if goal == item.DatingIntent {
+				intent = label
+				break
+			}
+		}
+
+		response.Items = append(response.Items, dto.FeedItem{
 			UserID:        item.UserID,
 			Name:          item.Name,
 			Age:           item.Age,
-			DatingIntent:  item.DatingIntent,
+			DatingIntent:  intent,
 			Compatibility: item.Compatibility,
 			AboutMe:       item.AboutMe,
 			Tags:          item.Tags,
-			Photos:        item.Photos,
+			Photos:        photos,
 		})
 	}
 

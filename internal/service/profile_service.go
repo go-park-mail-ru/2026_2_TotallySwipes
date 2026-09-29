@@ -5,9 +5,6 @@ import (
 	"dating-app/internal/model"
 	"errors"
 	"fmt"
-	"io/fs"
-	"net/url"
-	"strings"
 	"time"
 )
 
@@ -33,29 +30,6 @@ type ProfileRepository interface {
 	GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.Profile, *int64, error)
 }
 
-type URLProvider interface {
-	GetURL(ctx context.Context, storageKey string) (string, error)
-}
-
-func (p *LocalPhotoURLProvider) GetURL(ctx context.Context, storageKey string) (string, error) {
-
-	if storageKey == "." || !fs.ValidPath(storageKey) || strings.Contains(storageKey, "\\") {
-		return "", fmt.Errorf("invalid photo storage key: %q", storageKey)
-	}
-	photoPath := (&url.URL{Path: "/cats/" + storageKey}).EscapedPath()
-	return strings.TrimRight(p.mediaBaseURL, "/") + photoPath, nil
-}
-
-type LocalPhotoURLProvider struct {
-	mediaBaseURL string
-}
-
-func NewLocalPhotoURLProvider(baseURL string) *LocalPhotoURLProvider {
-	return &LocalPhotoURLProvider{
-		mediaBaseURL: baseURL,
-	}
-}
-
 type ProfileServiceImpl struct {
 	profileRepo      ProfileRepository
 	media            URLProvider
@@ -67,27 +41,32 @@ func NewProfileService(repo ProfileRepository, svc CompatibilityService, media U
 }
 
 func (s *ProfileServiceImpl) GetByUserIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error) {
-	return s.profileRepo.GetByUserIDCurrentProfile(ctx, id)
+	profile, err := s.profileRepo.GetByUserIDCurrentProfile(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("get user profile id=%d: %w", id, err)
+	}
+	return profile, nil
 }
 
 func (s *ProfileServiceImpl) GetNextFeed(ctx context.Context, userID int64, limit int, cursor *int64) (*model.FeedPage, error) {
 
 	if userID <= 0 || limit < 1 || limit > 10 || (cursor != nil && *cursor <= 0) {
-		return nil, fmt.Errorf("%w: invalid user ID, limit or cursor", ErrInvalidFeedRequest)
+		return nil, fmt.Errorf("%w: invalid user ID, limit or cursor", model.ErrInvalidFeedRequest)
 	}
 
 	userProfile, err := s.profileRepo.GetByUserIDCurrentProfile(ctx, userID)
 	if errors.Is(err, model.ErrNotFound) {
-		return nil, ErrProfileRequired
+		return nil, fmt.Errorf("get feed user id=%d: %w", userID, model.ErrProfileRequired)
 	}
+
 	if err != nil {
 		return nil, fmt.Errorf("get feed viewer profile: %w", err)
 	}
+
 	if userProfile == nil {
 		return nil, fmt.Errorf("get feed: viewer profile is nil")
 	}
 	userVector, userHasTest := feedBigFive(userProfile.CurrentPsycho)
-
 	profiles, nextCursor, err := s.profileRepo.GetProfilesByCursorAndLimit(ctx, userID, limit, cursor)
 
 	if err != nil {
@@ -138,7 +117,6 @@ func (s *ProfileServiceImpl) GetNextFeed(ctx context.Context, userID int64, limi
 	return page, nil
 }
 
-// CalculateAge returns age in full calendar years at today.
 func CalculateAge(birthDate, today time.Time) int {
 	age := today.Year() - birthDate.Year()
 	if today.Month() < birthDate.Month() || (today.Month() == birthDate.Month() && today.Day() < birthDate.Day()) {
@@ -160,5 +138,8 @@ func feedBigFive(psycho *model.ProfilePsycho) (*model.BigFive, bool) {
 }
 
 func (s *ProfileServiceImpl) AddProfilePsycho(ctx context.Context, profileID int64, psycho *model.ProfilePsychoInput) error {
-	return s.profileRepo.AddProfilePsycho(ctx, profileID, psycho)
+	if err := s.profileRepo.AddProfilePsycho(ctx, profileID, psycho); err != nil {
+		return fmt.Errorf("add profile psycho profile id=%d: %w", profileID, err)
+	}
+	return nil
 }

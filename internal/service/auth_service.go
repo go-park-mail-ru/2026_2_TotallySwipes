@@ -11,12 +11,6 @@ import (
 	"dating-app/internal/model"
 )
 
-var ErrInvalidCredentials = errors.New("invalid credentials")
-
-// ErrSessionNotOpened - аккаунт уже создан, но сессию открыть не удалось.
-// AuthResult при этом содержит UserID, Tokens пустые: клиенту надо залогиниться
-var ErrSessionNotOpened = errors.New("account created, session not opened")
-
 type AuthUserRepository interface {
 	// CreateUserWithProfile в одной транзакции создаёт пользователя и профиль
 	// Если email занят - model.ErrEmailAlreadyExists
@@ -44,34 +38,6 @@ type PasswordHasher interface {
 
 type AccessTokenIssuer interface {
 	Issue(userID int64, sessionID string) (token string, expiresAt time.Time, err error)
-}
-
-type RegisterInput struct {
-	Name          string
-	Email         string
-	Password      string
-	BirthDate     time.Time
-	Sex           model.Sex
-	SearchSex     model.SearchSex
-	DatingGoal    model.DatingGoal
-	AboutMe       string
-	SearchAgeFrom int
-	SearchAgeTo   int
-	Tags          []string
-}
-
-// Tokens - пара токенов новой сессии
-type Tokens struct {
-	Access           string
-	AccessExpiresAt  time.Time
-	Refresh          string
-	RefreshExpiresAt time.Time
-}
-
-type AuthResult struct {
-	UserID           int64
-	ProfileCompleted bool
-	Tokens           Tokens
 }
 
 type AuthService struct {
@@ -103,11 +69,11 @@ func NewAuthService(users AuthUserRepository, profiles ProfileCompletionChecker,
 
 // Register создаёт пользователя с профилем и сразу открывает сессию.
 // Ввод должен быть уже провалидирован. Если пользователь создан, а сессия
-// нет - возвращает ErrSessionNotOpened вместе с UserID
-func (s *AuthService) Register(ctx context.Context, in RegisterInput) (AuthResult, error) {
+// нет - возвращает model.ErrSessionNotOpened вместе с UserID
+func (s *AuthService) Register(ctx context.Context, in model.RegisterInput) (model.AuthResult, error) {
 	hash, err := s.hasher.Hash(in.Password)
 	if err != nil {
-		return AuthResult{}, fmt.Errorf("hash password: %w", err)
+		return model.AuthResult{}, fmt.Errorf("hash password: %w", err)
 	}
 
 	userID, err := s.users.CreateUserWithProfile(ctx,
@@ -129,50 +95,50 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (AuthResul
 		in.Tags,
 	)
 	if err != nil {
-		return AuthResult{}, fmt.Errorf("create user: %w", err)
+		return model.AuthResult{}, fmt.Errorf("create user: %w", err)
 	}
 
 	tokens, err := s.openSession(ctx, userID)
 	if err != nil {
-		return AuthResult{UserID: userID}, fmt.Errorf("%w: %w", ErrSessionNotOpened, err)
+		return model.AuthResult{UserID: userID}, fmt.Errorf("register: %w: %w", model.ErrSessionNotOpened, err)
 	}
 
 	// Психотест при регистрации ещё не пройден
-	return AuthResult{UserID: userID, ProfileCompleted: false, Tokens: tokens}, nil
+	return model.AuthResult{UserID: userID, ProfileCompleted: false, Tokens: tokens}, nil
 }
 
-// Login - ErrInvalidCredentials, если нет такого email или пароль не подошёл
-func (s *AuthService) Login(ctx context.Context, email, password string) (AuthResult, error) {
+// Login - model.ErrInvalidCredentials, если нет такого email или пароль не подошёл
+func (s *AuthService) Login(ctx context.Context, email, password string) (model.AuthResult, error) {
 	user, err := s.users.GetUserByEmail(ctx, email)
 	if errors.Is(err, model.ErrNotFound) {
 		// Всё равно считаем bcrypt, чтобы по времени ответа нельзя было
 		// понять, зарегистрирован ли email
 		s.matchDummy(password)
-		return AuthResult{}, ErrInvalidCredentials
+		return model.AuthResult{}, fmt.Errorf("login: %w", model.ErrInvalidCredentials)
 	}
 	if err != nil {
-		return AuthResult{}, fmt.Errorf("get user: %w", err)
+		return model.AuthResult{}, fmt.Errorf("get user: %w", err)
 	}
 
 	ok, err := s.hasher.Matches(user.PasswordHash, password)
 	if err != nil {
-		return AuthResult{}, fmt.Errorf("compare password: %w", err)
+		return model.AuthResult{}, fmt.Errorf("compare password: %w", err)
 	}
 	if !ok {
-		return AuthResult{}, ErrInvalidCredentials
+		return model.AuthResult{}, fmt.Errorf("login: %w", model.ErrInvalidCredentials)
 	}
 
 	completed, err := s.profiles.IsProfileCompleted(ctx, user.ID)
 	if err != nil {
-		return AuthResult{}, fmt.Errorf("check profile: %w", err)
+		return model.AuthResult{}, fmt.Errorf("check profile: %w", err)
 	}
 
 	tokens, err := s.openSession(ctx, user.ID)
 	if err != nil {
-		return AuthResult{}, err
+		return model.AuthResult{}, fmt.Errorf("login: open session: %w", err)
 	}
 
-	return AuthResult{UserID: user.ID, ProfileCompleted: completed, Tokens: tokens}, nil
+	return model.AuthResult{UserID: user.ID, ProfileCompleted: completed, Tokens: tokens}, nil
 }
 
 // Logout отзывает сессию по refresh-токену. Нет токена или сессии - не ошибка
@@ -198,14 +164,14 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
 	return nil
 }
 
-func (s *AuthService) openSession(ctx context.Context, userID int64) (Tokens, error) {
+func (s *AuthService) openSession(ctx context.Context, userID int64) (model.Tokens, error) {
 	sessionID, err := auth.NewSessionID()
 	if err != nil {
-		return Tokens{}, fmt.Errorf("new session id: %w", err)
+		return model.Tokens{}, fmt.Errorf("new session id: %w", err)
 	}
 	refresh, err := auth.NewRefreshToken()
 	if err != nil {
-		return Tokens{}, fmt.Errorf("new refresh token: %w", err)
+		return model.Tokens{}, fmt.Errorf("new refresh token: %w", err)
 	}
 	refreshExpiresAt := s.now().Add(s.refreshTTL)
 
@@ -216,15 +182,15 @@ func (s *AuthService) openSession(ctx context.Context, userID int64) (Tokens, er
 		ExpiresAt: refreshExpiresAt,
 	})
 	if err != nil {
-		return Tokens{}, fmt.Errorf("create session: %w", err)
+		return model.Tokens{}, fmt.Errorf("create session: %w", err)
 	}
 
 	access, accessExpiresAt, err := s.access.Issue(userID, sessionID)
 	if err != nil {
-		return Tokens{}, fmt.Errorf("issue access token: %w", err)
+		return model.Tokens{}, fmt.Errorf("issue access token: %w", err)
 	}
 
-	return Tokens{
+	return model.Tokens{
 		Access:           access,
 		AccessExpiresAt:  accessExpiresAt,
 		Refresh:          refresh,
@@ -239,7 +205,6 @@ func (s *AuthService) matchDummy(password string) {
 	_, _ = s.hasher.Matches(s.dummyHash, password)
 }
 
-// Preserve registration semantics: an empty description is stored as NULL.
 func optionalAboutMe(value string) *string {
 	if value == "" {
 		return nil

@@ -25,7 +25,7 @@ func normalizeVector(vector []float64) ([]float64, error) {
 	min := slices.Min(vector)
 
 	if math.IsNaN(min) || math.IsNaN(max) || math.IsInf(min, 0) || math.IsInf(max, 0) || max <= min {
-		return nil, fmt.Errorf("invalid scale bounds")
+		return nil, fmt.Errorf("invalid scale bounds: %w", model.ErrInvalidBigFive)
 	}
 
 	result := make([]float64, len(vector))
@@ -52,7 +52,7 @@ func (s *CompatibilityServiceImpl) CalculateDistance(candidate1 model.BigFive, c
 		candidate1.Extraversion == nil ||
 		candidate1.Neuroticism == nil ||
 		candidate1.Openness == nil {
-		return 0, fmt.Errorf("candidate1: incomplete Big Five")
+		return 0, fmt.Errorf("candidate1: incomplete Big Five: %w", model.ErrInvalidBigFive)
 	}
 
 	if candidate2.Agreeableness == nil ||
@@ -60,7 +60,7 @@ func (s *CompatibilityServiceImpl) CalculateDistance(candidate1 model.BigFive, c
 		candidate2.Extraversion == nil ||
 		candidate2.Neuroticism == nil ||
 		candidate2.Openness == nil {
-		return 0, fmt.Errorf("candidate2: incomplete Big Five")
+		return 0, fmt.Errorf("candidate2: incomplete Big Five: %w", model.ErrInvalidBigFive)
 	}
 
 	v1 := []float64{*candidate1.Agreeableness, *candidate1.Conscientiousness, *candidate1.Extraversion, *candidate1.Neuroticism, *candidate1.Openness}
@@ -68,13 +68,13 @@ func (s *CompatibilityServiceImpl) CalculateDistance(candidate1 model.BigFive, c
 	vector1, err := normalizeVector(v1)
 
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("normalize first candidate: %w", err)
 	}
 
 	vector2, err := normalizeVector(v2)
 
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("normalize second candidate: %w", err)
 	}
 
 	return 1 - difference(vector1, vector2), nil
@@ -95,13 +95,17 @@ const (
 
 func (s *CompatibilityServiceImpl) CalculateBigFive(test *model.Test, answers *model.TestAnswers) (*model.BigFive, error) {
 	if test == nil || answers == nil {
-		return nil, fmt.Errorf("test and answers are required")
+		return nil, fmt.Errorf("test and answers are required: %w", model.ErrInvalidTestDefinition)
 	}
 	switch test.Methodology {
 	case model.MethodologyTIPI:
-		return calculateTIPI(*test, *answers)
+		result, err := calculateTIPI(*test, *answers)
+		if err != nil {
+			return nil, fmt.Errorf("calculate TIPI: %w", err)
+		}
+		return result, nil
 	default:
-		return nil, fmt.Errorf("unsupported test methodology: %q", test.Methodology)
+		return nil, fmt.Errorf("unsupported test methodology: %q: %w", test.Methodology, model.ErrInvalidTestDefinition)
 	}
 }
 
@@ -113,24 +117,24 @@ func score(values map[int64]float64, direct, reverse int64) *float64 {
 func calculateTIPI(test model.Test, answers model.TestAnswers) (*model.BigFive, error) {
 
 	if answers.TestID != test.ID {
-		return nil, fmt.Errorf("test ID mismatch or invalid test ID")
+		return nil, fmt.Errorf("test ID mismatch or invalid test ID: %w", model.ErrInvalidTestDefinition)
 	}
 
 	if len(test.Questions) != 10 {
-		return nil, fmt.Errorf("TIPI requires exactly 10 questions")
+		return nil, fmt.Errorf("TIPI requires exactly 10 questions: %w", model.ErrInvalidTestDefinition)
 	}
 	if len(answers.Answers) != 10 {
-		return nil, fmt.Errorf("%w: TIPI requires exactly 10 answers", ErrInvalidAnswers)
+		return nil, fmt.Errorf("%w: TIPI requires exactly 10 answers", model.ErrInvalidAnswers)
 	}
 
 	if len(test.AnswerOptions) != 7 {
-		return nil, fmt.Errorf("TIPI requires answer options 1 through 7")
+		return nil, fmt.Errorf("TIPI requires answer options 1 through 7: %w", model.ErrInvalidTestDefinition)
 	}
 
 	options := make(map[int]bool, 7)
 	for _, option := range test.AnswerOptions {
 		if option.Value < 1 || option.Value > 7 || options[option.Value] {
-			return nil, fmt.Errorf("invalid TIPI answer options")
+			return nil, fmt.Errorf("invalid TIPI answer options: %w", model.ErrInvalidTestDefinition)
 		}
 		options[option.Value] = true
 	}
@@ -140,11 +144,11 @@ func calculateTIPI(test model.Test, answers model.TestAnswers) (*model.BigFive, 
 	for _, question := range test.Questions {
 
 		if operations[question.ID] != 0 {
-			return nil, fmt.Errorf("invalid or duplicate question ID: %d", question.ID)
+			return nil, fmt.Errorf("invalid or duplicate question ID: %d: %w", question.ID, model.ErrInvalidTestDefinition)
 		}
 
 		if question.OperationID > 10 || seenOperations[question.OperationID] {
-			return nil, fmt.Errorf("invalid or duplicate TIPI operation: %d", question.OperationID)
+			return nil, fmt.Errorf("invalid or duplicate TIPI operation: %d: %w", question.OperationID, model.ErrInvalidTestDefinition)
 		}
 		operations[question.ID] = question.OperationID
 		seenOperations[question.OperationID] = true
@@ -156,11 +160,11 @@ func calculateTIPI(test model.Test, answers model.TestAnswers) (*model.BigFive, 
 		operation, exists := operations[answer.QuestionID]
 
 		if !exists || seenAnswers[answer.QuestionID] {
-			return nil, fmt.Errorf("%w: unknown or duplicate question: %d", ErrInvalidAnswers, answer.QuestionID)
+			return nil, fmt.Errorf("%w: unknown or duplicate question: %d", model.ErrInvalidAnswers, answer.QuestionID)
 		}
 
 		if !options[answer.Value] {
-			return nil, fmt.Errorf("%w: answer for question %d must be in [1,7]", ErrInvalidAnswers, answer.QuestionID)
+			return nil, fmt.Errorf("%w: answer for question %d must be in [1,7]", model.ErrInvalidAnswers, answer.QuestionID)
 		}
 		seenAnswers[answer.QuestionID] = true
 		values[operation] = float64(answer.Value)
@@ -186,7 +190,7 @@ func isValid(v float64) bool {
 func (s *CompatibilityServiceImpl) UpdateBigFive(current *model.BigFive, incoming *model.BigFive) (*model.BigFive, error) {
 
 	if incoming == nil {
-		return nil, fmt.Errorf("incoming Big Five is required")
+		return nil, fmt.Errorf("incoming Big Five is required: %w", model.ErrInvalidBigFive)
 	}
 	if current == nil {
 		current = &model.BigFive{}
@@ -212,13 +216,13 @@ func (s *CompatibilityServiceImpl) UpdateBigFive(current *model.BigFive, incomin
 
 	for _, field := range fields {
 		if field.incoming == nil || !isValid(*field.incoming) {
-			return nil, fmt.Errorf("%s: invalid incoming value", field.name)
+			return nil, fmt.Errorf("%s: invalid incoming value: %w", field.name, model.ErrInvalidBigFive)
 		}
 
 		value := *field.incoming
 		if field.current != nil {
 			if !isValid(*field.current) {
-				return nil, fmt.Errorf("%s: invalid current value", field.name)
+				return nil, fmt.Errorf("%s: invalid current value: %w", field.name, model.ErrInvalidBigFive)
 			}
 
 			value = blend(*field.current, *field.incoming, s.alpha)

@@ -11,10 +11,6 @@ import (
 	"dating-app/internal/model"
 )
 
-var (
-	ErrNotFound = model.ErrNotFound
-)
-
 const pgUniqueViolation = "23505"
 
 // isUniqueViolation - в таблице "user" единственное UNIQUE-ограничение
@@ -41,7 +37,7 @@ func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*model.User, erro
 		id).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.BirthDate)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
+		return nil, model.ErrNotFound
 	}
 
 	if err != nil {
@@ -60,7 +56,7 @@ func (r *UserRepo) GetUserByEmail(ctx context.Context, email string) (*model.Use
 		email).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.BirthDate)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
+		return nil, model.ErrNotFound
 	}
 
 	if err != nil {
@@ -148,7 +144,7 @@ func (r *UserRepo) CreateUserWithProfile(ctx context.Context, user *model.UserIn
 }
 
 // UpdateUser меняет только переданные (не nil) поля и возвращает пользователя
-// после изменения. ErrNotFound - нет такого id, model.ErrEmailAlreadyExists -
+// после изменения. model.ErrNotFound - нет такого id, model.ErrEmailAlreadyExists -
 // новый email занят
 func (r *UserRepo) UpdateUser(ctx context.Context, id int64, input *model.UpdateUserInput) (*model.User, error) {
 
@@ -176,7 +172,7 @@ func (r *UserRepo) UpdateUser(ctx context.Context, id int64, input *model.Update
 	).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.BirthDate)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
+		return nil, model.ErrNotFound
 	}
 	if isUniqueViolation(err) {
 		return nil, model.ErrEmailAlreadyExists
@@ -199,7 +195,7 @@ func (r *UserRepo) DeleteUser(ctx context.Context, id int64) error {
 		return fmt.Errorf("delete user id=%d: rows affected: %w", id, err)
 	}
 	if count == 0 {
-		return ErrNotFound
+		return model.ErrNotFound
 	}
 	return nil
 }
