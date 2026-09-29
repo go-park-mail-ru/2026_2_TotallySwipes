@@ -71,7 +71,8 @@ func run() error {
 
 	feedHandler := handler.NewGetFeedHandler(profileSvc)
 	testRepo := repository.NewTestRepository(db, model.NewTIPITest(cfg.CurrentTestID))
-	testSvc := service.NewTestService(testRepo, profileSvc, &service.CompatibilityServiceImpl{})
+	compSvc := service.NewCompatibilityService(1)
+	testSvc := service.NewTestService(testRepo, profileSvc, compSvc)
 	getCurrentTestHandler := handler.NewGetCurrentTestHandler(testSvc)
 	testAnswersHandler := handler.NewPostTestResultsHandler(testSvc)
 

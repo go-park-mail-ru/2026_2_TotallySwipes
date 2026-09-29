@@ -8,6 +8,19 @@ DECLARE
         'Ксения', 'Варвара', 'Вероника', 'Александра', 'Ульяна'];
     tag_names text[] := ARRAY['музыка', 'спорт', 'путешествия', 'книги', 'кино', 'игры', 'кулинария', 'искусство'];
     demo_test_id bigint;
+    tipi_test_id bigint;
+    tipi_questions text[] := ARRAY[
+        'Я считаю себя общительным человеком, полным энтузиазма.',
+        'Я считаю себя критичным человеком, склонным к спорам.',
+        'Я считаю себя надёжным и дисциплинированным человеком.',
+        'Я считаю себя тревожным человеком, которого легко расстроить.',
+        'Я считаю себя открытым новому опыту человеком с разносторонними интересами.',
+        'Я считаю себя сдержанным и немногословным человеком.',
+        'Я считаю себя отзывчивым и сердечным человеком.',
+        'Я считаю себя неорганизованным и небрежным человеком.',
+        'Я считаю себя спокойным и эмоционально устойчивым человеком.',
+        'Я считаю себя приверженцем привычного, с небольшим интересом к творчеству.'
+    ];
     new_user_id bigint;
     new_profile_id bigint;
     new_tag_id bigint;
@@ -19,6 +32,24 @@ DECLARE
 BEGIN
     -- Serializes concurrent runs of this seed script.
     PERFORM pg_advisory_xact_lock(2026, 215);
+
+    -- Демонстрационный русский перевод TIPI; порядок соответствует operation_id 1..10.
+    -- Источник: https://gosling.psy.utexas.edu/scales-weve-developed/ten-item-personality-measure-tipi/ten-item-personality-inventory-tipi/
+    -- Создаётся независимо от наличия demo-аккаунтов. Старые вопросы не переписываются.
+    SELECT id INTO tipi_test_id FROM test
+    WHERE name = 'TIPI — Краткий опросник Большой пятёрки (демо)' ORDER BY id LIMIT 1;
+    IF tipi_test_id IS NULL THEN
+        INSERT INTO test (name) VALUES ('TIPI — Краткий опросник Большой пятёрки (демо)')
+        RETURNING id INTO tipi_test_id;
+    END IF;
+    FOR i IN 1..10 LOOP
+        IF NOT EXISTS (SELECT 1 FROM question WHERE test_id = tipi_test_id AND operation_id = i) THEN
+            INSERT INTO question (test_id, operation_id, body)
+            VALUES (tipi_test_id, i, tipi_questions[i]);
+        END IF;
+    END LOOP;
+    RAISE NOTICE 'TIPI готов: CURRENT_TEST_ID=%', tipi_test_id;
+
     FOR i IN 1..15 LOOP
         email_value := 'demo' || lpad(i::text, 2, '0') || '@example.com';
         IF EXISTS (SELECT 1 FROM "user" WHERE email = email_value) THEN
@@ -95,4 +126,6 @@ SELECT u.email, p.id AS profile_id,
 FROM "user" u JOIN profile p ON p.user_id = u.id
 WHERE u.email IN (SELECT 'demo' || lpad(n::text, 2, '0') || '@example.com' FROM generate_series(1,15) n)
 ORDER BY u.email;
+SELECT id AS current_test_id, name FROM test
+WHERE name = 'TIPI — Краткий опросник Большой пятёрки (демо)';
 COMMIT;

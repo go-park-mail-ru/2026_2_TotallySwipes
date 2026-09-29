@@ -4,7 +4,6 @@ import (
 	"dating-app/internal/model"
 	"fmt"
 	"math"
-	"slices"
 )
 
 type CompatibilityService interface {
@@ -19,21 +18,8 @@ type CompatibilityServiceImpl struct {
 	alpha float64
 }
 
-func normalizeVector(vector []float64) ([]float64, error) {
-
-	max := slices.Max(vector)
-	min := slices.Min(vector)
-
-	if math.IsNaN(min) || math.IsNaN(max) || math.IsInf(min, 0) || math.IsInf(max, 0) || max <= min {
-		return nil, fmt.Errorf("invalid scale bounds: %w", model.ErrInvalidBigFive)
-	}
-
-	result := make([]float64, len(vector))
-	for idx, el := range vector {
-		result[idx] = (el - min) / (max - min)
-	}
-
-	return result, nil
+func NewCompatibilityService(alpha float64) *CompatibilityServiceImpl {
+	return &CompatibilityServiceImpl{alpha: alpha}
 }
 
 func difference(v1 []float64, v2 []float64) float64 {
@@ -65,19 +51,16 @@ func (s *CompatibilityServiceImpl) CalculateDistance(candidate1 model.BigFive, c
 
 	v1 := []float64{*candidate1.Agreeableness, *candidate1.Conscientiousness, *candidate1.Extraversion, *candidate1.Neuroticism, *candidate1.Openness}
 	v2 := []float64{*candidate2.Agreeableness, *candidate2.Conscientiousness, *candidate2.Extraversion, *candidate2.Neuroticism, *candidate2.Openness}
-	vector1, err := normalizeVector(v1)
 
-	if err != nil {
-		return 0, fmt.Errorf("normalize first candidate: %w", err)
+	for i := range v1 {
+		if !isValid(v1[i]) {
+			return 0, fmt.Errorf("candidate1: value at index %d must be in [0,1]: %w", i, model.ErrInvalidBigFive)
+		}
+		if !isValid(v2[i]) {
+			return 0, fmt.Errorf("candidate2: value at index %d must be in [0,1]: %w", i, model.ErrInvalidBigFive)
+		}
 	}
-
-	vector2, err := normalizeVector(v2)
-
-	if err != nil {
-		return 0, fmt.Errorf("normalize second candidate: %w", err)
-	}
-
-	return 1 - difference(vector1, vector2), nil
+	return 1 - difference(v1, v2), nil
 }
 
 const (
@@ -99,7 +82,7 @@ func (s *CompatibilityServiceImpl) CalculateBigFive(test *model.Test, answers *m
 	}
 	switch test.Methodology {
 	case model.MethodologyTIPI:
-		result, err := calculateTIPI(*test, *answers)
+		result, err := validateAndCalculateTIPI(*test, *answers)
 		if err != nil {
 			return nil, fmt.Errorf("calculate TIPI: %w", err)
 		}
@@ -114,7 +97,7 @@ func score(values map[int64]float64, direct, reverse int64) *float64 {
 	return &value
 }
 
-func calculateTIPI(test model.Test, answers model.TestAnswers) (*model.BigFive, error) {
+func validateAndCalculateTIPI(test model.Test, answers model.TestAnswers) (*model.BigFive, error) {
 
 	if answers.TestID != test.ID {
 		return nil, fmt.Errorf("test ID mismatch or invalid test ID: %w", model.ErrInvalidTestDefinition)
