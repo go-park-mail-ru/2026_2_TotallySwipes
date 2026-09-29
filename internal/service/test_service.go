@@ -24,6 +24,10 @@ type TestServiceImpl struct {
 	testRepo TestRepository
 }
 
+func NewTestService(repo TestRepository, profiles ProfileService, compatibility CompatibilityService) *TestServiceImpl {
+	return &TestServiceImpl{testRepo: repo, profileSvc: profiles, compatibilitySvc: compatibility}
+}
+
 func (s *TestServiceImpl) GetCurrentTest(ctx context.Context) (*model.Test, error) {
 	test, err := s.testRepo.GetCurrentTest(ctx)
 	if errors.Is(err, model.ErrNotFound) {

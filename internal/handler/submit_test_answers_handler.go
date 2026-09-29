@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"dating-app/internal/middleware"
 	"dating-app/internal/model"
 	"dating-app/internal/service"
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
 	"time"
@@ -45,7 +47,16 @@ func (h *TestAnswersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := int64(1)
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Необходима авторизация")
+		return
+	}
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		WriteError(w, http.StatusUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE", "Требуется Content-Type application/json")
+		return
+	}
 	testIDRaw := mux.Vars(r)["test_id"]
 
 	testID, err := strconv.ParseInt(testIDRaw, 10, 64)
