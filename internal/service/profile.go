@@ -5,6 +5,9 @@ import (
 	"dating-app/internal/model"
 	"errors"
 	"fmt"
+	"io/fs"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -30,28 +33,36 @@ type ProfileRepository interface {
 	GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.Profile, *int64, error)
 }
 
-// Нужно добавить в роутер fileserver добавить а то жопа
+type URLProvider interface {
+	GetURL(ctx context.Context, storageKey string) (string, error)
+}
+
+func (p *LocalPhotoURLProvider) GetURL(ctx context.Context, storageKey string) (string, error) {
+
+	if storageKey == "." || !fs.ValidPath(storageKey) || strings.Contains(storageKey, "\\") {
+		return "", fmt.Errorf("invalid photo storage key: %q", storageKey)
+	}
+	photoPath := (&url.URL{Path: "/cats/" + storageKey}).EscapedPath()
+	return strings.TrimRight(p.mediaBaseURL, "/") + photoPath, nil
+}
+
 type LocalPhotoURLProvider struct {
-	baseURL string
+	mediaBaseURL string
 }
 
 func NewLocalPhotoURLProvider(baseURL string) *LocalPhotoURLProvider {
 	return &LocalPhotoURLProvider{
-		baseURL: baseURL,
+		mediaBaseURL: baseURL,
 	}
-}
-
-func (p *LocalPhotoURLProvider) GetURL(ctx context.Context, storageKey string) (string, error) {
-	return p.baseURL + "/uploads/" + storageKey, nil
 }
 
 type ProfileServiceImpl struct {
 	profileRepo      ProfileRepository
-	media            LocalPhotoURLProvider
+	media            URLProvider
 	compatibilitySvc CompatibilityService
 }
 
-func NewProfileService(repo ProfileRepository, svc CompatibilityService, media LocalPhotoURLProvider) *ProfileServiceImpl {
+func NewProfileService(repo ProfileRepository, svc CompatibilityService, media URLProvider) *ProfileServiceImpl {
 	return &ProfileServiceImpl{profileRepo: repo, compatibilitySvc: svc, media: media}
 }
 

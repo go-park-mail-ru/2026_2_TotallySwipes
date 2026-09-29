@@ -61,12 +61,14 @@ func run() error {
 		issuer,
 		cfg.Auth.JWTRefreshTTL,
 	)
+	urlProvider := service.NewLocalPhotoURLProvider("http://localhost:" + cfg.HTTP.Port)
 	authHandler := handler.NewAuthHandler(authSvc, cfg.Auth.CookieSecure)
 	profileSvc := service.NewProfileService(
 		profileRepo,
 		&service.CompatibilityServiceImpl{},
-		*service.NewLocalPhotoURLProvider(""),
+		urlProvider,
 	)
+
 	feedHandler := handler.NewFeedHandler(profileSvc)
 	testRepo := repository.NewTestRepository(db, model.NewTIPITest(cfg.CurrentTestID))
 	testSvc := service.NewTestService(testRepo, profileSvc, &service.CompatibilityServiceImpl{})
@@ -75,6 +77,9 @@ func run() error {
 
 	r := mux.NewRouter()
 	r.HandleFunc("/health", handler.Health).Methods(http.MethodGet)
+
+	files := http.FileServer(http.Dir("./db/data/cats"))
+	r.PathPrefix("/cats/").Handler(http.StripPrefix("/cats/", files)).Methods(http.MethodGet, http.MethodHead)
 
 	api := r.PathPrefix("/api/v1").Subrouter()
 	requireAuth := middleware.Auth(issuer)

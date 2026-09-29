@@ -38,6 +38,8 @@ services:
         condition: service_healthy
     env_file:
       - docker.env
+    volumes:
+      - ./db/data/cats:/app/db/data/cats:ro
     ports:
       - "${API_BIND:-127.0.0.1}:${PORT:-8080}:${PORT:-8080}"
 
