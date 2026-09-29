@@ -46,11 +46,25 @@ BEGIN
 
         INSERT INTO profile_version
             (profile_id, revision, birth_date, sex, dating_goal, about_me,
-             search_sex, search_age_from, search_age_to)
-        VALUES (new_profile_id, 1, birth_date_value,
-            CASE WHEN i % 2 = 1 THEN 'male' ELSE 'female' END,
-            'friendship', 'Тестовая анкета ' || names[i] || '. Люблю прогулки, музыку и новые знакомства.',
-            'all', 18, 100);
+            search_sex, search_age_from, search_age_to)
+        VALUES (
+            new_profile_id,
+            1,
+            birth_date_value,
+            CASE
+                WHEN i % 2 = 1 THEN 'male'
+                ELSE 'female'
+            END,
+            CASE i % 3
+                WHEN 0 THEN 'Ищу общение'
+                WHEN 1 THEN 'Ищу половинку'
+                WHEN 2 THEN 'Ищу встречи'
+            END,
+            'Тестовая анкета ' || names[i] || '. Люблю прогулки, музыку и новые знакомства.',
+            'all',
+            18,
+            100
+        );
 
         -- Synthetic normalized scores; each vector has differing components.
         INSERT INTO profile_psycho

@@ -111,6 +111,7 @@ func (s *ProfileServiceImpl) GetNextFeed(ctx context.Context, userID int64, limi
 			UserID: profile.UserID, Name: profile.Name,
 			Age:           CalculateAge(profile.CurrentVersion.BirthDate, time.Now()),
 			AboutMe:       profile.CurrentVersion.AboutMe,
+			DatingIntent:  profile.CurrentVersion.DatingGoal,
 			Compatibility: compatibilityRes,
 			Tags:          make([]string, 0, len(profile.Tags)),
 			Photos:        make([]model.FeedPhoto, 0, len(profile.Photos)),
