@@ -46,7 +46,6 @@ type TestResult struct {
 	CompletedA time.Time
 }
 
-// NewTIPITest задаёт методику и шкалу. Название и вопросы загружаются из БД.
 func NewTIPITest(id int64) Test {
 	return Test{
 		ID:           id,
