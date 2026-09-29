@@ -81,7 +81,6 @@ func (s *AuthService) Register(ctx context.Context, in model.RegisterInput) (mod
 			Name:         in.Name,
 			Email:        in.Email,
 			PasswordHash: hash,
-			BirthDate:    in.BirthDate,
 		},
 		&model.ProfileVersionInput{
 			BirthDate:     in.BirthDate,

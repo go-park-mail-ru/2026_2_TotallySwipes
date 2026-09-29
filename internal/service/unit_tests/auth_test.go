@@ -142,7 +142,7 @@ func TestRegister_OK(t *testing.T) {
 		t.Errorf("user input = %+v", users.created)
 	}
 	pv := users.createdPV
-	if pv.DatingGoal != model.DatingGoalRelationship || pv.SearchAgeTo != 30 || (pv.AboutMe == nil || *pv.AboutMe != "hi") || !pv.BirthDate.Equal(users.created.BirthDate) {
+	if pv.DatingGoal != model.DatingGoalRelationship || pv.SearchAgeTo != 30 || (pv.AboutMe == nil || *pv.AboutMe != "hi") || !pv.BirthDate.Equal(validRegisterInput().BirthDate) {
 		t.Errorf("profile input = %+v", pv)
 	}
 	checkSession(t, sessions, res, 12)

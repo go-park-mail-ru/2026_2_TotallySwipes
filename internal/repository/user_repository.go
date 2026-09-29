@@ -33,8 +33,8 @@ func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*model.User, erro
 	user := model.User{}
 
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, name, email, password_hash, birth_date FROM "user" WHERE id = $1`,
-		id).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.BirthDate)
+		`SELECT id, name, email, password_hash FROM "user" WHERE id = $1`,
+		id).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, model.ErrNotFound
@@ -52,8 +52,8 @@ func (r *UserRepo) GetUserByEmail(ctx context.Context, email string) (*model.Use
 	user := model.User{}
 
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, name, email, password_hash, birth_date FROM "user" WHERE email = $1`,
-		email).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.BirthDate)
+		`SELECT id, name, email, password_hash FROM "user" WHERE email = $1`,
+		email).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, model.ErrNotFound
@@ -73,11 +73,10 @@ func (r *UserRepo) CreateUser(ctx context.Context, input *model.UserInput) error
 	}
 
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO "user" (name, email, password_hash, birth_date) VALUES ($1, $2, $3, $4)`,
+		`INSERT INTO "user" (name, email, password_hash) VALUES ($1, $2, $3)`,
 		input.Name,
 		input.Email,
 		input.PasswordHash,
-		input.BirthDate,
 	)
 
 	if isUniqueViolation(err) {
@@ -107,8 +106,8 @@ func (r *UserRepo) CreateUserWithProfile(ctx context.Context, user *model.UserIn
 
 	var userID int64
 	err = tx.QueryRowContext(ctx,
-		`INSERT INTO "user" (name, email, password_hash, birth_date) VALUES ($1, $2, $3, $4) RETURNING id`,
-		user.Name, user.Email, user.PasswordHash, user.BirthDate,
+		`INSERT INTO "user" (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id`,
+		user.Name, user.Email, user.PasswordHash,
 	).Scan(&userID)
 
 	if isUniqueViolation(err) {
@@ -160,16 +159,14 @@ func (r *UserRepo) UpdateUser(ctx context.Context, id int64, input *model.Update
 		    name = COALESCE($1, name),
 		    email = COALESCE($2, email),
 		    password_hash = COALESCE($3, password_hash),
-		    birth_date = COALESCE($4, birth_date),
 		    updated_at = CURRENT_TIMESTAMP
-		WHERE id = $5
-		RETURNING id, name, email, password_hash, birth_date`,
+		WHERE id = $4
+		RETURNING id, name, email, password_hash`,
 		input.Name,
 		input.Email,
 		input.PasswordHash,
-		input.BirthDate,
 		id,
-	).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.BirthDate)
+	).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, model.ErrNotFound

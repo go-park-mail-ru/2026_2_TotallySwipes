@@ -1,16 +1,16 @@
+BEGIN;
+
 CREATE TABLE "user" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
     "email" TEXT NOT NULL UNIQUE,
     "password_hash" TEXT NOT NULL,
-    "birth_date" DATE NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "user_id_positive" CHECK (id > 0),
     CONSTRAINT "user_name_valid" CHECK (char_length(name) BETWEEN 1 AND 100 AND name ~ '[^[:space:]]'),
     CONSTRAINT "user_email_valid" CHECK (char_length(email) BETWEEN 1 AND 254 AND email !~ '[[:space:]]'),
     CONSTRAINT "user_password_hash_nonblank" CHECK (password_hash ~ '[^[:space:]]'),
-    CONSTRAINT "user_birth_date_finite" CHECK (isfinite(birth_date)),
     CONSTRAINT "user_created_at_finite" CHECK (isfinite(created_at)),
     CONSTRAINT "user_updated_at_finite" CHECK (isfinite(updated_at)),
     CONSTRAINT "user_updated_not_before_created" CHECK (updated_at >= created_at)
@@ -115,12 +115,9 @@ CREATE TABLE "user_answer" (
     "question_id" BIGINT NOT NULL,
     "answer_value" SMALLINT NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY ("profile_psycho_id", "question_id"),
-    CONSTRAINT "user_answer_value_valid" CHECK (answer_value BETWEEN 0 AND 7),
+    CONSTRAINT "user_answer_value_valid" CHECK (answer_value BETWEEN 1 AND 7),
     CONSTRAINT "user_answer_created_at_finite" CHECK (isfinite(created_at)),
-    CONSTRAINT "user_answer_updated_at_finite" CHECK (isfinite(updated_at)),
-    CONSTRAINT "user_answer_updated_not_before_created" CHECK (updated_at >= created_at),
     CONSTRAINT "answer_result" FOREIGN KEY ("profile_psycho_id")
         REFERENCES "profile_psycho" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
     CONSTRAINT "answer_question" FOREIGN KEY ("question_id")
@@ -176,11 +173,8 @@ CREATE TABLE "profile_tag" (
     "profile_id" BIGINT NOT NULL,
     "tag_id" BIGINT NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY ("profile_id", "tag_id"),
     CONSTRAINT "profile_tag_created_at_finite" CHECK (isfinite(created_at)),
-    CONSTRAINT "profile_tag_updated_at_finite" CHECK (isfinite(updated_at)),
-    CONSTRAINT "profile_tag_updated_not_before_created" CHECK (updated_at >= created_at),
     CONSTRAINT "profile_tag_profile" FOREIGN KEY ("profile_id")
         REFERENCES "profile" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
     CONSTRAINT "profile_tag_tag" FOREIGN KEY ("tag_id")
@@ -261,12 +255,9 @@ CREATE TABLE "profile_like" (
     "author_id" BIGINT NOT NULL,
     "profile_id" BIGINT NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE ("author_id", "profile_id"),
     CONSTRAINT "profile_like_id_positive" CHECK (id > 0),
     CONSTRAINT "profile_like_created_at_finite" CHECK (isfinite(created_at)),
-    CONSTRAINT "profile_like_updated_at_finite" CHECK (isfinite(updated_at)),
-    CONSTRAINT "profile_like_updated_not_before_created" CHECK (updated_at >= created_at),
     CONSTRAINT "profile_like_author" FOREIGN KEY ("author_id")
         REFERENCES "user" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
     CONSTRAINT "profile_like_profile" FOREIGN KEY ("profile_id")
@@ -309,3 +300,42 @@ CREATE TABLE "message" (
     CONSTRAINT "message_sender" FOREIGN KEY ("sender_id")
         REFERENCES "user" ("id") ON DELETE CASCADE ON UPDATE RESTRICT
 );
+
+
+CREATE INDEX user_answer_question_id_idx ON user_answer (question_id);
+
+CREATE FUNCTION protect_answered_question() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF (NEW.body, NEW.operation_id, NEW.test_id)
+        IS DISTINCT FROM (OLD.body, OLD.operation_id, OLD.test_id)
+        AND EXISTS (SELECT 1 FROM user_answer WHERE question_id = OLD.id)
+    THEN
+        RAISE EXCEPTION 'question % already has answers; create a new question instead', OLD.id
+            USING ERRCODE = '23514', CONSTRAINT = 'question_definition_immutable';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER question_definition_immutable
+    BEFORE UPDATE OF body, operation_id, test_id ON question
+    FOR EACH ROW EXECUTE FUNCTION protect_answered_question();
+
+CREATE FUNCTION lock_answer_question() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    -- Создаём новую версию строки без изменения её данных и updated_at.
+    -- Это сериализует запись ответа с редактированием вопроса, в том числе
+    -- вызывает serialization failure при устаревшем снимке REPEATABLE READ.
+    -- Одна лишь блокировка SELECT FOR SHARE не обновила бы версию строки.
+    UPDATE question SET updated_at = updated_at WHERE id = NEW.question_id;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER user_answer_lock_question
+    BEFORE INSERT OR UPDATE OF question_id ON user_answer
+    FOR EACH ROW EXECUTE FUNCTION lock_answer_question();
+
+COMMIT;
