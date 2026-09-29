@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"dating-app/internal/middleware"
 	"dating-app/internal/service"
 	"errors"
 	"net/http"
@@ -11,11 +12,21 @@ type FeedHandler struct {
 	profileSvc service.ProfileService
 }
 
+func NewFeedHandler(svc service.ProfileService) *FeedHandler {
+	return &FeedHandler{profileSvc: svc}
+}
+
 func (h *FeedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Метод не поддерживается")
+		return
+	}
+
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Необходима авторизация")
 		return
 	}
 	query := r.URL.Query()
@@ -56,9 +67,6 @@ func (h *FeedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		cursor = &value
 	}
-
-	//Загулшка userID
-	var userID int64 = 1
 
 	page, err := h.profileSvc.GetNextFeed(r.Context(), userID, limit, cursor)
 

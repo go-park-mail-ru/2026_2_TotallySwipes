@@ -45,3 +45,21 @@ type TestResult struct {
 	Revision   int
 	CompletedA time.Time
 }
+
+// NewTIPITest задаёт методику и шкалу. Название и вопросы загружаются из БД.
+func NewTIPITest(id int64) Test {
+	return Test{
+		ID:           id,
+		Methodology:  MethodologyTIPI,
+		Instructions: "Для каждого утверждения выберите один вариант ответа от 1 до 7.",
+		AnswerOptions: []AnswerOption{
+			{Value: 1, Label: "Совсем не согласен"},
+			{Value: 2, Label: "Не согласен"},
+			{Value: 3, Label: "Скорее не согласен"},
+			{Value: 4, Label: "Ни согласен, ни не согласен"},
+			{Value: 5, Label: "Скорее согласен"},
+			{Value: 6, Label: "Согласен"},
+			{Value: 7, Label: "Полностью согласен"},
+		},
+	}
+}

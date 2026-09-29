@@ -14,6 +14,7 @@ import (
 	"dating-app/internal/config"
 	"dating-app/internal/handler"
 	"dating-app/internal/middleware"
+	"dating-app/internal/model"
 	"dating-app/internal/repository"
 	"dating-app/internal/service"
 	"dating-app/internal/storage"
@@ -49,29 +50,49 @@ func run() error {
 	}
 	defer rdb.Close()
 
+	issuer := auth.NewJWTIssuer(cfg.Auth.JWTSecret, cfg.Auth.JWTAccessTTL)
+	profileRepo := repository.NewProfileRepository(db)
+
 	authSvc := service.NewAuthService(
 		repository.NewUserRepository(db),
-		repository.NewProfileRepository(db),
+		profileRepo,
 		repository.NewSessionRepository(rdb),
 		auth.BcryptHasher{},
-		auth.NewJWTIssuer(cfg.Auth.JWTSecret, cfg.Auth.JWTAccessTTL),
+		issuer,
 		cfg.Auth.JWTRefreshTTL,
 	)
 	authHandler := handler.NewAuthHandler(authSvc, cfg.Auth.CookieSecure)
+	profileSvc := service.NewProfileService(
+		profileRepo,
+		&service.CompatibilityServiceImpl{},
+		*service.NewLocalPhotoURLProvider(""),
+	)
+	feedHandler := handler.NewFeedHandler(profileSvc)
+	testRepo := repository.NewTestRepository(db, model.NewTIPITest(cfg.CurrentTestID))
+	testSvc := service.NewTestService(testRepo, profileSvc, &service.CompatibilityServiceImpl{})
+	getCurrentTestHandler := handler.NewGetCurrentTestHandler(testSvc)
+	testAnswersHandler := handler.NewTestAnswersHandler(testSvc)
 
 	r := mux.NewRouter()
 	r.HandleFunc("/health", handler.Health).Methods(http.MethodGet)
 
 	api := r.PathPrefix("/api/v1").Subrouter()
+	requireAuth := middleware.Auth(issuer)
+
 	authRouter := api.PathPrefix("/auth").Subrouter()
 	authRouter.HandleFunc("/register", authHandler.Register).Methods(http.MethodPost)
 	authRouter.HandleFunc("/login", authHandler.Login).Methods(http.MethodPost)
 	authRouter.HandleFunc("/logout", authHandler.Logout).Methods(http.MethodPost)
 
+	api.Handle("/feed", requireAuth(feedHandler)).Methods(http.MethodGet)
+	api.Handle("/tests/current", requireAuth(getCurrentTestHandler)).Methods(http.MethodGet)
+	api.Handle("/tests/{test_id}/results", requireAuth(testAnswersHandler)).Methods(http.MethodPost)
+
 	// Обёрнуто снаружи роутера, а не через r.Use(): у gorilla/mux r.Use()
 	// применяется только к совпавшим роутам, на 404/405 middleware не сработает.
 	var h http.Handler = r
 	h = middleware.Recovery(h)
+	h = middleware.CORS([]string{"http://localhost:5173"})(h)
 	h = middleware.Logging(h)
 
 	srv := &http.Server{
