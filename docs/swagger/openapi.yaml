@@ -9,10 +9,17 @@ paths:
   /api/v1/auth/register:
     post:
       summary: Зарегистрировать пользователя
+      description: >-
+        Данные анкеты и выбранные на пятом шаге фотографии передаются вместе
+        при завершении регистрации. Каждый файл передаётся отдельной частью
+        multipart/form-data с одинаковым именем photos. Порядок частей photos
+        задаёт порядок фотографий в профиле. Если фотографий нет (null или
+        пустой массив на клиенте), части photos не отправляются; строку "null"
+        или пустой файл передавать не нужно.
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
               type: object
               required:
@@ -52,7 +59,7 @@ paths:
                 about_me:
                   type: string
                   nullable: true
-                  description: Описание пользователя в анкете. Необязательное поле; отсутствие или null означает, что описание не задано.
+                  description: Описание пользователя в анкете. Необязательное поле; если описание не задано (null на клиенте), часть about_me не отправляется.
                   example: Люблю путешествия и настольные игры.
                 birth_date:
                   description: Реальная календарная дата в формате YYYY-MM-DD, не в будущем. На текущую дату пользователю должно исполниться 18 лет; проверяется сервером.
@@ -90,7 +97,20 @@ paths:
                   maximum: 100
                   description: Верхняя граница возраста для поиска анкет, не меньше search_age_from.
                   example: 30
+                photos:
+                  type: array
+                  nullable: true
+                  minItems: 0
+                  maxItems: 6
+                  description: >-
+                    Необязательный массив из не более 6 файлов фотографий.
+                    Отсутствие фотографий передаётся отсутствием частей photos.
+                    Каждый элемент массива — файл, а не URL или строка Base64.
+                  items:
+                    type: string
+                    format: binary
                 tags:
+                  description: Каждый тег передаётся отдельной текстовой частью с именем tags; если тегов нет, части tags не отправляются.
                   maxItems: 10
                   uniqueItems: true
                   type: array
@@ -271,22 +291,6 @@ paths:
                 type: string
         '500':
           $ref: '#/components/responses/InternalServerError'
-
-  /api/v1/psychotest:
-    get:
-      summary: Получить психологический тест (заглушка)
-      description: Контракт психологического теста будет описан позднее.
-      responses:
-        '501':
-          description: Психологический тест пока не реализован.
-
-    post:
-      summary: Отправить ответы психологического теста (заглушка)
-      description: Формат запроса и контракт сохранения ответов будут описаны позднее.
-      responses:
-        '501':
-          description: Отправка ответов психологического теста пока не реализована.
-
   /api/v1/tests/current:
     get:
       security:
