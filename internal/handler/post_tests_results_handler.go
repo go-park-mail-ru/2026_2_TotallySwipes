@@ -117,10 +117,17 @@ func (h *PostTestResultsHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 	}
 
 	response := dto.SubmitTestAnswersResponse{
-		ResultID:    strconv.FormatInt(result.ID, 10),
-		TestID:      strconv.FormatInt(result.TestID, 10),
-		Revision:    result.Revision,
-		CompletedAt: result.CompletedA,
+		ResultID:             strconv.FormatInt(result.ID, 10),
+		TestID:               strconv.FormatInt(result.TestID, 10),
+		Revision:             result.Revision,
+		CompletedAt:          result.CompletedA,
+		PersonalityType:      result.PersonalityType,
+		AboutPersonalityType: result.AboutPersonalityType,
+		BigFive: dto.TestBigFive{
+			Openness: result.BigFive.Openness, Conscientiousness: result.BigFive.Conscientiousness,
+			Extraversion: result.BigFive.Extraversion, Agreeableness: result.BigFive.Agreeableness,
+			Neuroticism: result.BigFive.Neuroticism,
+		},
 	}
 
 	Write(w, http.StatusCreated, response)

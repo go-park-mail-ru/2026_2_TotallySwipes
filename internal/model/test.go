@@ -40,10 +40,13 @@ type Answer struct {
 }
 
 type TestResult struct {
-	ID         int64
-	TestID     int64
-	Revision   int
-	CompletedA time.Time
+	ID                   int64
+	TestID               int64
+	Revision             int
+	CompletedA           time.Time
+	BigFive              BigFive
+	PersonalityType      PersonalityType
+	AboutPersonalityType string
 }
 
 func NewTIPITest(id int64) Test {

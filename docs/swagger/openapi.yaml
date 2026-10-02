@@ -707,7 +707,7 @@ components:
                 example: 4
     TestResult:
       type: object
-      required: [result_id, test_id, revision, completed_at]
+      required: [result_id, test_id, revision, completed_at, big_five, personality_type, about_personality_type]
       properties:
         result_id:
           $ref: '#/components/schemas/TestIdentifier'
@@ -722,6 +722,52 @@ components:
           type: string
           format: date-time
           example: '2026-09-25T12:00:00Z'
+        big_five:
+          $ref: '#/components/schemas/TestBigFive'
+        personality_type:
+          type: string
+          description: Ближайший авторский тип по пяти координатам текущего прохождения; не психологический диагноз. При равных расстояниях выбирается первый тип в списке enum.
+          enum: [EXPLORER, VISIONARY, STRATEGIST, INVENTOR, DREAMER, CURATOR, INSPIRER, DEBATER, ORGANIZER, CONNECTOR, COMPANION, DRIVER, ANCHOR, CRAFTSPERSON, OBSERVER, KEEPER]
+          example: STRATEGIST
+        about_personality_type:
+          type: string
+          description: Описание выбранного типа на русском языке.
+          example: 'Стратег: вам ближе новые идеи, продуманный подход и спокойный формат общения.'
+    TestBigFive:
+      type: object
+      description: Нормализованный вектор текущего прохождения до смешивания с предыдущим профилем. Высокое N означает высокий нейротизм.
+      required: [openness, conscientiousness, extraversion, agreeableness, neuroticism]
+      properties:
+        openness:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.85
+        conscientiousness:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.8
+        extraversion:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.25
+        agreeableness:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.55
+        neuroticism:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.2
     TestError:
       type: object
       required: [error]
