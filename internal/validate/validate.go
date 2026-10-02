@@ -2,6 +2,7 @@ package validate
 
 import (
 	"errors"
+	"net/http"
 	"regexp"
 	"slices"
 	"strings"
@@ -22,6 +23,10 @@ const (
 
 	tagsMaxCount = 10
 	tagMaxLen    = 30
+
+	photosMinCount = 1
+	photosMaxCount = 6
+	PhotoMaxSize   = 5 << 20
 
 	minAge       = 18  // нижняя граница в принципе на сервисе
 	maxSearchAge = 100 // верхняя граница возраста в фильтре поиска
@@ -56,12 +61,24 @@ var (
 	ErrTagsTooMany = errors.New("не больше 10 тегов")
 	ErrTagsNotUniq = errors.New("теги не должны повторяться")
 	ErrTagInvalid  = errors.New("тег должен быть от 1 до 30 символов и не состоять только из пробелов")
+
+	ErrNotInteger = errors.New("должно быть целым числом")
+
+	ErrPhotosCount   = errors.New("нужно от 1 до 6 фотографий")
+	ErrPhotoTooLarge = errors.New("фото должно быть не больше 5 МБ")
+	ErrPhotoFormat   = errors.New("фото должно быть в формате JPEG, PNG или WebP")
 )
 
 // emailRe - регулярка из HTML5 (input type="email")
 var emailRe = regexp.MustCompile("^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@" +
 	"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?" +
 	"(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$")
+
+var photoExtByContentType = map[string]string{
+	"image/jpeg": ".jpg",
+	"image/png":  ".png",
+	"image/webp": ".webp",
+}
 
 var (
 	sexValues       = []string{"male", "female"}
@@ -215,6 +232,26 @@ func ValidateTags(tags []string) error {
 		seen[t] = struct{}{}
 	}
 	return nil
+}
+
+func ValidatePhotos(photos []model.PhotoUpload) error {
+	if len(photos) < photosMinCount || len(photos) > photosMaxCount {
+		return ErrPhotosCount
+	}
+	for _, p := range photos {
+		if len(p.Data) > PhotoMaxSize {
+			return ErrPhotoTooLarge
+		}
+		if p.Ext == "" {
+			return ErrPhotoFormat
+		}
+	}
+	return nil
+}
+
+// PhotoExt определяет формат по содержимому файла
+func PhotoExt(data []byte) string {
+	return photoExtByContentType[http.DetectContentType(data)]
 }
 
 func oneOf(s string, allowed []string, errInvalid error) error {

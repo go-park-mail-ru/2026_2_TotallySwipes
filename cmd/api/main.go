@@ -57,6 +57,7 @@ func run() error {
 		repository.NewUserRepository(db),
 		profileRepo,
 		repository.NewSessionRepository(rdb),
+		storage.NewLocalPhotoStorage(cfg.PhotoDir),
 		auth.BcryptHasher{},
 		issuer,
 		cfg.Auth.JWTRefreshTTL,
@@ -80,7 +81,7 @@ func run() error {
 	r := mux.NewRouter()
 	r.HandleFunc("/health", handler.GetHealth).Methods(http.MethodGet)
 
-	files := http.FileServer(http.Dir("./db/data/cats"))
+	files := http.FileServer(http.Dir(cfg.PhotoDir))
 	r.PathPrefix("/cats/").Handler(http.StripPrefix("/cats/", files)).Methods(http.MethodGet, http.MethodHead)
 
 	api := r.PathPrefix("/api/v1").Subrouter()

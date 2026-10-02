@@ -1,12 +1,15 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	. "dating-app/internal/handler"
 	"dating-app/internal/handler/dto"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -106,28 +109,88 @@ func checkSessionCookies(t *testing.T, rec *httptest.ResponseRecorder) {
 	}
 }
 
-const validRegisterBody = `{
-	"name": "alex",
-	"email": "  alex@example.com ",
-	"password": "qwerty123",
-	"birth_date": "2000-01-01",
-	"sex": "male",
-	"search_sex": "female",
-	"dating_intent": "Ищу встречи",
-	"search_age_from": 18,
-	"search_age_to": 30,
-	"about_me": "Люблю горы",
-	"tags": ["sport"]
-}`
+var (
+	jpegData = []byte("\xff\xd8\xff\xe0 jpeg")
+	pngData  = []byte("\x89PNG\r\n\x1a\n png")
+)
 
-func doRegister(t *testing.T, svc *fakeAuth, body string) (*httptest.ResponseRecorder, map[string]any) {
+type registerForm struct {
+	fields map[string][]string
+	photos [][]byte
+}
+
+func validRegisterForm() registerForm {
+	return registerForm{
+		fields: map[string][]string{
+			"name":            {"alex"},
+			"email":           {"  alex@example.com "},
+			"password":        {"qwerty123"},
+			"birth_date":      {"2000-01-01"},
+			"sex":             {"male"},
+			"search_sex":      {"female"},
+			"dating_intent":   {"Ищу встречи"},
+			"search_age_from": {"18"},
+			"search_age_to":   {"30"},
+			"about_me":        {"Люблю горы"},
+			"tags":            {"sport", "music"},
+		},
+		photos: [][]byte{jpegData, pngData},
+	}
+}
+
+func multipartBody(t *testing.T, form registerForm) (*bytes.Buffer, string) {
 	t.Helper()
-	return do(t, NewAuthHandler(svc, true).Register, "/api/v1/auth/register", body)
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	for name, values := range form.fields {
+		for _, v := range values {
+			if err := mw.WriteField(name, v); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	for i, data := range form.photos {
+		fw, err := mw.CreateFormFile("photos", fmt.Sprintf("photo%d", i))
+		if err != nil {
+			t.Fatal(err)
+		}
+		fw.Write(data)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return &buf, mw.FormDataContentType()
+}
+
+func doRegisterRaw(t *testing.T, svc *fakeAuth, body io.Reader, contentType string) (*httptest.ResponseRecorder, map[string]any) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", body)
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	NewAuthHandler(svc, true).Register(rec, req)
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response is not JSON: %q", rec.Body.String())
+	}
+	return rec, resp
+}
+
+func doRegister(t *testing.T, svc *fakeAuth, form registerForm) (*httptest.ResponseRecorder, map[string]any) {
+	t.Helper()
+	body, contentType := multipartBody(t, form)
+	return doRegisterRaw(t, svc, body, contentType)
+}
+
+func errFields(resp map[string]any) map[string]any {
+	e, _ := resp["error"].(map[string]any)
+	f, _ := e["fields"].(map[string]any)
+	return f
 }
 
 func TestRegisterHandler_Created(t *testing.T) {
 	svc := &fakeAuth{res: model.AuthResult{UserID: 12, Tokens: testTokens}}
-	rec, resp := doRegister(t, svc, validRegisterBody)
+	rec, resp := doRegister(t, svc, validRegisterForm())
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
@@ -141,14 +204,36 @@ func TestRegisterHandler_Created(t *testing.T) {
 	if svc.got.DatingGoal != model.DatingGoalCasual {
 		t.Errorf("dating goal = %q, want %q", svc.got.DatingGoal, model.DatingGoalCasual)
 	}
-	if svc.got.BirthDate.Year() != 2000 || svc.got.AboutMe != "Люблю горы" {
+	if svc.got.BirthDate.Year() != 2000 || svc.got.AboutMe != "Люблю горы" || svc.got.SearchAgeTo != 30 {
 		t.Errorf("input = %+v", svc.got)
+	}
+	if !reflect.DeepEqual(svc.got.Tags, []string{"sport", "music"}) {
+		t.Errorf("tags = %v", svc.got.Tags)
+	}
+	wantPhotos := []model.PhotoUpload{{Data: jpegData, Ext: ".jpg"}, {Data: pngData, Ext: ".png"}}
+	if !reflect.DeepEqual(svc.got.Photos, wantPhotos) {
+		t.Errorf("photos = %+v", svc.got.Photos)
 	}
 	checkSessionCookies(t, rec)
 }
 
+func TestRegisterHandler_OptionalFields(t *testing.T) {
+	form := validRegisterForm()
+	delete(form.fields, "about_me")
+	delete(form.fields, "tags")
+	svc := &fakeAuth{res: model.AuthResult{UserID: 1, Tokens: testTokens}}
+	rec, _ := doRegister(t, svc, form)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
+	}
+	if svc.got.AboutMe != "" || len(svc.got.Tags) != 0 {
+		t.Errorf("input = %+v", svc.got)
+	}
+}
+
 func TestRegisterHandler_PasswordTooLongForHash(t *testing.T) {
-	rec, resp := doRegister(t, &fakeAuth{err: model.ErrPasswordTooLong}, validRegisterBody)
+	rec, resp := doRegister(t, &fakeAuth{err: model.ErrPasswordTooLong}, validRegisterForm())
 	if rec.Code != http.StatusBadRequest || errCode(resp) != "VALIDATION_ERROR" {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
 	}
@@ -156,42 +241,80 @@ func TestRegisterHandler_PasswordTooLongForHash(t *testing.T) {
 
 func TestRegisterHandler_ValidationError(t *testing.T) {
 	svc := &fakeAuth{}
-	rec, resp := doRegister(t, svc, `{"email": "nope", "password": "123"}`)
+	rec, resp := doRegister(t, svc, registerForm{fields: map[string][]string{
+		"email":           {"nope"},
+		"password":        {"123"},
+		"search_age_from": {"abc"},
+	}})
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d", rec.Code)
+	if rec.Code != http.StatusBadRequest || errCode(resp) != "VALIDATION_ERROR" {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
 	}
 	if svc.called {
 		t.Error("service must not be called on invalid input")
 	}
-	e := resp["error"].(map[string]any)
-	if e["code"] != "VALIDATION_ERROR" {
-		t.Errorf("code = %v", e["code"])
-	}
-	fields, _ := e["fields"].(map[string]any)
-	for _, f := range []string{"email", "password", "name", "birth_date"} {
+	fields := errFields(resp)
+	for _, f := range []string{"email", "password", "name", "birth_date", "photos"} {
 		if _, ok := fields[f]; !ok {
 			t.Errorf("fields has no %q: %v", f, fields)
 		}
 	}
+	if fields["search_age_from"] != "должно быть целым числом" || fields["search_age_to"] != "обязательное поле" {
+		t.Errorf("search ages: %v", fields)
+	}
 }
 
-func TestRegisterHandler_BadJSON(t *testing.T) {
-	for _, body := range []string{`{`, `[]`, `{"search_age_from": "18"}`} {
+func TestRegisterHandler_InvalidPhotos(t *testing.T) {
+	tooMany := validRegisterForm()
+	tooMany.photos = [][]byte{jpegData, jpegData, jpegData, jpegData, jpegData, jpegData, jpegData}
+
+	notImage := validRegisterForm()
+	notImage.photos = [][]byte{jpegData, []byte("GIF89a not supported")}
+
+	tooBig := validRegisterForm()
+	tooBig.photos = [][]byte{append(append([]byte{}, jpegData...), make([]byte, 5<<20)...)}
+
+	noPhotos := validRegisterForm()
+	noPhotos.photos = nil
+	noPhotos.fields["photos"] = []string{"https://example.com/a.jpg"}
+
+	for name, form := range map[string]registerForm{"too many": tooMany, "not image": notImage, "too big": tooBig, "as text": noPhotos} {
 		svc := &fakeAuth{}
-		rec, resp := doRegister(t, svc, body)
+		rec, resp := doRegister(t, svc, form)
 		if rec.Code != http.StatusBadRequest || svc.called {
-			t.Errorf("body %s: status = %d, called = %v", body, rec.Code, svc.called)
+			t.Errorf("%s: status = %d, called = %v", name, rec.Code, svc.called)
 		}
-		if resp["error"].(map[string]any)["code"] != "VALIDATION_ERROR" {
-			t.Errorf("body %s: resp = %v", body, resp)
+		if _, ok := errFields(resp)["photos"]; !ok {
+			t.Errorf("%s: fields = %v", name, errFields(resp))
 		}
+	}
+}
+
+func TestRegisterHandler_NotMultipart(t *testing.T) {
+	for _, contentType := range []string{"application/json", "multipart/form-data"} {
+		svc := &fakeAuth{}
+		rec, resp := doRegisterRaw(t, svc, strings.NewReader(`{"name":"alex"}`), contentType)
+		if rec.Code != http.StatusBadRequest || errCode(resp) != "VALIDATION_ERROR" || svc.called {
+			t.Errorf("%s: status = %d, resp = %v", contentType, rec.Code, resp)
+		}
+	}
+}
+
+func TestRegisterHandler_TooLarge(t *testing.T) {
+	form := validRegisterForm()
+	big := append(append([]byte{}, jpegData...), make([]byte, 5<<20-100)...)
+	form.photos = [][]byte{big, big, big, big, big, big, big}
+
+	svc := &fakeAuth{}
+	rec, resp := doRegister(t, svc, form)
+	if rec.Code != http.StatusRequestEntityTooLarge || errCode(resp) != "PAYLOAD_TOO_LARGE" || svc.called {
+		t.Errorf("status = %d, resp = %v", rec.Code, resp)
 	}
 }
 
 func TestRegisterHandler_EmailTaken(t *testing.T) {
 	svc := &fakeAuth{err: model.ErrEmailAlreadyExists}
-	rec, resp := doRegister(t, svc, validRegisterBody)
+	rec, resp := doRegister(t, svc, validRegisterForm())
 
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d", rec.Code)
@@ -206,7 +329,7 @@ func TestRegisterHandler_SessionNotOpened(t *testing.T) {
 		res: model.AuthResult{UserID: 12},
 		err: fmt.Errorf("%w: redis down", model.ErrSessionNotOpened),
 	}
-	rec, resp := doRegister(t, svc, validRegisterBody)
+	rec, resp := doRegister(t, svc, validRegisterForm())
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
@@ -221,7 +344,7 @@ func TestRegisterHandler_SessionNotOpened(t *testing.T) {
 
 func TestRegisterHandler_InternalError(t *testing.T) {
 	svc := &fakeAuth{err: errors.New("db is down")}
-	rec, resp := doRegister(t, svc, validRegisterBody)
+	rec, resp := doRegister(t, svc, validRegisterForm())
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d", rec.Code)
@@ -244,6 +367,7 @@ func validRegister() dto.RegisterRequest {
 		SearchAgeFrom: 18,
 		SearchAgeTo:   30,
 		Tags:          []string{"sport"},
+		Photos:        []model.PhotoUpload{{Data: []byte("x"), Ext: ".jpg"}},
 	}
 }
 
@@ -257,7 +381,7 @@ func TestRegisterRequestValidate_CollectsAllFields(t *testing.T) {
 	var r dto.RegisterRequest
 	errs := r.Validate()
 
-	want := []string{"birth_date", "dating_intent", "email", "name", "password", "search_age_from", "search_age_to", "search_sex", "sex"}
+	want := []string{"birth_date", "dating_intent", "email", "name", "password", "photos", "search_age_from", "search_age_to", "search_sex", "sex"}
 	if got := keys(errs); !reflect.DeepEqual(got, want) {
 		t.Fatalf("fields = %v, want %v", got, want)
 	}

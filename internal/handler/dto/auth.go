@@ -1,6 +1,7 @@
 package dto
 
 import (
+	"dating-app/internal/model"
 	"dating-app/internal/validate"
 	"strings"
 )
@@ -22,6 +23,8 @@ type RegisterRequest struct {
 	SearchAgeFrom int      `json:"search_age_from"`
 	SearchAgeTo   int      `json:"search_age_to"`
 	Tags          []string `json:"tags"`
+
+	Photos []model.PhotoUpload `json:"-"`
 }
 
 // Normalize приводит поля к виду, в котором их проверяют и сохраняют:
@@ -58,6 +61,7 @@ func (r RegisterRequest) Validate() map[string]string {
 	}
 
 	addErr(errs, "tags", validate.ValidateTags(r.Tags))
+	addErr(errs, "photos", validate.ValidatePhotos(r.Photos))
 
 	return errs
 }

@@ -105,6 +105,7 @@ paths:
                     Обязательный массив от 1 до 6 файлов фотографий.
                     Отсутствие поля, null и пустой массив недопустимы.
                     Каждый элемент массива — файл, а не URL или строка Base64.
+                    Форматы JPEG, PNG или WebP (определяются по содержимому), каждый файл не больше 5 МБ.
                   items:
                     type: string
                     format: binary
@@ -195,6 +196,27 @@ paths:
                       message:
                         type: string
                         example: Почта уже занята
+        '413':
+          description: Запрос больше 31 МБ (6 фото по 5 МБ и поля анкеты)
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                        example: PAYLOAD_TOO_LARGE
+                      message:
+                        type: string
+                        example: Слишком большой запрос
         '500':
           $ref: '#/components/responses/InternalServerError'
 

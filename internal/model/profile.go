@@ -41,6 +41,11 @@ type PhotoInput struct {
 	Position   int
 }
 
+type PhotoUpload struct {
+	Data []byte
+	Ext  string
+}
+
 type Photo struct {
 	ID         int64
 	StorageKey string

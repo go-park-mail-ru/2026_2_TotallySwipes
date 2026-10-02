@@ -4,6 +4,8 @@ import (
 	"context"
 	. "dating-app/internal/service"
 	"errors"
+	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -15,6 +17,7 @@ type fakeUsers struct {
 	created     *model.UserInput
 	createdPV   *model.ProfileVersionInput
 	createdTags []string
+	createdPh   []model.PhotoInput
 	createID    int64
 	createErr   error
 
@@ -22,8 +25,8 @@ type fakeUsers struct {
 	getErr  error
 }
 
-func (f *fakeUsers) CreateUserWithProfile(_ context.Context, u *model.UserInput, pv *model.ProfileVersionInput, tags []string) (int64, error) {
-	f.created, f.createdPV, f.createdTags = u, pv, tags
+func (f *fakeUsers) CreateUserWithProfile(_ context.Context, u *model.UserInput, pv *model.ProfileVersionInput, tags []string, photos []model.PhotoInput) (int64, error) {
+	f.created, f.createdPV, f.createdTags, f.createdPh = u, pv, tags, photos
 	return f.createID, f.createErr
 }
 
@@ -35,6 +38,31 @@ func (f *fakeUsers) GetUserByEmail(_ context.Context, email string) (*model.User
 		return u, nil
 	}
 	return nil, model.ErrNotFound
+}
+
+type fakePhotos struct {
+	saved    map[string][]byte
+	deleted  []string
+	saveErrN int
+	n        int
+}
+
+func (f *fakePhotos) Save(_ context.Context, data []byte, ext string) (string, error) {
+	f.n++
+	if f.n == f.saveErrN {
+		return "", errors.New("disk full")
+	}
+	if f.saved == nil {
+		f.saved = map[string][]byte{}
+	}
+	key := fmt.Sprintf("uploads/%d%s", f.n, ext)
+	f.saved[key] = data
+	return key, nil
+}
+
+func (f *fakePhotos) Delete(_ context.Context, key string) error {
+	f.deleted = append(f.deleted, key)
+	return nil
 }
 
 type fakeProfiles struct{ completed bool }
@@ -105,7 +133,7 @@ func (fakeIssuer) Issue(userID int64, sessionID string) (string, time.Time, erro
 }
 
 func newTestService(users *fakeUsers, sessions *fakeSessions, completed bool) *AuthService {
-	return NewAuthService(users, fakeProfiles{completed}, sessions, fakeHasher{}, fakeIssuer{}, time.Hour)
+	return NewAuthService(users, fakeProfiles{completed}, sessions, &fakePhotos{}, fakeHasher{}, fakeIssuer{}, time.Hour)
 }
 
 func validRegisterInput() model.RegisterInput {
@@ -121,6 +149,7 @@ func validRegisterInput() model.RegisterInput {
 		SearchAgeFrom: 18,
 		SearchAgeTo:   30,
 		Tags:          []string{"sport"},
+		Photos:        []model.PhotoUpload{{Data: []byte("a"), Ext: ".jpg"}, {Data: []byte("b"), Ext: ".png"}},
 	}
 }
 
@@ -173,7 +202,7 @@ func TestRegister_Errors(t *testing.T) {
 	}
 
 	users := &fakeUsers{}
-	svc := NewAuthService(users, fakeProfiles{}, newFakeSessions(), fakeHasher{hashErr: model.ErrPasswordTooLong}, fakeIssuer{}, time.Hour)
+	svc := NewAuthService(users, fakeProfiles{}, newFakeSessions(), &fakePhotos{}, fakeHasher{hashErr: model.ErrPasswordTooLong}, fakeIssuer{}, time.Hour)
 	if _, err := svc.Register(ctx, validRegisterInput()); !errors.Is(err, model.ErrPasswordTooLong) {
 		t.Errorf("hash error: err = %v", err)
 	}
@@ -310,5 +339,50 @@ func TestRefresh_StorageErrors(t *testing.T) {
 	sessions.createErr = redisErr
 	if _, err := newTestService(&fakeUsers{}, sessions, false).Refresh(ctx, "t"); !errors.Is(err, redisErr) {
 		t.Errorf("create error: %v", err)
+	}
+}
+
+func newPhotoTestService(users *fakeUsers, photos *fakePhotos) *AuthService {
+	return NewAuthService(users, fakeProfiles{}, newFakeSessions(), photos, fakeHasher{}, fakeIssuer{}, time.Hour)
+}
+
+func TestRegister_Photos(t *testing.T) {
+	users, photos := &fakeUsers{createID: 1}, &fakePhotos{}
+	if _, err := newPhotoTestService(users, photos).Register(context.Background(), validRegisterInput()); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	want := []model.PhotoInput{{StorageKey: "uploads/1.jpg", Position: 1}, {StorageKey: "uploads/2.png", Position: 2}}
+	if !reflect.DeepEqual(users.createdPh, want) {
+		t.Errorf("photos = %+v, want %+v", users.createdPh, want)
+	}
+	if string(photos.saved["uploads/1.jpg"]) != "a" || string(photos.saved["uploads/2.png"]) != "b" {
+		t.Errorf("saved = %v", photos.saved)
+	}
+	if len(photos.deleted) != 0 {
+		t.Errorf("nothing must be deleted: %v", photos.deleted)
+	}
+}
+
+func TestRegister_PhotosCleanup(t *testing.T) {
+	ctx := context.Background()
+
+	users, photos := &fakeUsers{createErr: model.ErrEmailAlreadyExists}, &fakePhotos{}
+	if _, err := newPhotoTestService(users, photos).Register(ctx, validRegisterInput()); !errors.Is(err, model.ErrEmailAlreadyExists) {
+		t.Fatalf("err = %v", err)
+	}
+	if !reflect.DeepEqual(photos.deleted, []string{"uploads/1.jpg", "uploads/2.png"}) {
+		t.Errorf("saved photos must be deleted when user is not created, deleted = %v", photos.deleted)
+	}
+
+	users, photos = &fakeUsers{}, &fakePhotos{saveErrN: 2}
+	if _, err := newPhotoTestService(users, photos).Register(ctx, validRegisterInput()); err == nil {
+		t.Fatal("save error must fail registration")
+	}
+	if users.created != nil {
+		t.Error("user must not be created when photo is not saved")
+	}
+	if !reflect.DeepEqual(photos.deleted, []string{"uploads/1.jpg"}) {
+		t.Errorf("already saved photos must be deleted, deleted = %v", photos.deleted)
 	}
 }

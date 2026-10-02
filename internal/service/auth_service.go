@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 type AuthUserRepository interface {
 	// CreateUserWithProfile в одной транзакции создаёт пользователя и профиль
 	// Если email занят - model.ErrEmailAlreadyExists
-	CreateUserWithProfile(ctx context.Context, user *model.UserInput, version *model.ProfileVersionInput, tags []string) (int64, error)
+	CreateUserWithProfile(ctx context.Context, user *model.UserInput, version *model.ProfileVersionInput, tags []string, photos []model.PhotoInput) (int64, error)
 	// GetUserByEmail - model.ErrNotFound, если пользователя нет
 	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
 }
@@ -31,6 +32,11 @@ type SessionRepository interface {
 	RevokeIfActive(ctx context.Context, id string) (bool, error)
 }
 
+type PhotoStorage interface {
+	Save(ctx context.Context, data []byte, ext string) (key string, err error)
+	Delete(ctx context.Context, key string) error
+}
+
 type PasswordHasher interface {
 	// Hash - model.ErrPasswordTooLong, если пароль не влезает в алгоритм
 	Hash(plain string) (string, error)
@@ -45,6 +51,7 @@ type AuthService struct {
 	users      AuthUserRepository
 	profiles   ProfileCompletionChecker
 	sessions   SessionRepository
+	photos     PhotoStorage
 	hasher     PasswordHasher
 	access     AccessTokenIssuer
 	refreshTTL time.Duration
@@ -55,12 +62,13 @@ type AuthService struct {
 }
 
 func NewAuthService(users AuthUserRepository, profiles ProfileCompletionChecker, sessions SessionRepository,
-	hasher PasswordHasher, access AccessTokenIssuer, refreshTTL time.Duration) *AuthService {
+	photos PhotoStorage, hasher PasswordHasher, access AccessTokenIssuer, refreshTTL time.Duration) *AuthService {
 
 	return &AuthService{
 		users:      users,
 		profiles:   profiles,
 		sessions:   sessions,
+		photos:     photos,
 		hasher:     hasher,
 		access:     access,
 		refreshTTL: refreshTTL,
@@ -75,6 +83,11 @@ func (s *AuthService) Register(ctx context.Context, in model.RegisterInput) (mod
 	hash, err := s.hasher.Hash(in.Password)
 	if err != nil {
 		return model.AuthResult{}, fmt.Errorf("hash password: %w", err)
+	}
+
+	photos, err := s.savePhotos(ctx, in.Photos)
+	if err != nil {
+		return model.AuthResult{}, err
 	}
 
 	userID, err := s.users.CreateUserWithProfile(ctx,
@@ -94,8 +107,10 @@ func (s *AuthService) Register(ctx context.Context, in model.RegisterInput) (mod
 			SearchAgeTo:   in.SearchAgeTo,
 		},
 		in.Tags,
+		photos,
 	)
 	if err != nil {
+		s.deletePhotos(ctx, photos)
 		return model.AuthResult{}, fmt.Errorf("create user: %w", err)
 	}
 
@@ -229,6 +244,28 @@ func (s *AuthService) openSession(ctx context.Context, userID int64) (model.Toke
 		Refresh:          refresh,
 		RefreshExpiresAt: refreshExpiresAt,
 	}, nil
+}
+
+func (s *AuthService) savePhotos(ctx context.Context, uploads []model.PhotoUpload) ([]model.PhotoInput, error) {
+	photos := make([]model.PhotoInput, 0, len(uploads))
+	for i, upload := range uploads {
+		key, err := s.photos.Save(ctx, upload.Data, upload.Ext)
+		if err != nil {
+			s.deletePhotos(ctx, photos)
+			return nil, fmt.Errorf("save photo %d: %w", i+1, err)
+		}
+		photos = append(photos, model.PhotoInput{StorageKey: key, Position: i + 1})
+	}
+	return photos, nil
+}
+
+func (s *AuthService) deletePhotos(ctx context.Context, photos []model.PhotoInput) {
+	ctx = context.WithoutCancel(ctx)
+	for _, photo := range photos {
+		if err := s.photos.Delete(ctx, photo.StorageKey); err != nil {
+			slog.Error("delete orphan photo", "key", photo.StorageKey, "error", err)
+		}
+	}
 }
 
 func (s *AuthService) matchDummy(password string) {
