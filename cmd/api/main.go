@@ -70,6 +70,7 @@ func run() error {
 	)
 
 	feedHandler := handler.NewGetFeedHandler(profileSvc)
+	profileShortHandler := handler.NewGetProfileShortHandler(profileSvc)
 	testRepo := repository.NewTestRepository(db, model.NewTIPITest(cfg.CurrentTestID))
 	compSvc := service.NewCompatibilityService(1)
 	testSvc := service.NewTestService(testRepo, profileSvc, compSvc)
@@ -91,6 +92,7 @@ func run() error {
 	authRouter.HandleFunc("/logout", authHandler.Logout).Methods(http.MethodPost)
 
 	api.Handle("/feed", requireAuth(feedHandler)).Methods(http.MethodGet)
+	api.Handle("/profile/me/short", requireAuth(profileShortHandler)).Methods(http.MethodGet)
 	api.Handle("/tests/current", requireAuth(getCurrentTestHandler)).Methods(http.MethodGet)
 	api.Handle("/tests/{test_id}/results", requireAuth(testAnswersHandler)).Methods(http.MethodPost)
 

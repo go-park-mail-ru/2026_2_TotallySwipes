@@ -13,11 +13,13 @@ type ProfileService interface {
 
 	AddProfilePsycho(ctx context.Context, profileID int64, psycho *model.ProfilePsychoInput) error
 	GetByUserIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error)
+	GetShortProfile(ctx context.Context, userID int64) (*model.ProfileShort, error)
 }
 
 type ProfileRepository interface {
 	GetByIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error)
 	GetByUserIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error)
+	GetShortByUserID(ctx context.Context, userID int64) (*model.ProfileShort, error)
 
 	CreateProfile(ctx context.Context, input *model.ProfileInput) (int64, error)
 
@@ -46,6 +48,26 @@ func (s *ProfileServiceImpl) GetByUserIDCurrentProfile(ctx context.Context, id i
 		return nil, fmt.Errorf("get user profile id=%d: %w", id, err)
 	}
 	return profile, nil
+}
+
+func (s *ProfileServiceImpl) GetShortProfile(ctx context.Context, userID int64) (*model.ProfileShort, error) {
+	short, err := s.profileRepo.GetShortByUserID(ctx, userID)
+	if errors.Is(err, model.ErrNotFound) {
+		return nil, fmt.Errorf("get short profile user id=%d: %w", userID, model.ErrProfileRequired)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get short profile user id=%d: %w", userID, err)
+	}
+
+	if short.MainPhotoKey != nil {
+		url, err := s.media.GetURL(ctx, *short.MainPhotoKey)
+		if err != nil {
+			return nil, fmt.Errorf("get short profile photo user id=%d: %w", userID, err)
+		}
+		short.MainPhotoURL = &url
+	}
+
+	return short, nil
 }
 
 func (s *ProfileServiceImpl) GetNextFeed(ctx context.Context, userID int64, limit int, cursor *int64) (*model.FeedPage, error) {
