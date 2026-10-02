@@ -88,7 +88,7 @@ func (s *TestServiceImpl) SubmitTestAnswers(ctx context.Context, userID int64, a
 	if bigFive == nil {
 		return nil, fmt.Errorf("submit test answers: missing calculated vector: %w", model.ErrInvalidBigFive)
 	}
-	personalityType, aboutPersonalityType, err := s.classifyPersonality(*bigFive)
+	personalityType, aboutPersonalityType, err := s.ClassifyPersonality(*bigFive)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +155,7 @@ var personalityPrototypes = [...]personalityPrototype{
 	{model.PersonalityKeeper, [5]float64{0.2, 0.8, 0.2, 0.8, 0.8}},
 }
 
-func (s *TestServiceImpl) classifyPersonality(vector model.BigFive) (model.PersonalityType, string, error) {
+func (s *TestServiceImpl) ClassifyPersonality(vector model.BigFive) (model.PersonalityType, string, error) {
 
 	fields := [5]*float64{vector.Openness, vector.Conscientiousness, vector.Extraversion, vector.Agreeableness, vector.Neuroticism}
 	var values [5]float64
