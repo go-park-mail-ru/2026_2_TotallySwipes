@@ -21,6 +21,7 @@ type AuthService interface {
 	Register(ctx context.Context, in model.RegisterInput) (model.AuthResult, error)
 	Login(ctx context.Context, email, password string) (model.AuthResult, error)
 	Logout(ctx context.Context, refreshToken string) error
+	Refresh(ctx context.Context, refreshToken string) (model.Tokens, error)
 }
 
 type AuthHandler struct {

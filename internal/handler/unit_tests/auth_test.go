@@ -24,6 +24,7 @@ type fakeAuth struct {
 	email    string
 	password string
 	logout   string
+	refresh  string
 	res      model.AuthResult
 	err      error
 }
@@ -41,6 +42,11 @@ func (f *fakeAuth) Login(_ context.Context, email, password string) (model.AuthR
 func (f *fakeAuth) Logout(_ context.Context, refreshToken string) error {
 	f.called, f.logout = true, refreshToken
 	return f.err
+}
+
+func (f *fakeAuth) Refresh(_ context.Context, refreshToken string) (model.Tokens, error) {
+	f.called, f.refresh = true, refreshToken
+	return f.res.Tokens, f.err
 }
 
 var testTokens = model.Tokens{
@@ -412,5 +418,39 @@ func assertSessionCleared(t *testing.T, rec *httptest.ResponseRecorder) {
 	}
 	if cleared != 2 {
 		t.Errorf("both session cookies must be cleared, got %v", rec.Result().Cookies())
+	}
+}
+
+func TestRefreshHandler(t *testing.T) {
+	refreshCookie := &http.Cookie{Name: "refresh_token", Value: "ref-old"}
+
+	svc := &fakeAuth{res: model.AuthResult{Tokens: testTokens}}
+	rec, resp := do(t, NewAuthHandler(svc, true).Refresh, "/api/v1/auth/refresh", "", refreshCookie)
+	if rec.Code != http.StatusNoContent || resp != nil || svc.refresh != "ref-old" {
+		t.Fatalf("status = %d, body = %v, refresh(%q)", rec.Code, resp, svc.refresh)
+	}
+	checkSessionCookies(t, rec)
+
+	svc = &fakeAuth{}
+	rec, resp = do(t, NewAuthHandler(svc, true).Refresh, "/api/v1/auth/refresh", "")
+	if rec.Code != http.StatusUnauthorized || errCode(resp) != "UNAUTHORIZED" || svc.called {
+		t.Errorf("no cookie: status = %d, code = %v, called = %v", rec.Code, errCode(resp), svc.called)
+	}
+	assertSessionCleared(t, rec)
+
+	rec, resp = do(t, NewAuthHandler(&fakeAuth{err: fmt.Errorf("x: %w", model.ErrInvalidSession)}, true).Refresh,
+		"/api/v1/auth/refresh", "", refreshCookie)
+	if rec.Code != http.StatusUnauthorized || errCode(resp) != "UNAUTHORIZED" {
+		t.Errorf("invalid session: status = %d, code = %v", rec.Code, errCode(resp))
+	}
+	assertSessionCleared(t, rec)
+
+	rec, resp = do(t, NewAuthHandler(&fakeAuth{err: errors.New("redis down")}, true).Refresh,
+		"/api/v1/auth/refresh", "", refreshCookie)
+	if rec.Code != http.StatusInternalServerError || errCode(resp) != "INTERNAL_SERVER_ERROR" {
+		t.Errorf("service error: status = %d", rec.Code)
+	}
+	if len(rec.Result().Cookies()) != 0 {
+		t.Errorf("cookies must be kept on 500, got %v", rec.Result().Cookies())
 	}
 }

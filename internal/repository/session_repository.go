@@ -28,6 +28,14 @@ if redis.call('EXISTS', KEYS[1]) == 1 then
 end
 return 0`)
 
+// revokeActiveScript отзывает сессию, только если она ещё активна
+var revokeActiveScript = redis.NewScript(`
+if redis.call('HGET', KEYS[1], 'revoked') == '0' then
+	redis.call('HSET', KEYS[1], 'revoked', '1')
+	return 1
+end
+return 0`)
+
 type SessionRepo struct {
 	rdb *redis.Client
 }
@@ -101,6 +109,15 @@ func (r *SessionRepo) Revoke(ctx context.Context, id string) error {
 		return fmt.Errorf("revoke session id=%s: %w", id, err)
 	}
 	return nil
+}
+
+// RevokeIfActive - true, если сессию отозвал именно этот вызов
+func (r *SessionRepo) RevokeIfActive(ctx context.Context, id string) (bool, error) {
+	n, err := revokeActiveScript.Run(ctx, r.rdb, []string{sessionKey(id)}).Int()
+	if err != nil {
+		return false, fmt.Errorf("revoke active session id=%s: %w", id, err)
+	}
+	return n == 1, nil
 }
 
 func boolToFlag(b bool) string {

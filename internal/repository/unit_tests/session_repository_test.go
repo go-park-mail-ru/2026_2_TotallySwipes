@@ -77,3 +77,28 @@ func TestSessionRepo_NotFound(t *testing.T) {
 		t.Error("revoke must not recreate expired session")
 	}
 }
+
+func TestSessionRepo_RevokeIfActive(t *testing.T) {
+	repo, mr := newTestSessionRepo(t)
+	ctx := context.Background()
+	_ = repo.Create(ctx, &model.Session{ID: "sid", UserID: 1, TokenHash: "h", ExpiresAt: time.Now().Add(time.Hour)})
+
+	ok, err := repo.RevokeIfActive(ctx, "sid")
+	if err != nil || !ok {
+		t.Fatalf("first revoke: ok = %v, err = %v", ok, err)
+	}
+	if got, _ := repo.GetByTokenHash(ctx, "h"); !got.Revoked {
+		t.Error("session must be revoked")
+	}
+
+	if ok, err := repo.RevokeIfActive(ctx, "sid"); err != nil || ok {
+		t.Errorf("second revoke: ok = %v, err = %v", ok, err)
+	}
+
+	if ok, err := repo.RevokeIfActive(ctx, "missing"); err != nil || ok {
+		t.Errorf("missing: ok = %v, err = %v", ok, err)
+	}
+	if mr.Exists("refresh:session:missing") {
+		t.Error("revoke must not create session key")
+	}
+}

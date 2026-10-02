@@ -12,8 +12,10 @@ const (
 	codeEmailAlreadyExists = "EMAIL_ALREADY_EXISTS"
 	codeInvalidCredentials = "INVALID_CREDENTIALS"
 	codeInternalError      = "INTERNAL_SERVER_ERROR"
+	codeUnauthorized       = "UNAUTHORIZED"
 
 	msgInternalError = "Внутренняя ошибка сервера"
+	msgUnauthorized  = "Необходимо войти заново"
 )
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

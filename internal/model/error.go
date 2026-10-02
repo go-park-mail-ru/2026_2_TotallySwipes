@@ -7,6 +7,7 @@ var (
 	ErrEmailAlreadyExists = errors.New("email already exists")
 	ErrPasswordTooLong    = errors.New("password too long")
 	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrInvalidSession     = errors.New("invalid session")
 	// ErrSessionNotOpened означает, что аккаунт создан, но сессия не открыта.
 	ErrSessionNotOpened       = errors.New("account created, session not opened")
 	ErrActiveTestNotFound     = errors.New("active test not found")

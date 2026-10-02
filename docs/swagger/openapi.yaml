@@ -267,12 +267,42 @@ paths:
   /api/v1/auth/refresh:
     post:
       summary: Обновить сессию пользователя
-      description: Продлевает действующую сессию. Если сессия отсутствует, истекла или отозвана, необходимо войти заново.
+      description: >-
+        Меняет refresh-токен из cookie refresh_token на новую пару токенов.
+        Старый refresh-токен отзывается и повторно не принимается. Вызывать,
+        когда защищённая ручка ответила 401. Если сессия отсутствует, истекла
+        или отозвана, необходимо войти заново.
       responses:
         '204':
           description: Сессия обновлена. Тело ответа отсутствует.
+          headers:
+            Set-Cookie:
+              description: Новые cookie access_token и refresh_token.
+              schema:
+                type: string
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          description: >-
+            Cookie refresh_token нет, сессия истекла, отозвана или токен уже
+            использован. Cookie access_token и refresh_token удаляются.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                        example: UNAUTHORIZED
+                      message:
+                        type: string
+                        example: Необходимо войти заново
         '500':
           $ref: '#/components/responses/InternalServerError'
 

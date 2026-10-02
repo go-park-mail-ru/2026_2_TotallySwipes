@@ -28,6 +28,7 @@ type SessionRepository interface {
 	// GetByTokenHash - model.ErrNotFound, если сессии нет или она истекла
 	GetByTokenHash(ctx context.Context, tokenHash string) (*model.Session, error)
 	Revoke(ctx context.Context, id string) error
+	RevokeIfActive(ctx context.Context, id string) (bool, error)
 }
 
 type PasswordHasher interface {
@@ -162,6 +163,38 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
 		return fmt.Errorf("revoke session: %w", err)
 	}
 	return nil
+}
+
+// Refresh - model.ErrInvalidSession, если сессии нет, она истекла или отозвана
+func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (model.Tokens, error) {
+	if refreshToken == "" {
+		return model.Tokens{}, fmt.Errorf("refresh: %w", model.ErrInvalidSession)
+	}
+
+	session, err := s.sessions.GetByTokenHash(ctx, auth.HashToken(refreshToken))
+	if errors.Is(err, model.ErrNotFound) {
+		return model.Tokens{}, fmt.Errorf("refresh: %w", model.ErrInvalidSession)
+	}
+	if err != nil {
+		return model.Tokens{}, fmt.Errorf("get session: %w", err)
+	}
+	if session.Revoked || !s.now().Before(session.ExpiresAt) {
+		return model.Tokens{}, fmt.Errorf("refresh session id=%s: %w", session.ID, model.ErrInvalidSession)
+	}
+
+	revoked, err := s.sessions.RevokeIfActive(ctx, session.ID)
+	if err != nil {
+		return model.Tokens{}, fmt.Errorf("revoke session: %w", err)
+	}
+	if !revoked {
+		return model.Tokens{}, fmt.Errorf("refresh session id=%s: %w", session.ID, model.ErrInvalidSession)
+	}
+
+	tokens, err := s.openSession(ctx, session.UserID)
+	if err != nil {
+		return model.Tokens{}, fmt.Errorf("refresh: open session: %w", err)
+	}
+	return tokens, nil
 }
 
 func (s *AuthService) openSession(ctx context.Context, userID int64) (model.Tokens, error) {
