@@ -47,6 +47,7 @@ type fakeSessions struct {
 	byHash    map[string]*model.Session
 	revoked   []string
 	createErr error
+	revokeErr error
 }
 
 func newFakeSessions() *fakeSessions { return &fakeSessions{byHash: map[string]*model.Session{}} }
@@ -69,6 +70,20 @@ func (f *fakeSessions) GetByTokenHash(_ context.Context, hash string) (*model.Se
 func (f *fakeSessions) Revoke(_ context.Context, id string) error {
 	f.revoked = append(f.revoked, id)
 	return nil
+}
+
+func (f *fakeSessions) RevokeIfActive(_ context.Context, id string) (bool, error) {
+	if f.revokeErr != nil {
+		return false, f.revokeErr
+	}
+	for _, s := range f.byHash {
+		if s.ID == id && !s.Revoked {
+			s.Revoked = true
+			f.revoked = append(f.revoked, id)
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // fakeHasher: "hash:<пароль>"
@@ -233,5 +248,67 @@ func TestLogout(t *testing.T) {
 	}
 	if len(sessions.revoked) != 1 {
 		t.Errorf("nothing else must be revoked: %v", sessions.revoked)
+	}
+}
+
+func TestRefresh_OK(t *testing.T) {
+	ctx := context.Background()
+	sessions := newFakeSessions()
+	sessions.byHash[auth.HashToken("old")] = &model.Session{ID: "old-sid", UserID: 7, ExpiresAt: time.Now().Add(time.Hour)}
+	svc := newTestService(&fakeUsers{}, sessions, false)
+
+	tokens, err := svc.Refresh(ctx, "old")
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if len(sessions.revoked) != 1 || sessions.revoked[0] != "old-sid" {
+		t.Errorf("old session must be revoked, revoked = %v", sessions.revoked)
+	}
+	if tokens.Refresh == "old" {
+		t.Error("refresh token must be rotated")
+	}
+	checkSession(t, sessions, model.AuthResult{Tokens: tokens}, 7)
+
+	if _, err := svc.Refresh(ctx, "old"); !errors.Is(err, model.ErrInvalidSession) {
+		t.Errorf("reuse: err = %v", err)
+	}
+	if _, err := svc.Refresh(ctx, tokens.Refresh); err != nil {
+		t.Errorf("refresh with new token: %v", err)
+	}
+}
+
+func TestRefresh_InvalidSession(t *testing.T) {
+	ctx := context.Background()
+	sessions := newFakeSessions()
+	sessions.byHash[auth.HashToken("revoked")] = &model.Session{ID: "r", UserID: 1, ExpiresAt: time.Now().Add(time.Hour), Revoked: true}
+	sessions.byHash[auth.HashToken("expired")] = &model.Session{ID: "e", UserID: 1, ExpiresAt: time.Now().Add(-time.Second)}
+	svc := newTestService(&fakeUsers{}, sessions, false)
+
+	for _, token := range []string{"", "unknown", "revoked", "expired"} {
+		if _, err := svc.Refresh(ctx, token); !errors.Is(err, model.ErrInvalidSession) {
+			t.Errorf("refresh %q: err = %v, want ErrInvalidSession", token, err)
+		}
+	}
+	if len(sessions.revoked) != 0 {
+		t.Errorf("nothing must be revoked: %v", sessions.revoked)
+	}
+}
+
+func TestRefresh_StorageErrors(t *testing.T) {
+	ctx := context.Background()
+	redisErr := errors.New("redis down")
+
+	sessions := newFakeSessions()
+	sessions.byHash[auth.HashToken("t")] = &model.Session{ID: "sid", UserID: 1, ExpiresAt: time.Now().Add(time.Hour)}
+	sessions.revokeErr = redisErr
+	if _, err := newTestService(&fakeUsers{}, sessions, false).Refresh(ctx, "t"); !errors.Is(err, redisErr) || errors.Is(err, model.ErrInvalidSession) {
+		t.Errorf("revoke error must not look like invalid session: %v", err)
+	}
+
+	sessions = newFakeSessions()
+	sessions.byHash[auth.HashToken("t")] = &model.Session{ID: "sid", UserID: 1, ExpiresAt: time.Now().Add(time.Hour)}
+	sessions.createErr = redisErr
+	if _, err := newTestService(&fakeUsers{}, sessions, false).Refresh(ctx, "t"); !errors.Is(err, redisErr) {
+		t.Errorf("create error: %v", err)
 	}
 }

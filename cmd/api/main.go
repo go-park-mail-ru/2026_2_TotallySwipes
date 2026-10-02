@@ -90,6 +90,7 @@ func run() error {
 	authRouter.HandleFunc("/register", authHandler.Register).Methods(http.MethodPost)
 	authRouter.HandleFunc("/login", authHandler.Login).Methods(http.MethodPost)
 	authRouter.HandleFunc("/logout", authHandler.Logout).Methods(http.MethodPost)
+	authRouter.HandleFunc("/refresh", authHandler.Refresh).Methods(http.MethodPost)
 
 	api.Handle("/feed", requireAuth(feedHandler)).Methods(http.MethodGet)
 	api.Handle("/profile/me/short", requireAuth(profileShortHandler)).Methods(http.MethodGet)
