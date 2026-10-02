@@ -6,6 +6,7 @@ import (
 	"dating-app/internal/handler"
 	"dating-app/internal/middleware"
 	"dating-app/internal/model"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -28,7 +29,11 @@ func (s *testServiceStub) GetCurrentTest(context.Context) (*model.Test, error) {
 }
 func (s *testServiceStub) SubmitTestAnswers(_ context.Context, userID int64, answers *model.TestAnswers) (*model.TestResult, error) {
 	s.userID, s.testID = userID, answers.TestID
-	return &model.TestResult{ID: 9, TestID: answers.TestID, Revision: 1, CompletedA: time.Now()}, nil
+	scores := [5]float64{.85, .8, .25, .55, .2}
+	return &model.TestResult{ID: 9, TestID: answers.TestID, Revision: 1, CompletedA: time.Now(),
+		PersonalityType: model.PersonalityStrategist, AboutPersonalityType: "Стратег: вам ближе новые идеи и продуманный подход.",
+		BigFive: model.BigFive{Openness: &scores[0], Conscientiousness: &scores[1], Extraversion: &scores[2], Agreeableness: &scores[3], Neuroticism: &scores[4]},
+	}, nil
 }
 
 func TestProtectedTestRoutes(t *testing.T) {
@@ -70,6 +75,24 @@ func TestProtectedTestRoutes(t *testing.T) {
 			}
 			if tc.status == 201 && (svc.userID != 73 || svc.testID != 42) {
 				t.Fatalf("service received userID=%d testID=%d", svc.userID, svc.testID)
+			}
+			if tc.status == 201 {
+				var body struct {
+					PersonalityType string             `json:"personality_type"`
+					About           string             `json:"about_personality_type"`
+					BigFive         map[string]float64 `json:"big_five"`
+				}
+				if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+					t.Fatal(err)
+				}
+				if body.PersonalityType != "STRATEGIST" || body.About == "" || len(body.BigFive) != 5 {
+					t.Fatalf("incomplete result: %s", rec.Body.String())
+				}
+				for field, want := range map[string]float64{"openness": .85, "conscientiousness": .8, "extraversion": .25, "agreeableness": .55, "neuroticism": .2} {
+					if got, ok := body.BigFive[field]; !ok || got != want {
+						t.Fatalf("%s = %v, want %v", field, got, want)
+					}
+				}
 			}
 			if tc.status != 201 && svc.userID != 0 {
 				t.Fatal("unexpected submission")
