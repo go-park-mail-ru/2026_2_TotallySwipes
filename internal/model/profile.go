@@ -117,3 +117,10 @@ type ProfilePsychoInput struct {
 	Agreeableness     *float64
 	Neuroticism       *float64
 }
+
+type ProfileShort struct {
+	UserID       int64
+	Name         string
+	MainPhotoKey *string
+	MainPhotoURL *string
+}

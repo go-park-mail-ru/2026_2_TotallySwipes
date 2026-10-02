@@ -419,6 +419,65 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/profile/me/short:
+    get:
+      security:
+        - cookieAuth: []
+      summary: Краткие данные своей анкеты
+      description: >-
+        Имя и главное фото (минимальная позиция) текущего пользователя для
+        отображения в шапке, аватарке и т.п.
+      responses:
+        '200':
+          description: Данные получены
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - user_id
+                  - name
+                  - photo_url
+                properties:
+                  user_id:
+                    minimum: 1
+                    type: integer
+                    format: int64
+                    example: 42
+                  name:
+                    type: string
+                    example: Аня
+                  photo_url:
+                    type: string
+                    nullable: true
+                    description: URL главного фото. null, если фото не загружено.
+                    example: http://localhost:8080/cats/cat-1.jpg
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Анкета текущего пользователя не найдена
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: string
+                        example: PROFILE_NOT_FOUND
+                      message:
+                        type: string
+                        example: Анкета не найдена
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/v1/feed:
     get:
       security:

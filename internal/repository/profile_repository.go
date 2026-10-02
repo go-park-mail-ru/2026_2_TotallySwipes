@@ -573,3 +573,30 @@ func loadPhoto(ctx context.Context, tx *sql.Tx, profileID int64) ([]model.Photo,
 
 	return photos, nil
 }
+
+func (r *ProfileRepo) GetShortByUserID(ctx context.Context, userID int64) (*model.ProfileShort, error) {
+	var short model.ProfileShort
+	var photoKey sql.NullString
+
+	err := r.db.QueryRowContext(ctx,
+		`SELECT u.id, u.name, ph.storage_key
+		FROM profile AS p
+		JOIN "user" AS u ON u.id = p.user_id
+		LEFT JOIN LATERAL (
+		    SELECT storage_key FROM photo WHERE profile_id = p.id ORDER BY position, id LIMIT 1
+		) AS ph ON true
+		WHERE p.user_id = $1`, userID,
+	).Scan(&short.UserID, &short.Name, &photoKey)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, model.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get short profile user_id=%d: %w", userID, err)
+	}
+
+	if photoKey.Valid {
+		short.MainPhotoKey = &photoKey.String
+	}
+	return &short, nil
+}
