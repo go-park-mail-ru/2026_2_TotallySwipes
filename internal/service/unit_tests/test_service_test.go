@@ -2,12 +2,12 @@ package service
 
 import (
 	"context"
+	"dating-app/internal/model"
+	. "dating-app/internal/service"
 	"errors"
 	"math"
 	"reflect"
 	"testing"
-
-	"dating-app/internal/model"
 )
 
 func TestClassifyPersonality(t *testing.T) {
@@ -22,7 +22,7 @@ func TestClassifyPersonality(t *testing.T) {
 		{"low A changes type", [5]float64{.2, .8, .2, .2, .2}, model.PersonalityCraftsperson},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			kind, about, err := (&TestServiceImpl{}).classifyPersonality(personalityTestVector(tc.vector))
+			kind, about, err := (&TestServiceImpl{}).ClassifyPersonality(personalityTestVector(tc.vector))
 			if err != nil || kind != tc.want || about == "" {
 				t.Fatalf("got %s %q %v", kind, about, err)
 			}
@@ -32,13 +32,13 @@ func TestClassifyPersonality(t *testing.T) {
 		for field := 0; field < 5; field++ {
 			values := [5]float64{.5, .5, .5, .5, .5}
 			values[field] = bad
-			_, _, err := (&TestServiceImpl{}).classifyPersonality(personalityTestVector(values))
+			_, _, err := (&TestServiceImpl{}).ClassifyPersonality(personalityTestVector(values))
 			if !errors.Is(err, model.ErrInvalidBigFive) {
 				t.Fatalf("invalid coordinate accepted: %v", values)
 			}
 		}
 	}
-	_, _, err := (&TestServiceImpl{}).classifyPersonality(model.BigFive{})
+	_, _, err := (&TestServiceImpl{}).ClassifyPersonality(model.BigFive{})
 	if !errors.Is(err, model.ErrInvalidBigFive) {
 		t.Fatal("missing scores accepted")
 	}
@@ -84,7 +84,7 @@ func TestSubmissionReturnsAttemptVectorBeforeProfileBlending(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kind, about, err := (&TestServiceImpl{}).classifyPersonality(*want)
+	kind, about, err := (&TestServiceImpl{}).ClassifyPersonality(*want)
 	if err != nil {
 		t.Fatal(err)
 	}
