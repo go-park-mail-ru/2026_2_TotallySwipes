@@ -9,3 +9,5 @@
 */data
 /test/
 docker-compose.local.yml
+coverage.out
+coverage.html
