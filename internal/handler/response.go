@@ -13,6 +13,7 @@ const (
 	codeInvalidCredentials = "INVALID_CREDENTIALS"
 	codeInternalError      = "INTERNAL_SERVER_ERROR"
 	codeUnauthorized       = "UNAUTHORIZED"
+	codePayloadTooLarge    = "PAYLOAD_TOO_LARGE"
 
 	msgInternalError = "Внутренняя ошибка сервера"
 	msgUnauthorized  = "Необходимо войти заново"

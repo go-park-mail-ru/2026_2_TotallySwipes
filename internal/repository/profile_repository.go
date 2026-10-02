@@ -210,8 +210,8 @@ func (r *ProfileRepo) AddProfilePhotos(ctx context.Context, profileID int64, pho
 	}
 
 	for _, photo := range photos {
-		if _, err = tx.ExecContext(ctx, `INSERT INTO photo (profile_id, storage_key, position) VALUES ($1, $2, $3)`, profileID, photo.StorageKey, photo.Position); err != nil {
-			return fmt.Errorf("add profile photos profile_id=%d: insert: %w", profileID, err)
+		if err := insertPhoto(ctx, tx, profileID, photo); err != nil {
+			return err
 		}
 	}
 
@@ -292,6 +292,16 @@ func insertProfilePsycho(ctx context.Context, tx *sql.Tx, profileID int64, p *mo
 
 func nullIfEmpty(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: s != ""}
+}
+
+func insertPhoto(ctx context.Context, tx *sql.Tx, profileID int64, photo model.PhotoInput) error {
+	_, err := tx.ExecContext(ctx,
+		`INSERT INTO photo (profile_id, storage_key, position) VALUES ($1, $2, $3)`,
+		profileID, photo.StorageKey, photo.Position)
+	if err != nil {
+		return fmt.Errorf("insert photo profile_id=%d position=%d: %w", profileID, photo.Position, err)
+	}
+	return nil
 }
 
 func insertProfileTag(ctx context.Context, tx *sql.Tx, profileID, tagID int64) error {

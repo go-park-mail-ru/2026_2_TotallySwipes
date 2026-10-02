@@ -90,10 +90,10 @@ func (r *UserRepo) CreateUser(ctx context.Context, input *model.UserInput) error
 }
 
 // CreateUserWithProfile в одной транзакции создаёт пользователя, его профиль,
-// первую версию профиля и привязывает теги (несуществующие создаются).
+// первую версию профиля, фото и привязывает теги (несуществующие создаются).
 // Если email занят - model.ErrEmailAlreadyExists
 func (r *UserRepo) CreateUserWithProfile(ctx context.Context, user *model.UserInput,
-	version *model.ProfileVersionInput, tags []string) (int64, error) {
+	version *model.ProfileVersionInput, tags []string, photos []model.PhotoInput) (int64, error) {
 
 	if user == nil || version == nil {
 		return 0, fmt.Errorf("create user with profile: input is nil")
@@ -133,6 +133,12 @@ func (r *UserRepo) CreateUserWithProfile(ctx context.Context, user *model.UserIn
 			return 0, fmt.Errorf("create user id=%d: %w", userID, err)
 		}
 		if err := insertProfileTag(ctx, tx, profileID, tagID); err != nil {
+			return 0, fmt.Errorf("create user id=%d: %w", userID, err)
+		}
+	}
+
+	for _, photo := range photos {
+		if err := insertPhoto(ctx, tx, profileID, photo); err != nil {
 			return 0, fmt.Errorf("create user id=%d: %w", userID, err)
 		}
 	}

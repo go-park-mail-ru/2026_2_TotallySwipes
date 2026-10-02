@@ -16,6 +16,7 @@ type RegisterInput struct {
 	SearchAgeFrom int
 	SearchAgeTo   int
 	Tags          []string
+	Photos        []PhotoUpload
 }
 
 // Tokens - пара токенов новой сессии

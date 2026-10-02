@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	CurrentTestID int64
+	PhotoDir      string
 	Database      DatabaseConfig
 	Redis         RedisConfig
 	Auth          AuthConfig
@@ -47,6 +48,7 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		CurrentTestID: r.nonNegativeInt64("CURRENT_TEST_ID"),
+		PhotoDir:      r.str("PHOTO_DIR", "./db/data/cats"),
 		Database: DatabaseConfig{
 			URL: r.required("DATABASE_URL"),
 		},
