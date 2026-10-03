@@ -62,7 +62,7 @@ func run() error {
 		issuer,
 		cfg.Auth.JWTRefreshTTL,
 	)
-	urlProvider := service.NewLocalPhotoURLProvider("http://localhost:" + cfg.HTTP.Port)
+	urlProvider := service.NewLocalPhotoURLProvider(cfg.HTTP.PublicURL)
 	authHandler := handler.NewAuthHandler(authSvc, cfg.Auth.CookieSecure)
 	profileSvc := service.NewProfileService(
 		profileRepo,

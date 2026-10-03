@@ -20,8 +20,8 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.Redis.Addr != "localhost:6379" || cfg.HTTP.Port != "8080" {
-		t.Errorf("defaults: redis = %q, port = %q", cfg.Redis.Addr, cfg.HTTP.Port)
+	if cfg.Redis.Addr != "localhost:6379" || cfg.HTTP.Port != "8080" || cfg.HTTP.PublicURL != "http://localhost:8080" {
+		t.Errorf("defaults: redis = %q, port = %q, public url = %q", cfg.Redis.Addr, cfg.HTTP.Port, cfg.HTTP.PublicURL)
 	}
 	if cfg.Auth.JWTAccessTTL != 15*time.Minute || !cfg.Auth.CookieSecure {
 		t.Errorf("auth defaults = %+v", cfg.Auth)
@@ -63,5 +63,26 @@ func TestLoadZeroHTTPTimeoutAllowed(t *testing.T) {
 	cfg, err := Load()
 	if err != nil || cfg.HTTP.ReadTimeout != 0 {
 		t.Fatalf("cfg = %+v, err = %v", cfg, err)
+	}
+}
+
+func TestLoadPublicURL(t *testing.T) {
+	setRequired(t)
+	t.Setenv("PORT", "9090")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.HTTP.PublicURL != "http://localhost:9090" {
+		t.Errorf("default must follow PORT, got %q", cfg.HTTP.PublicURL)
+	}
+
+	t.Setenv("PUBLIC_URL", "https://api.example.com")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.HTTP.PublicURL != "https://api.example.com" {
+		t.Errorf("public url = %q", cfg.HTTP.PublicURL)
 	}
 }
