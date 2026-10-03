@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
+	"strings"
 )
 
-const uploadsDir = "uploads"
+const profilesDir = "profiles"
 
 type LocalPhotoStorage struct {
 	dir string
@@ -27,13 +27,14 @@ func (s *LocalPhotoStorage) Save(_ context.Context, data []byte, ext string) (st
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("save photo: random name: %w", err)
 	}
-	key := path.Join(uploadsDir, hex.EncodeToString(b)+ext)
+	name := hex.EncodeToString(b) + ext
+	key := profilesDir + "/" + name
 
-	if err := os.MkdirAll(filepath.Join(s.dir, uploadsDir), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(s.dir, profilesDir), 0o755); err != nil {
 		return "", fmt.Errorf("save photo: %w", err)
 	}
 
-	f, err := os.OpenFile(filepath.Join(s.dir, filepath.FromSlash(key)), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	f, err := os.OpenFile(filepath.Join(s.dir, profilesDir, name), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return "", fmt.Errorf("save photo %s: %w", key, err)
 	}
@@ -50,10 +51,11 @@ func (s *LocalPhotoStorage) Save(_ context.Context, data []byte, ext string) (st
 }
 
 func (s *LocalPhotoStorage) Delete(_ context.Context, key string) error {
-	if !fs.ValidPath(key) {
+	name, ok := strings.CutPrefix(key, profilesDir+"/")
+	if !ok || !fs.ValidPath(name) || strings.Contains(name, "/") {
 		return fmt.Errorf("delete photo %q: invalid key", key)
 	}
-	err := os.Remove(filepath.Join(s.dir, filepath.FromSlash(key)))
+	err := os.Remove(filepath.Join(s.dir, profilesDir, name))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("delete photo %s: %w", key, err)
 	}

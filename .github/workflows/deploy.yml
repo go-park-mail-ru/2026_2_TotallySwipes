@@ -64,7 +64,7 @@ jobs:
           DOCKER_ENV: ${{ secrets.DOCKER_ENV }}
         run: |
           ssh server 'mkdir -p ~/app'
-          rsync -az --delete docker-compose.yml db server:~/app/
+          rsync -az --delete --exclude=/db/data/ docker-compose.yml db server:~/app/
           printf '%s\nAPI_IMAGE=%s\n' "$DOCKER_ENV" "$API_IMAGE" | ssh server 'umask 077 && cat > ~/app/docker.env'
 
       - name: Deploy

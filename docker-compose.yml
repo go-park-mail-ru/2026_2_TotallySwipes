@@ -38,8 +38,10 @@ services:
         condition: service_healthy
     env_file:
       - docker.env
+    environment:
+      PHOTO_DIR: /photos
     volumes:
-      - ./db/data/cats:/app/db/data/cats
+      - photos:/photos
     ports:
       - "${API_BIND:-127.0.0.1}:${PORT:-8080}:${PORT:-8080}"
 
@@ -55,3 +57,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  photos:
