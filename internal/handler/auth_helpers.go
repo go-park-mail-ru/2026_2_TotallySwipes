@@ -22,6 +22,7 @@ type AuthService interface {
 	Login(ctx context.Context, email, password string) (model.AuthResult, error)
 	Logout(ctx context.Context, refreshToken string) error
 	Refresh(ctx context.Context, refreshToken string) (model.Tokens, error)
+	IsEmailAvailable(ctx context.Context, email string) (bool, error)
 }
 
 type AuthHandler struct {

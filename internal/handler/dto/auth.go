@@ -86,6 +86,24 @@ func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
+type CheckEmailRequest struct {
+	Email string `json:"email"`
+}
+
+type CheckEmailResponse struct {
+	Available bool `json:"available"`
+}
+
+func (r *CheckEmailRequest) Normalize() {
+	r.Email = normalizeEmail(r.Email)
+}
+
+func (r CheckEmailRequest) Validate() map[string]string {
+	errs := make(map[string]string)
+	addErr(errs, "email", validate.ValidateEmail(r.Email))
+	return errs
+}
+
 func (r LoginRequest) Validate() map[string]string {
 	errs := make(map[string]string)
 

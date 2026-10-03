@@ -30,6 +30,7 @@ type fakeAuth struct {
 	refresh  string
 	res      model.AuthResult
 	err      error
+	taken    bool
 }
 
 func (f *fakeAuth) Register(_ context.Context, in model.RegisterInput) (model.AuthResult, error) {
@@ -50,6 +51,11 @@ func (f *fakeAuth) Logout(_ context.Context, refreshToken string) error {
 func (f *fakeAuth) Refresh(_ context.Context, refreshToken string) (model.Tokens, error) {
 	f.called, f.refresh = true, refreshToken
 	return f.res.Tokens, f.err
+}
+
+func (f *fakeAuth) IsEmailAvailable(_ context.Context, email string) (bool, error) {
+	f.called, f.email = true, email
+	return !f.taken, f.err
 }
 
 var testTokens = model.Tokens{
@@ -503,6 +509,44 @@ func TestLoginHandler_Errors(t *testing.T) {
 		}
 		if len(rec.Result().Cookies()) != 0 {
 			t.Errorf("%s: cookies must not be set", tt.name)
+		}
+	}
+}
+
+func TestCheckEmailHandler(t *testing.T) {
+	for _, taken := range []bool{false, true} {
+		svc := &fakeAuth{taken: taken}
+		rec, resp := do(t, NewAuthHandler(svc, true).CheckEmail, "/api/v1/auth/email/check", `{"email": " Alex@Example.com "}`)
+		if rec.Code != http.StatusOK || resp["available"] != !taken {
+			t.Errorf("taken=%v: status = %d, body = %s", taken, rec.Code, rec.Body)
+		}
+		if svc.email != "alex@example.com" {
+			t.Errorf("email must be normalized, got %q", svc.email)
+		}
+	}
+}
+
+func TestCheckEmailHandler_Errors(t *testing.T) {
+	tests := []struct {
+		name   string
+		body   string
+		err    error
+		status int
+		code   string
+	}{
+		{"битый JSON", `{`, nil, http.StatusBadRequest, "VALIDATION_ERROR"},
+		{"пустой email", `{}`, nil, http.StatusBadRequest, "VALIDATION_ERROR"},
+		{"кривой email", `{"email": "nope"}`, nil, http.StatusBadRequest, "VALIDATION_ERROR"},
+		{"ошибка сервиса", `{"email": "a@b.ru"}`, errors.New("db down"), http.StatusInternalServerError, "INTERNAL_SERVER_ERROR"},
+	}
+	for _, tt := range tests {
+		svc := &fakeAuth{err: tt.err}
+		rec, resp := do(t, NewAuthHandler(svc, true).CheckEmail, "/api/v1/auth/email/check", tt.body)
+		if rec.Code != tt.status || errCode(resp) != tt.code {
+			t.Errorf("%s: status = %d, body = %s", tt.name, rec.Code, rec.Body)
+		}
+		if tt.status == http.StatusBadRequest && svc.called {
+			t.Errorf("%s: service must not be called", tt.name)
 		}
 	}
 }
