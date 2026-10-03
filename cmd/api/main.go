@@ -102,7 +102,7 @@ func run() error {
 	// применяется только к совпавшим роутам, на 404/405 middleware не сработает.
 	var h http.Handler = r
 	h = middleware.Recovery(h)
-	h = middleware.CORS([]string{"http://localhost:5173"})(h)
+	h = middleware.CORS(cfg.HTTP.CORSOrigins)(h)
 	h = middleware.Logging(h)
 
 	srv := &http.Server{

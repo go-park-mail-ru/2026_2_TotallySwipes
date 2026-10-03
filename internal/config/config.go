@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -35,6 +36,7 @@ type AuthConfig struct {
 type HTTPConfig struct {
 	Port              string
 	PublicURL         string
+	CORSOrigins       []string
 	ReadHeaderTimeout time.Duration
 	ReadTimeout       time.Duration
 	WriteTimeout      time.Duration
@@ -64,6 +66,7 @@ func Load() (*Config, error) {
 		},
 		HTTP: HTTPConfig{
 			Port:              r.str("PORT", "8080"),
+			CORSOrigins:       r.list("CORS_ORIGINS", "http://localhost:5173"),
 			ReadHeaderTimeout: r.duration("HTTP_READ_HEADER_TIMEOUT", 5*time.Second),
 			ReadTimeout:       r.duration("HTTP_READ_TIMEOUT", 10*time.Second),
 			WriteTimeout:      r.duration("HTTP_WRITE_TIMEOUT", 10*time.Second),
@@ -104,6 +107,16 @@ func (r *envReader) str(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func (r *envReader) list(key, def string) []string {
+	var items []string
+	for _, item := range strings.Split(r.str(key, def), ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 func (r *envReader) boolean(key string, def bool) bool {
