@@ -47,7 +47,7 @@ func Load() (*Config, error) {
 	var r envReader
 
 	cfg := &Config{
-		CurrentTestID: r.nonNegativeInt64("CURRENT_TEST_ID"),
+		CurrentTestID: r.nonNegativeInt64("CURRENT_TEST_ID", 1),
 		PhotoDir:      r.str("PHOTO_DIR", "./db/data/cats"),
 		Database: DatabaseConfig{
 			URL: r.required("DATABASE_URL"),
@@ -143,8 +143,8 @@ func (r *envReader) positiveDuration(key string, def time.Duration) time.Duratio
 	return d
 }
 
-func (r *envReader) nonNegativeInt64(key string) int64 {
-	value := r.str(key, "0")
+func (r *envReader) nonNegativeInt64(key string, def int64) int64 {
+	value := r.str(key, strconv.FormatInt(def, 10))
 	n, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
 		r.fail(key, value, err)

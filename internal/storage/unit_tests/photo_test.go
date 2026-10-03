@@ -18,10 +18,11 @@ func TestLocalPhotoStorage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	if !strings.HasPrefix(key, "uploads/") || !strings.HasSuffix(key, ".jpg") {
+	name, ok := strings.CutPrefix(key, "profiles/")
+	if !ok || !strings.HasSuffix(name, ".jpg") || strings.Contains(name, "/") {
 		t.Errorf("key = %q", key)
 	}
-	got, err := os.ReadFile(filepath.Join(dir, key))
+	got, err := os.ReadFile(filepath.Join(dir, "profiles", name))
 	if err != nil || string(got) != "data" {
 		t.Fatalf("file = %q, err = %v", got, err)
 	}
@@ -34,13 +35,15 @@ func TestLocalPhotoStorage(t *testing.T) {
 	if err := s.Delete(ctx, key); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, key)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, "profiles", name)); !os.IsNotExist(err) {
 		t.Errorf("file must be deleted, stat err = %v", err)
 	}
 	if err := s.Delete(ctx, key); err != nil {
 		t.Errorf("delete missing: %v", err)
 	}
-	if err := s.Delete(ctx, "../secret"); err == nil {
-		t.Error("key outside storage must be rejected")
+	for _, bad := range []string{"../secret", "profiles/../secret", "profiles/a/b.jpg", "demo/profile_01.jpg"} {
+		if err := s.Delete(ctx, bad); err == nil {
+			t.Errorf("key %q must be rejected", bad)
+		}
 	}
 }

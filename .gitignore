@@ -11,3 +11,5 @@
 docker-compose.local.yml
 coverage.out
 coverage.html
+scripts/seed/photos/*
+!scripts/seed/photos/.gitkeep
