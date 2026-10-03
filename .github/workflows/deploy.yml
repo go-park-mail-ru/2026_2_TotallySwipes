@@ -64,7 +64,7 @@ jobs:
           DOCKER_ENV: ${{ secrets.DOCKER_ENV }}
         run: |
           ssh server 'mkdir -p ~/app'
-          rsync -az --delete docker-compose.yml db server:~/app/
+          rsync -az --delete --exclude=/db/data/ docker-compose.yml db server:~/app/
           printf '%s\nAPI_IMAGE=%s\n' "$DOCKER_ENV" "$API_IMAGE" | ssh server 'umask 077 && cat > ~/app/docker.env'
 
       - name: Deploy
@@ -81,9 +81,16 @@ jobs:
           docker logout ghcr.io
 
           docker compose up -d --wait postgres redis
-          docker compose --profile tools run --rm migrate -path=/migrations -database "$DATABASE_URL" up
+          docker compose --profile tools run --rm -T migrate -path=/migrations -database "$DATABASE_URL" up </dev/null
           docker compose up -d --no-build --remove-orphans api
           docker image prune -f
 
           docker compose ps
+          for i in $(seq 1 15); do
+            curl -fsS "http://127.0.0.1:${PORT:-8080}/health" && exit 0
+            sleep 2
+          done
+          echo "API не ответил на /health" >&2
+          docker compose logs --tail 50 api
+          exit 1
           EOF

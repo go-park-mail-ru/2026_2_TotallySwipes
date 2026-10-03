@@ -1,0 +1,109 @@
+package config
+
+import (
+	. "dating-app/internal/config"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+)
+
+func setRequired(t *testing.T) {
+	t.Helper()
+	t.Setenv("DATABASE_URL", "postgres://localhost/db")
+	t.Setenv("JWT_SECRET", "secret")
+}
+
+func TestLoadDefaults(t *testing.T) {
+	setRequired(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Redis.Addr != "localhost:6379" || cfg.HTTP.Port != "8080" || cfg.HTTP.PublicURL != "http://localhost:8080" {
+		t.Errorf("defaults: redis = %q, port = %q, public url = %q", cfg.Redis.Addr, cfg.HTTP.Port, cfg.HTTP.PublicURL)
+	}
+	if cfg.Auth.JWTAccessTTL != 15*time.Minute || !cfg.Auth.CookieSecure {
+		t.Errorf("auth defaults = %+v", cfg.Auth)
+	}
+}
+
+func TestLoadMissingRequired(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("JWT_SECRET", "")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL") || !strings.Contains(err.Error(), "JWT_SECRET") {
+		t.Fatalf("want both required vars in error, got %v", err)
+	}
+}
+
+func TestLoadInvalidValues(t *testing.T) {
+	setRequired(t)
+	t.Setenv("JWT_ACCESS_TTL", "0s")
+	t.Setenv("JWT_REFRESH_TTL", "abc")
+	t.Setenv("HTTP_IDLE_TIMEOUT", "-1s")
+	t.Setenv("COOKIE_SECURE", "maybe")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("want error")
+	}
+	for _, key := range []string{"JWT_ACCESS_TTL", "JWT_REFRESH_TTL", "HTTP_IDLE_TIMEOUT", "COOKIE_SECURE"} {
+		if strings.Count(err.Error(), key) != 1 {
+			t.Errorf("%s must be reported exactly once, got %v", key, err)
+		}
+	}
+}
+
+func TestLoadZeroHTTPTimeoutAllowed(t *testing.T) {
+	setRequired(t)
+	t.Setenv("HTTP_READ_TIMEOUT", "0s")
+
+	cfg, err := Load()
+	if err != nil || cfg.HTTP.ReadTimeout != 0 {
+		t.Fatalf("cfg = %+v, err = %v", cfg, err)
+	}
+}
+
+func TestLoadPublicURL(t *testing.T) {
+	setRequired(t)
+	t.Setenv("PORT", "9090")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.HTTP.PublicURL != "http://localhost:9090" {
+		t.Errorf("default must follow PORT, got %q", cfg.HTTP.PublicURL)
+	}
+
+	t.Setenv("PUBLIC_URL", "https://api.example.com")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.HTTP.PublicURL != "https://api.example.com" {
+		t.Errorf("public url = %q", cfg.HTTP.PublicURL)
+	}
+}
+
+func TestLoadCORSOrigins(t *testing.T) {
+	setRequired(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !reflect.DeepEqual(cfg.HTTP.CORSOrigins, []string{"http://localhost:5173"}) {
+		t.Errorf("default = %q", cfg.HTTP.CORSOrigins)
+	}
+
+	t.Setenv("CORS_ORIGINS", "http://localhost:5173, http://front.example.com ,")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !reflect.DeepEqual(cfg.HTTP.CORSOrigins, []string{"http://localhost:5173", "http://front.example.com"}) {
+		t.Errorf("origins = %q", cfg.HTTP.CORSOrigins)
+	}
+}

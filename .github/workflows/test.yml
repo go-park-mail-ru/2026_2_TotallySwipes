@@ -1,0 +1,60 @@
+name: Test
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -covermode=atomic -coverpkg=./internal/... -coverprofile=coverage.out ./...
+
+      - name: Coverage report
+        run: |
+          go tool cover -html=coverage.out -o coverage.html
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}')
+          {
+            echo "## Coverage: $total"
+            echo
+            echo "| package | coverage |"
+            echo "|---|---|"
+            awk -F'[: ]' 'NR > 1 {
+              key = $1 ":" $2
+              stmts[key] = $3
+              if ($4 > 0) hit[key] = 1
+            }
+            END {
+              for (k in stmts) {
+                split(k, p, ":"); pkg = p[1]; sub(/\/[^\/]+$/, "", pkg); sub(/^dating-app\//, "", pkg)
+                all[pkg] += stmts[k]
+                if (k in hit) cov[pkg] += stmts[k]
+              }
+              for (pkg in all) printf "| %s | %.1f%% |\n", pkg, 100 * cov[pkg] / all[pkg]
+            }' coverage.out | sort
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            coverage.out
+            coverage.html
