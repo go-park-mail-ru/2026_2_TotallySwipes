@@ -12,6 +12,7 @@ import (
 type TestRepository interface {
 	GetCurrentTest(ctx context.Context) (*model.Test, error)
 	SaveTestResult(ctx context.Context, profileID int64, answers *model.TestAnswers, psycho *model.ProfilePsychoInput) (*model.TestResult, error)
+	GetTestResult(ctx context.Context, profileID int64) (*model.TestResult, error)
 }
 
 type TestRepo struct {
@@ -100,13 +101,14 @@ func (r *TestRepo) SaveTestResult(ctx context.Context, profileID int64, answers 
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO profile_psycho (
 			profile_id, test_id, revision, openness, conscientiousness,
-			extraversion, agreeableness, neuroticism
+			extraversion, agreeableness, neuroticism, personality_type
 		)
-		SELECT $1, $2, COALESCE(MAX(revision), 0) + 1, $3, $4, $5, $6, $7
+		SELECT $1, $2, COALESCE(MAX(revision), 0) + 1, $3, $4, $5, $6, $7, $8
 		FROM profile_psycho WHERE profile_id = $1
 		RETURNING id, test_id, revision, recorded_at`,
 		profileID, answers.TestID, psycho.Openness, psycho.Conscientiousness,
 		psycho.Extraversion, psycho.Agreeableness, psycho.Neuroticism,
+		nullIfEmpty(string(psycho.PersonalityType)),
 	).Scan(&result.ID, &result.TestID, &result.Revision, &result.CompletedA)
 
 	if err != nil {
@@ -140,5 +142,33 @@ func (r *TestRepo) SaveTestResult(ctx context.Context, profileID int64, answers 
 		return nil, fmt.Errorf("save test result: commit: %w", err)
 	}
 
+	return &result, nil
+}
+
+// GetTestResult - model.ErrNotFound, если тест не пройден
+func (r *TestRepo) GetTestResult(ctx context.Context, profileID int64) (*model.TestResult, error) {
+	var result model.TestResult
+	var personalityType sql.NullString
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, test_id, revision, recorded_at, personality_type,
+		       openness, conscientiousness, extraversion, agreeableness, neuroticism
+		FROM profile_psycho
+		WHERE profile_id = $1 AND openness IS NOT NULL
+		ORDER BY revision DESC
+		LIMIT 1`,
+		profileID,
+	).Scan(&result.ID, &result.TestID, &result.Revision, &result.CompletedA, &personalityType,
+		&result.BigFive.Openness, &result.BigFive.Conscientiousness, &result.BigFive.Extraversion,
+		&result.BigFive.Agreeableness, &result.BigFive.Neuroticism)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, model.ErrNotFound
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("get test result: %w", err)
+	}
+
+	result.PersonalityType = model.PersonalityType(personalityType.String)
 	return &result, nil
 }

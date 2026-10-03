@@ -77,6 +77,7 @@ func run() error {
 	testSvc := service.NewTestService(testRepo, profileSvc, compSvc)
 	getCurrentTestHandler := handler.NewGetCurrentTestHandler(testSvc)
 	testAnswersHandler := handler.NewPostTestResultsHandler(testSvc)
+	myTestResultHandler := handler.NewGetMyTestResultHandler(testSvc)
 
 	r := mux.NewRouter()
 	r.HandleFunc("/health", handler.GetHealth).Methods(http.MethodGet)
@@ -96,6 +97,7 @@ func run() error {
 	api.Handle("/feed", requireAuth(feedHandler)).Methods(http.MethodGet)
 	api.Handle("/profile/me/short", requireAuth(profileShortHandler)).Methods(http.MethodGet)
 	api.Handle("/tests/current", requireAuth(getCurrentTestHandler)).Methods(http.MethodGet)
+	api.Handle("/tests/results/me", requireAuth(myTestResultHandler)).Methods(http.MethodGet)
 	api.Handle("/tests/{test_id}/results", requireAuth(testAnswersHandler)).Methods(http.MethodPost)
 
 	// Обёрнуто снаружи роутера, а не через r.Use(): у gorilla/mux r.Use()

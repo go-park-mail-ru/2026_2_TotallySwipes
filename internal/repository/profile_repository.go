@@ -278,11 +278,12 @@ func insertProfilePsycho(ctx context.Context, tx *sql.Tx, profileID int64, p *mo
 	_, err := tx.ExecContext(ctx,
 		`INSERT INTO profile_psycho (
 		    profile_id, revision, test_id,
-		    openness, conscientiousness, extraversion, agreeableness, neuroticism)
-		SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6, $7 FROM profile_psycho
+		    openness, conscientiousness, extraversion, agreeableness, neuroticism, personality_type)
+		SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6, $7, $8 FROM profile_psycho
 		WHERE profile_id = $1`,
 		profileID, p.TestID,
 		p.Openness, p.Conscientiousness, p.Extraversion, p.Agreeableness, p.Neuroticism,
+		nullIfEmpty(string(p.PersonalityType)),
 	)
 	if err != nil {
 		return fmt.Errorf("insert profile psycho profile_id=%d: %w", profileID, err)

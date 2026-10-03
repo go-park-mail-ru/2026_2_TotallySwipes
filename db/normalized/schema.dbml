@@ -222,6 +222,8 @@ Table "profile_psycho" {
   agreeableness numeric [null]
   neuroticism numeric [null]
 
+  personality_type text [null, note: 'Тип личности, показанный пользователю по итогам прохождения']
+
   indexes {
     (profile_id, revision) [unique]
   }
@@ -229,6 +231,17 @@ Table "profile_psycho" {
   checks {
     `id > 0`
       [name: 'profile_psycho_id_positive']
+
+    `
+    personality_type IN (
+      'EXPLORER', 'VISIONARY', 'STRATEGIST', 'INVENTOR', 'DREAMER', 'CURATOR', 'INSPIRER', 'DEBATER',
+      'ORGANIZER', 'CONNECTOR', 'COMPANION', 'DRIVER', 'ANCHOR', 'CRAFTSPERSON', 'OBSERVER', 'KEEPER'
+    )
+    `
+      [name: 'profile_psycho_personality_type_valid']
+
+    `personality_type IS NULL OR openness IS NOT NULL`
+      [name: 'profile_psycho_personality_type_needs_scores']
 
     `revision > 0`
       [name: 'profile_psycho_revision_positive']
