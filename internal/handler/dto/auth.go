@@ -28,8 +28,9 @@ type RegisterRequest struct {
 }
 
 // Normalize приводит поля к виду, в котором их проверяют и сохраняют:
-// email обрезается по краям и приводится к нижнему регистру, пароль не трогается
+// пробелы в имени схлопываются, email обрезается по краям и приводится к нижнему регистру, пароль не трогается
 func (r *RegisterRequest) Normalize() {
+	r.Name = validate.NormalizeName(r.Name)
 	r.Email = normalizeEmail(r.Email)
 }
 
