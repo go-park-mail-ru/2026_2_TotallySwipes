@@ -44,6 +44,7 @@ func (h *GetProfileShortHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 	Write(w, http.StatusOK, dto.ProfileShortResponse{
 		UserID:   short.UserID,
 		Name:     short.Name,
+		Age:      short.Age,
 		PhotoURL: short.MainPhotoURL,
 	})
 }

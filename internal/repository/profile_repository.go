@@ -589,14 +589,17 @@ func (r *ProfileRepo) GetShortByUserID(ctx context.Context, userID int64) (*mode
 	var photoKey sql.NullString
 
 	err := r.db.QueryRowContext(ctx,
-		`SELECT u.id, u.name, ph.storage_key
+		`SELECT u.id, u.name, v.birth_date, ph.storage_key
 		FROM profile AS p
 		JOIN "user" AS u ON u.id = p.user_id
+		JOIN LATERAL (
+		    SELECT birth_date FROM profile_version WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
+		) AS v ON true
 		LEFT JOIN LATERAL (
 		    SELECT storage_key FROM photo WHERE profile_id = p.id ORDER BY position, id LIMIT 1
 		) AS ph ON true
 		WHERE p.user_id = $1`, userID,
-	).Scan(&short.UserID, &short.Name, &photoKey)
+	).Scan(&short.UserID, &short.Name, &short.BirthDate, &photoKey)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, model.ErrNotFound
