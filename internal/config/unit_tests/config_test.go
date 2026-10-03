@@ -2,6 +2,7 @@ package config
 
 import (
 	. "dating-app/internal/config"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -84,5 +85,25 @@ func TestLoadPublicURL(t *testing.T) {
 	}
 	if cfg.HTTP.PublicURL != "https://api.example.com" {
 		t.Errorf("public url = %q", cfg.HTTP.PublicURL)
+	}
+}
+
+func TestLoadCORSOrigins(t *testing.T) {
+	setRequired(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !reflect.DeepEqual(cfg.HTTP.CORSOrigins, []string{"http://localhost:5173"}) {
+		t.Errorf("default = %q", cfg.HTTP.CORSOrigins)
+	}
+
+	t.Setenv("CORS_ORIGINS", "http://localhost:5173, http://front.example.com ,")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !reflect.DeepEqual(cfg.HTTP.CORSOrigins, []string{"http://localhost:5173", "http://front.example.com"}) {
+		t.Errorf("origins = %q", cfg.HTTP.CORSOrigins)
 	}
 }
