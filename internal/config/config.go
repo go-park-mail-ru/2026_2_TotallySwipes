@@ -34,6 +34,7 @@ type AuthConfig struct {
 
 type HTTPConfig struct {
 	Port              string
+	PublicURL         string
 	ReadHeaderTimeout time.Duration
 	ReadTimeout       time.Duration
 	WriteTimeout      time.Duration
@@ -73,6 +74,7 @@ func Load() (*Config, error) {
 	if err := r.err(); err != nil {
 		return nil, err
 	}
+	cfg.HTTP.PublicURL = r.str("PUBLIC_URL", "http://localhost:"+cfg.HTTP.Port)
 	return cfg, nil
 }
 
