@@ -411,9 +411,14 @@ func TestRegisterRequestValidate_SearchAgeRange(t *testing.T) {
 
 func TestRegisterRequestNormalize(t *testing.T) {
 	r := validRegister()
+	r.Name = "  Анна   Мария "
 	r.Email = "  Alex@Example.COM \n"
 	r.Password = " qwerty123 "
 	r.Normalize()
+
+	if r.Name != "Анна Мария" {
+		t.Errorf("name = %q", r.Name)
+	}
 
 	if r.Email != "alex@example.com" {
 		t.Errorf("email = %q", r.Email)

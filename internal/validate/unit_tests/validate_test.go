@@ -82,15 +82,49 @@ func TestValidateName(t *testing.T) {
 		want error
 	}{
 		{"alex", nil},
+		{"Ли", nil},
+		{"Ё", nil},
 		{"Анна-Мария", nil},
-		{strings.Repeat("я", 100), nil},
+		{"O'Neil", nil},
+		{"Jean Luc", nil},
+		{"Robert Downey Jr.", nil},
+		{"Øystein", nil},
+		{"Jose\u0301", nil},
+		{"张伟", nil},
+		{"प्रिया", nil},
+		{strings.Repeat("я", 64), nil},
 		{"", ErrRequired},
-		{"   ", ErrNameBlank},
-		{strings.Repeat("я", 101), ErrNameTooLong},
+		{strings.Repeat("я", 65), ErrNameTooLong},
+		{"Вася123", ErrNameFormat},
+		{"🔥Маша", ErrNameFormat},
+		{"<b>", ErrNameFormat},
+		{"-Петя", ErrNameFormat},
+		{".Петя", ErrNameFormat},
+		{"\u0301Петя", ErrNameFormat},
+		{"Петя-", ErrNameFormat},
+		{"Петя'", ErrNameFormat},
+		{"А--на", ErrNameFormat},
+		{"Jr..", ErrNameFormat},
+		{"J. R.", ErrNameFormat},
+		{"Анна_Мария", ErrNameFormat},
+		{"Анна\u200bМария", ErrNameFormat},
 	}
 	for _, tt := range tests {
 		if got := ValidateName(tt.in); !errors.Is(got, tt.want) {
 			t.Errorf("ValidateName(%q) = %v, want %v", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestNormalizeName(t *testing.T) {
+	for in, want := range map[string]string{
+		"  Анна  ":        "Анна",
+		"Jean   Luc":      "Jean Luc",
+		"\tАнна\n Мария ": "Анна Мария",
+		"   ":             "",
+	} {
+		if got := NormalizeName(in); got != want {
+			t.Errorf("NormalizeName(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

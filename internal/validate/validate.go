@@ -19,7 +19,7 @@ const (
 	passwordMinLen = 8
 	passwordMaxLen = 128
 
-	nameMaxLen = 100
+	nameMaxLen = 64
 
 	tagsMaxCount = 10
 	tagMaxLen    = 30
@@ -44,8 +44,8 @@ var (
 	ErrPasswordTooLong  = errors.New("пароль слишком длинный")
 	ErrPasswordWeak     = errors.New("пароль должен содержать хотя бы одну букву и одну цифру")
 
-	ErrNameTooLong = errors.New("имя должно быть не длиннее 100 символов")
-	ErrNameBlank   = errors.New("имя не должно состоять только из пробелов")
+	ErrNameTooLong = errors.New("имя должно быть не длиннее 64 символов")
+	ErrNameFormat  = errors.New("имя должно начинаться с буквы и может содержать буквы, пробел, дефис, апостроф и точку, без двух разделителей подряд")
 
 	ErrDateFormat = errors.New("дата должна быть в формате YYYY-MM-DD")
 	ErrUnderage   = errors.New("пользователю должно быть не меньше 18 лет")
@@ -139,6 +139,7 @@ func ValidateLoginPassword(s string) error {
 	return nil
 }
 
+// ValidateName ожидает строку после NormalizeName
 func ValidateName(s string) error {
 	if s == "" {
 		return ErrRequired
@@ -146,10 +147,36 @@ func ValidateName(s string) error {
 	if utf8.RuneCountInString(s) > nameMaxLen {
 		return ErrNameTooLong
 	}
-	if strings.TrimSpace(s) == "" {
-		return ErrNameBlank
+
+	afterLetter := false
+	var last rune
+	for _, r := range s {
+		switch {
+		case unicode.IsLetter(r):
+			afterLetter = true
+		case unicode.Is(unicode.M, r):
+			if !afterLetter {
+				return ErrNameFormat
+			}
+		case r == ' ' || r == '-' || r == '\'' || r == '.':
+			if !afterLetter {
+				return ErrNameFormat
+			}
+			afterLetter = false
+		default:
+			return ErrNameFormat
+		}
+		last = r
+	}
+	if !afterLetter && last != '.' {
+		return ErrNameFormat
 	}
 	return nil
+}
+
+// NormalizeName обрезает пробелы по краям и схлопывает пробелы внутри
+func NormalizeName(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // ValidateAge проверяет, что на момент вызова пользователю есть 18 лет
