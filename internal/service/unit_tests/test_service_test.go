@@ -56,6 +56,7 @@ func (s resultProfileStub) GetByUserIDCurrentProfile(context.Context, int64) (*m
 type resultRepositoryStub struct {
 	definition model.Test
 	saved      *model.ProfilePsychoInput
+	stored     *model.TestResult
 }
 
 func (s *resultRepositoryStub) GetCurrentTest(context.Context) (*model.Test, error) {
@@ -64,6 +65,13 @@ func (s *resultRepositoryStub) GetCurrentTest(context.Context) (*model.Test, err
 func (s *resultRepositoryStub) SaveTestResult(_ context.Context, _ int64, _ *model.TestAnswers, psycho *model.ProfilePsychoInput) (*model.TestResult, error) {
 	s.saved = psycho
 	return &model.TestResult{ID: 9, TestID: 42, Revision: 2}, nil
+}
+func (s *resultRepositoryStub) GetTestResult(context.Context, int64) (*model.TestResult, error) {
+	if s.stored == nil {
+		return nil, model.ErrNotFound
+	}
+	stored := *s.stored
+	return &stored, nil
 }
 
 func TestSubmissionReturnsAttemptVectorBeforeProfileBlending(t *testing.T) {
@@ -97,6 +105,33 @@ func TestSubmissionReturnsAttemptVectorBeforeProfileBlending(t *testing.T) {
 	}
 	if repo.saved == nil || *repo.saved.Openness != .5 || *got.BigFive.Openness != 1 {
 		t.Fatal("saved blended profile and attempt result must remain separate")
+	}
+	if repo.saved.PersonalityType != kind {
+		t.Fatalf("saved personality type = %q, want %q", repo.saved.PersonalityType, kind)
+	}
+}
+
+func TestGetMyTestResultReturnsStoredResult(t *testing.T) {
+	scores := personalityTestVector([5]float64{.2, .8, .2, .8, .8})
+	repo := &resultRepositoryStub{stored: &model.TestResult{ID: 9, TestID: 42, Revision: 3, BigFive: scores, PersonalityType: model.PersonalityKeeper}}
+	profiles := resultProfileStub{profile: &model.Profile{ID: 7}}
+
+	got, err := NewTestService(repo, profiles, nil).GetMyTestResult(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := *repo.stored
+	want.AboutPersonalityType = model.PersonalityKeeper.Description()
+	if !reflect.DeepEqual(*got, want) {
+		t.Fatalf("got %+v, want %+v", *got, want)
+	}
+}
+
+func TestGetMyTestResultNotFound(t *testing.T) {
+	profiles := resultProfileStub{profile: &model.Profile{ID: 7}}
+	_, err := NewTestService(&resultRepositoryStub{}, profiles, nil).GetMyTestResult(context.Background(), 1)
+	if !errors.Is(err, model.ErrTestResultNotFound) {
+		t.Fatalf("err = %v, want ErrTestResultNotFound", err)
 	}
 }
 

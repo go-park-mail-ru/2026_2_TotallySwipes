@@ -57,6 +57,7 @@ entity "profile_psycho" as profile_psycho {
   extraversion
   agreeableness
   neuroticism
+  personality_type
 }
 
 entity "user_answer" as user_answer {

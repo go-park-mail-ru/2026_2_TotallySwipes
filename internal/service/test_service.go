@@ -11,11 +11,13 @@ import (
 type TestService interface {
 	GetCurrentTest(ctx context.Context) (*model.Test, error)
 	SubmitTestAnswers(ctx context.Context, userID int64, answers *model.TestAnswers) (*model.TestResult, error)
+	GetMyTestResult(ctx context.Context, userID int64) (*model.TestResult, error)
 }
 
 type TestRepository interface {
 	GetCurrentTest(ctx context.Context) (*model.Test, error)
 	SaveTestResult(ctx context.Context, profileID int64, answers *model.TestAnswers, psycho *model.ProfilePsychoInput) (*model.TestResult, error)
+	GetTestResult(ctx context.Context, profileID int64) (*model.TestResult, error)
 }
 
 type TestServiceImpl struct {
@@ -109,6 +111,7 @@ func (s *TestServiceImpl) SubmitTestAnswers(ctx context.Context, userID int64, a
 
 	psychoInput := &model.ProfilePsychoInput{
 		TestID:            answers.TestID,
+		PersonalityType:   personalityType,
 		Openness:          bigFive.Openness,
 		Conscientiousness: bigFive.Conscientiousness,
 		Extraversion:      bigFive.Extraversion,
@@ -128,6 +131,38 @@ func (s *TestServiceImpl) SubmitTestAnswers(ctx context.Context, userID int64, a
 	result.BigFive = attemptBigFive
 	result.PersonalityType = personalityType
 	result.AboutPersonalityType = aboutPersonalityType
+	return result, nil
+}
+
+// GetMyTestResult возвращает сглаженные баллы профиля
+func (s *TestServiceImpl) GetMyTestResult(ctx context.Context, userID int64) (*model.TestResult, error) {
+	profile, err := s.profileSvc.GetByUserIDCurrentProfile(ctx, userID)
+	if errors.Is(err, model.ErrNotFound) {
+		return nil, fmt.Errorf("get my test result: get profile: %w", model.ErrProfileRequired)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("get my test result: get profile: %w", err)
+	}
+
+	if profile == nil {
+		return nil, fmt.Errorf("get my test result: profile service returned nil")
+	}
+
+	result, err := s.testRepo.GetTestResult(ctx, profile.ID)
+	if errors.Is(err, model.ErrNotFound) {
+		return nil, fmt.Errorf("get my test result: %w", model.ErrTestResultNotFound)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("get my test result: %w", err)
+	}
+
+	if result == nil {
+		return nil, fmt.Errorf("get my test result: repository returned nil result")
+	}
+
+	result.AboutPersonalityType = result.PersonalityType.Description()
 	return result, nil
 }
 

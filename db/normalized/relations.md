@@ -226,6 +226,7 @@ ON UPDATE RESTRICT
 | `extraversion`    | numeric     | NULL                                |
 | `agreeableness`    | numeric     | NULL                                |
 | `neuroticism`    | numeric     | NULL                                |
+| `personality_type` | text      | NULL                                |
 
 UNIQUE:
 
@@ -239,6 +240,19 @@ CHECK:
 id > 0
 revision > 0
 isfinite(recorded_at)
+```
+
+`personality_type` — тип личности, который пользователь увидел по итогам
+прохождения. Сохраняется, чтобы изменение алгоритма классификации не меняло
+уже показанный тип. `NULL` для незавершённых прохождений и записей, созданных
+до появления колонки.
+
+```
+personality_type IN (
+  'EXPLORER', 'VISIONARY', 'STRATEGIST', 'INVENTOR', 'DREAMER', 'CURATOR', 'INSPIRER', 'DEBATER',
+  'ORGANIZER', 'CONNECTOR', 'COMPANION', 'DRIVER', 'ANCHOR', 'CRAFTSPERSON', 'OBSERVER', 'KEEPER'
+)
+personality_type IS NULL OR openness IS NOT NULL
 ```
 
 Все веса либо одновременно `NULL`, либо одновременно заданы:

@@ -116,7 +116,11 @@ func (h *PostTestResultsHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	response := dto.SubmitTestAnswersResponse{
+	Write(w, http.StatusCreated, newTestResultResponse(result))
+}
+
+func newTestResultResponse(result *model.TestResult) dto.SubmitTestAnswersResponse {
+	return dto.SubmitTestAnswersResponse{
 		ResultID:             strconv.FormatInt(result.ID, 10),
 		TestID:               strconv.FormatInt(result.TestID, 10),
 		Revision:             result.Revision,
@@ -129,6 +133,4 @@ func (h *PostTestResultsHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 			Neuroticism: result.BigFive.Neuroticism,
 		},
 	}
-
-	Write(w, http.StatusCreated, response)
 }

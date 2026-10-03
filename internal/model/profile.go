@@ -116,6 +116,7 @@ type BigFive struct {
 
 type ProfilePsychoInput struct {
 	TestID            int64
+	PersonalityType   PersonalityType
 	Openness          *float64
 	Conscientiousness *float64
 	Extraversion      *float64

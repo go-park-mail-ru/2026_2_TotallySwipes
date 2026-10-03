@@ -442,6 +442,49 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/tests/results/me:
+    get:
+      security:
+        - cookieAuth: []
+      summary: Получить свои результаты по тестам
+      description: >-
+        Пользователь определяется middleware, его профиль находится сервером.
+        Возвращает текущие результаты пользователя в том же формате, что и
+        POST /api/v1/tests/{test_id}/results. В отличие от POST, big_five — это
+        показатели профиля, сглаженные по всем прохождениям; personality_type —
+        тип, сохранённый при последнем прохождении.
+      responses:
+        '200':
+          description: Текущие результаты пользователя по тестам.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Пользователь ещё не проходил тест.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: TEST_RESULT_NOT_FOUND
+                  message: Тест ещё не пройден
+        '409':
+          description: У пользователя нет профиля.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: PROFILE_REQUIRED
+                  message: Для прохождения теста необходимо создать профиль
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/v1/tests/{test_id}/results:
     post:
       security:

@@ -15,6 +15,7 @@ var (
 	ErrInvalidTestRequest     = errors.New("invalid test request")
 	ErrInvalidAnswers         = errors.New("invalid test answers")
 	ErrTestNotFound           = errors.New("test not found")
+	ErrTestResultNotFound     = errors.New("test result not found")
 	ErrProfileRequired        = errors.New("profile required")
 	ErrInvalidBigFive         = errors.New("invalid Big Five")
 	ErrInvalidTestDefinition  = errors.New("invalid test definition")
