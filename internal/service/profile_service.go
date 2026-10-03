@@ -59,6 +59,8 @@ func (s *ProfileServiceImpl) GetShortProfile(ctx context.Context, userID int64) 
 		return nil, fmt.Errorf("get short profile user id=%d: %w", userID, err)
 	}
 
+	short.Age = CalculateAge(short.BirthDate, time.Now())
+
 	if short.MainPhotoKey != nil {
 		url, err := s.media.GetURL(ctx, *short.MainPhotoKey)
 		if err != nil {

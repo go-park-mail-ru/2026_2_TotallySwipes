@@ -499,6 +499,7 @@ paths:
                 required:
                   - user_id
                   - name
+                  - age
                   - photo_url
                 properties:
                   user_id:
@@ -509,6 +510,10 @@ paths:
                   name:
                     type: string
                     example: Аня
+                  age:
+                    minimum: 18
+                    type: integer
+                    example: 22
                   photo_url:
                     type: string
                     nullable: true

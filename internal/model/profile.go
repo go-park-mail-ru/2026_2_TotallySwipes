@@ -126,6 +126,8 @@ type ProfilePsychoInput struct {
 type ProfileShort struct {
 	UserID       int64
 	Name         string
+	BirthDate    time.Time
+	Age          int
 	MainPhotoKey *string
 	MainPhotoURL *string
 }
