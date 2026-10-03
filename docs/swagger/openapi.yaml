@@ -353,6 +353,48 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/auth/email/check:
+    post:
+      summary: Проверить, свободна ли почта для регистрации
+      description: >-
+        Авторизация не нужна. Email нормализуется и проверяется так же, как при
+        регистрации. Ответ раскрывает, зарегистрирован ли email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  minLength: 1
+                  maxLength: 254
+                  description: >-
+                    Перед проверкой сервер удаляет пробелы по краям и приводит регистр к нижнему.
+                  example: alex@example.com
+      responses:
+        '200':
+          description: Результат проверки
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - available
+                properties:
+                  available:
+                    type: boolean
+                    description: true, если почта свободна
+                    example: true
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/v1/auth/refresh:
     post:
       summary: Обновить сессию пользователя

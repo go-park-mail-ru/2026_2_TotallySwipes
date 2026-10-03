@@ -123,6 +123,17 @@ func (s *AuthService) Register(ctx context.Context, in model.RegisterInput) (mod
 	return model.AuthResult{UserID: userID, ProfileCompleted: false, Tokens: tokens}, nil
 }
 
+func (s *AuthService) IsEmailAvailable(ctx context.Context, email string) (bool, error) {
+	_, err := s.users.GetUserByEmail(ctx, email)
+	if errors.Is(err, model.ErrNotFound) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("get user: %w", err)
+	}
+	return false, nil
+}
+
 // Login - model.ErrInvalidCredentials, если нет такого email или пароль не подошёл
 func (s *AuthService) Login(ctx context.Context, email, password string) (model.AuthResult, error) {
 	user, err := s.users.GetUserByEmail(ctx, email)

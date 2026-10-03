@@ -257,6 +257,24 @@ func TestLogin(t *testing.T) {
 	}
 }
 
+func TestIsEmailAvailable(t *testing.T) {
+	users := &fakeUsers{byEmail: map[string]*model.User{"alex@example.com": {ID: 7}}}
+	ctx := context.Background()
+	svc := newTestService(users, newFakeSessions(), false)
+
+	if ok, err := svc.IsEmailAvailable(ctx, "alex@example.com"); err != nil || ok {
+		t.Errorf("taken email: available = %v, err = %v", ok, err)
+	}
+	if ok, err := svc.IsEmailAvailable(ctx, "nobody@example.com"); err != nil || !ok {
+		t.Errorf("free email: available = %v, err = %v", ok, err)
+	}
+
+	dbErr := errors.New("db down")
+	if _, err := newTestService(&fakeUsers{getErr: dbErr}, newFakeSessions(), false).IsEmailAvailable(ctx, "a@b.ru"); !errors.Is(err, dbErr) {
+		t.Errorf("err = %v, want db error", err)
+	}
+}
+
 func TestLogout(t *testing.T) {
 	ctx := context.Background()
 	sessions := newFakeSessions()
