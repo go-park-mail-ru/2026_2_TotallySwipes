@@ -1,7 +1,5 @@
 BEGIN;
 
--- Удаление таблиц в обратном порядке зависимостей.
-
 DROP TABLE "message";
 DROP TABLE "match";
 DROP TABLE "profile_like";
@@ -21,8 +19,10 @@ DROP TABLE "profile_version";
 DROP TABLE "profile";
 DROP TABLE "user";
 
+DROP FUNCTION protect_history_delete();
+DROP FUNCTION protect_completed_psycho();
+DROP FUNCTION reject_history_update();
 DROP FUNCTION lock_answer_question();
 DROP FUNCTION protect_answered_question();
 
--- Триггеры и индексы удаляются вместе с таблицами.
 COMMIT;

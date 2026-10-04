@@ -34,9 +34,7 @@ DECLARE
         'Фотография', 'Рисование', 'Керамика', 'Танцы', 'Игра на музыкальных инструментах',
         'Путешествия', 'Кулинария', 'Кофейни', 'Настольные игры', 'Садоводство'
     ];
-    -- Демонстрационный русский перевод TIPI из прежнего seed проекта,
-    -- не валидированная адаптация TIPI-RU. Порядок соответствует operation_id 1..10.
-    -- Оригинал: https://gosling.psy.utexas.edu/scales-weve-developed/ten-item-personality-measure-tipi/ten-item-personality-inventory-tipi/
+    
     question_bodies text[] := ARRAY[
         'Я считаю себя общительным человеком, полным энтузиазма.',
         'Я считаю себя критичным человеком, склонным к спорам.',
@@ -50,9 +48,13 @@ DECLARE
         'Я считаю себя приверженцем привычного, с небольшим интересом к творчеству.'
     ];
     tag_ids bigint[] := ARRAY[]::bigint[];
+    question_ids bigint[] := ARRAY[]::bigint[];
+    answer_values integer[] := ARRAY[]::integer[];
     tipi_id bigint;
     user_id_value bigint;
     profile_id_value bigint;
+    profile_version_id_value bigint;
+    psycho_id_value bigint;
     inserted_id bigint;
     i integer;
     j integer;
@@ -63,7 +65,9 @@ BEGIN
 
     FOR j IN 1..10 LOOP
         INSERT INTO question (test_id, operation_id, body)
-        VALUES (tipi_id, j, question_bodies[j]);
+        VALUES (tipi_id, j, question_bodies[j])
+        RETURNING id INTO inserted_id;
+        question_ids := array_append(question_ids, inserted_id);
     END LOOP;
 
     FOR j IN 1..20 LOOP
@@ -88,24 +92,36 @@ BEGIN
             (CURRENT_DATE - make_interval(years => 21 + i % 10, months => i % 6))::date,
             'female',
             CASE i % 3 WHEN 0 THEN 'friendship' WHEN 1 THEN 'relationship' ELSE 'casual' END,
-            descriptions[i], 'all', 18, 45);
+            descriptions[i], 'all', 18, 45)
+        RETURNING id INTO profile_version_id_value;
 
-        -- Синтетические показатели от 0 до 1 для демонстрации ленты.
-        -- Ответы на тест не создаются.
-        INSERT INTO profile_psycho
-            (profile_id, test_id, revision, openness, conscientiousness,
-             extraversion, agreeableness, neuroticism)
-        VALUES (profile_id_value, tipi_id, 1,
-            (20 + i * 7 % 71) / 100.0,
-            (15 + i * 11 % 76) / 100.0,
-            (10 + i * 13 % 81) / 100.0,
-            (25 + i * 17 % 66) / 100.0,
-            (5 + i * 19 % 86) / 100.0);
+        INSERT INTO profile_psycho (profile_id, test_id, revision)
+        VALUES (profile_id_value, tipi_id, 1)
+        RETURNING id INTO psycho_id_value;
+
+        answer_values := ARRAY[]::integer[];
+        FOR j IN 1..10 LOOP
+            answer_values := array_append(answer_values, 1 + (i * 3 + (j - 1) * 5) % 7);
+            INSERT INTO user_answer (profile_psycho_id, question_id, answer_value)
+            VALUES (psycho_id_value, question_ids[j], answer_values[j]);
+        END LOOP;
+
+        -- TIPI: ((direct + 8 - reverse) / 2 - 1) / 6.
+        -- Деление на 12.0 даёт нормализованные значения [0, 1] без целочисленного усечения.
+        -- Индексы массива соответствуют operation_id, а не сгенерированным question.id.
+        -- Все показатели заполняются одним UPDATE; последующие UPDATE запретит триггер.
+        UPDATE profile_psycho
+           SET openness = (answer_values[5] + 6 - answer_values[10]) / 12.0,
+               conscientiousness = (answer_values[3] + 6 - answer_values[8]) / 12.0,
+               extraversion = (answer_values[1] + 6 - answer_values[6]) / 12.0,
+               agreeableness = (answer_values[7] + 6 - answer_values[2]) / 12.0,
+               neuroticism = (answer_values[4] + 6 - answer_values[9]) / 12.0
+         WHERE id = psycho_id_value;
 
         -- 5 тегов у чётных анкет, 6 у нечётных; без повторов внутри анкеты.
         FOR j IN 0..(4 + i % 2) LOOP
-            INSERT INTO profile_tag (profile_id, tag_id)
-            VALUES (profile_id_value, tag_ids[1 + ((i - 1) * 3 + j * 3) % 20]);
+            INSERT INTO profile_tag (profile_version_id, tag_id)
+            VALUES (profile_version_id_value, tag_ids[1 + ((i - 1) * 3 + j * 3) % 20]);
         END LOOP;
     END LOOP;
 

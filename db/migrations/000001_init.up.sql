@@ -1,5 +1,7 @@
 BEGIN;
 
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
 CREATE TABLE "user" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
@@ -148,6 +150,10 @@ CREATE TABLE "subscription" (
     CONSTRAINT "subscription_id_positive" CHECK (id > 0),
     CONSTRAINT "subscription_period_finite" CHECK (isfinite(starts_at) AND isfinite(ends_at)),
     CONSTRAINT "subscription_period_valid" CHECK (ends_at > starts_at),
+    CONSTRAINT "subscription_no_overlap" EXCLUDE USING gist (
+        user_id WITH =,
+        tstzrange(starts_at, ends_at, '[)') WITH &&
+    ),
     CONSTRAINT "subscription_created_at_finite" CHECK (isfinite(created_at)),
     CONSTRAINT "subscription_updated_at_finite" CHECK (isfinite(updated_at)),
     CONSTRAINT "subscription_updated_not_before_created" CHECK (updated_at >= created_at),
@@ -170,13 +176,13 @@ CREATE TABLE "tag" (
 );
 
 CREATE TABLE "profile_tag" (
-    "profile_id" BIGINT NOT NULL,
+    "profile_version_id" BIGINT NOT NULL,
     "tag_id" BIGINT NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY ("profile_id", "tag_id"),
+    PRIMARY KEY ("profile_version_id", "tag_id"),
     CONSTRAINT "profile_tag_created_at_finite" CHECK (isfinite(created_at)),
-    CONSTRAINT "profile_tag_profile" FOREIGN KEY ("profile_id")
-        REFERENCES "profile" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
+    CONSTRAINT "profile_tag_version" FOREIGN KEY ("profile_version_id")
+        REFERENCES "profile_version" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
     CONSTRAINT "profile_tag_tag" FOREIGN KEY ("tag_id")
         REFERENCES "tag" ("id") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
@@ -304,6 +310,7 @@ CREATE TABLE "message" (
 
 CREATE INDEX user_answer_question_id_idx ON user_answer (question_id);
 
+-- Защищает смысл сохранённых ответов: использованный вопрос нельзя переписать.
 CREATE FUNCTION protect_answered_question() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -318,6 +325,8 @@ BEGIN
 END;
 $$;
 
+-- Запрещает менять текст, операцию расчёта и принадлежность тесту у вопроса,
+-- на который уже есть ответы. Обновление без изменения этих значений допустимо.
 CREATE TRIGGER question_definition_immutable
     BEFORE UPDATE OF body, operation_id, test_id ON question
     FOR EACH ROW EXECUTE FUNCTION protect_answered_question();
@@ -334,8 +343,131 @@ BEGIN
 END;
 $$;
 
+-- Синхронизирует запись ответа с редактированием соответствующего вопроса
+-- через техническое обновление строки вопроса без изменения её значений.
+-- Изменение question_id также вызывает эту проверку, но затем любой UPDATE
+-- ответа отклоняется триггером user_answer_no_update.
 CREATE TRIGGER user_answer_lock_question
     BEFORE INSERT OR UPDATE OF question_id ON user_answer
     FOR EACH ROW EXECUTE FUNCTION lock_answer_question();
+
+-- Общая функция запрета UPDATE исторических строк, даже без изменения значений.
+-- Возвращает ошибку 23514 с именем сработавшего триггера. INSERT и DELETE не запрещает.
+CREATE FUNCTION reject_history_update() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION '% rows cannot be updated; create a new record instead', TG_TABLE_NAME
+        USING ERRCODE = '23514', CONSTRAINT = TG_NAME;
+END;
+$$;
+
+-- Запрещает переписывать сохранённый ответ, его вопрос, прохождение и время создания.
+-- Повторное прохождение должно создавать новые ответы с другим profile_psycho_id.
+CREATE TRIGGER user_answer_no_update
+    BEFORE UPDATE ON user_answer
+    FOR EACH ROW EXECUTE FUNCTION reject_history_update();
+
+-- Запрещает менять связь тега с версией анкеты и время создания этой связи.
+-- Новый набор интересов записывается отдельными строками для новой версии анкеты.
+CREATE TRIGGER profile_tag_no_update
+    BEFORE UPDATE ON profile_tag
+    FOR EACH ROW EXECUTE FUNCTION reject_history_update();
+
+-- Запрещает менять сохранённый лайк, включая автора, целевой профиль и время.
+-- Лайк относится к profile и не переносится при появлении новой версии анкеты.
+CREATE TRIGGER profile_like_no_update
+    BEFORE UPDATE ON profile_like
+    FOR EACH ROW EXECUTE FUNCTION reject_history_update();
+
+-- Запрещает перезапись снимка анкеты. Изменения сохраняются новой ревизией.
+CREATE TRIGGER profile_version_no_update
+    BEFORE UPDATE ON profile_version
+    FOR EACH ROW EXECUTE FUNCTION reject_history_update();
+
+-- При существующем CHECK достаточно проверить openness: показатели либо все NULL,
+-- либо все заполнены. Заполненный результат нельзя обновлять даже теми же значениями.
+-- У незавершённого результата разрешено заполнить показатели, но нельзя менять
+-- id, владельца, тест, ревизию и recorded_at. DELETE эта функция не ограничивает.
+CREATE FUNCTION protect_completed_psycho() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF OLD.openness IS NOT NULL OR
+       (NEW.id, NEW.profile_id, NEW.test_id, NEW.revision, NEW.recorded_at)
+       IS DISTINCT FROM
+       (OLD.id, OLD.profile_id, OLD.test_id, OLD.revision, OLD.recorded_at)
+    THEN
+        RAISE EXCEPTION 'psycho result % cannot be rewritten', OLD.id
+            USING ERRCODE = '23514', CONSTRAINT = 'profile_psycho_no_rewrite';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+-- Защищает готовый результат от перезаписи и возврата показателей в NULL,
+-- а незавершённое прохождение — от изменения его идентификаторов и времени записи.
+CREATE TRIGGER profile_psycho_no_rewrite
+    BEFORE UPDATE ON profile_psycho
+    FOR EACH ROW EXECUTE FUNCTION protect_completed_psycho();
+
+-- Запрещает удалять историческую строку, пока существует её владелец.
+-- При ON DELETE CASCADE родитель уже удалён и дочерняя строка может быть удалена.
+-- Проверяется наличие родителя, а не глубина вызова: вложенный пользовательский
+-- триггер сам по себе не должен давать право обходить запрет.
+CREATE FUNCTION protect_history_delete() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    owner_exists BOOLEAN;
+BEGIN
+    CASE TG_TABLE_NAME
+        WHEN 'user_answer' THEN
+            SELECT EXISTS (SELECT 1 FROM profile_psycho WHERE id = OLD.profile_psycho_id)
+                INTO owner_exists;
+        WHEN 'profile_tag' THEN
+            SELECT EXISTS (SELECT 1 FROM profile_version WHERE id = OLD.profile_version_id)
+                INTO owner_exists;
+        WHEN 'profile_like' THEN
+            SELECT EXISTS (SELECT 1 FROM "user" WHERE id = OLD.author_id)
+               AND EXISTS (SELECT 1 FROM profile WHERE id = OLD.profile_id)
+                INTO owner_exists;
+        WHEN 'profile_version', 'profile_psycho' THEN
+            SELECT EXISTS (SELECT 1 FROM profile WHERE id = OLD.profile_id)
+                INTO owner_exists;
+        ELSE
+            RAISE EXCEPTION 'unsupported history table: %', TG_TABLE_NAME;
+    END CASE;
+
+    IF owner_exists THEN
+        RAISE EXCEPTION '% historical rows cannot be deleted directly', TG_TABLE_NAME
+            USING ERRCODE = '23514', CONSTRAINT = TG_NAME;
+    END IF;
+    RETURN OLD;
+END;
+$$;
+
+-- Сохранённый ответ нельзя удалить отдельно от его прохождения.
+CREATE TRIGGER user_answer_no_delete
+    BEFORE DELETE ON user_answer
+    FOR EACH ROW EXECUTE FUNCTION protect_history_delete();
+
+-- Тег нельзя удалить из сохранённого снимка анкеты.
+CREATE TRIGGER profile_tag_no_delete
+    BEFORE DELETE ON profile_tag
+    FOR EACH ROW EXECUTE FUNCTION protect_history_delete();
+
+-- Факт лайка сохраняется, пока существуют его автор и целевой профиль.
+CREATE TRIGGER profile_like_no_delete
+    BEFORE DELETE ON profile_like
+    FOR EACH ROW EXECUTE FUNCTION protect_history_delete();
+
+-- Версии нельзя удалить отдельно от профиля, в том числе ради удаления их тегов.
+CREATE TRIGGER profile_version_no_delete
+    BEFORE DELETE ON profile_version
+    FOR EACH ROW EXECUTE FUNCTION protect_history_delete();
+
+-- Прохождение нельзя удалить отдельно от профиля, в том числе ради удаления ответов.
+-- Запрет относится и к готовым результатам, и к строкам с NULL-показателями.
+CREATE TRIGGER profile_psycho_no_delete
+    BEFORE DELETE ON profile_psycho
+    FOR EACH ROW EXECUTE FUNCTION protect_history_delete();
 
 COMMIT;

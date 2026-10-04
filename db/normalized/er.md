@@ -6,6 +6,17 @@
 
 У пользователя может быть **0..1 анкета**, у каждой анкеты — ровно один пользователь. `UNIQUE (profile.user_id)` сохраняется. Backend при регистрации создаёт пользователя и анкету в одной транзакции. Профиль без версий SQL также допускает, поэтому связь с `profile_version` показана как `0..N`.
 
+Теги связаны с `profile_version` через `profile_tag.profile_version_id`. Каждая версия имеет собственный набор тегов, включая пустой; составной первичный ключ — `(profile_version_id, tag_id)`. Прямой связи `profile_tag` с `profile` нет.
+
+Фотографии и лайки остаются связаны с `profile`. Новая версия анкеты не требует переноса лайков; версия анкеты на момент лайка не фиксируется. Исторические версии сохраняют поля анкеты и наборы тегов, но не состав фотографий.
+
+Ограничения, не выражаемые линиями ER-диаграммы:
+
+- `subscription_no_overlap` запрещает пересечение периодов `[starts_at, ends_at)` одного пользователя через `EXCLUDE USING gist`; соседние периоды разрешены. `CHECK` требует конечных границ и положительной длительности.
+- Триггеры запрещают `UPDATE` строк `user_answer`, `profile_tag`, `profile_like` и `profile_version`.
+- `profile_psycho_no_rewrite` запрещает обновление готового результата и изменение идентификаторов и времени записи незавершённого. Пять показателей либо все `NULL`, либо все заполнены — это обеспечивает `CHECK`.
+- Триггеры запрещают прямой `DELETE` строк `user_answer`, `profile_tag`, `profile_like`, `profile_version` и `profile_psycho`. Каскадное удаление при удалении владельца сохраняется. Добавление связей к старым версиям и ответов к готовым результатам пока не запрещено.
+
 ```mermaid
 erDiagram
     user {
@@ -100,7 +111,7 @@ erDiagram
     }
 
     profile_tag {
-        bigint profile_id PK, FK
+        bigint profile_version_id PK, FK
         bigint tag_id PK, FK
         timestamptz created_at
     }
@@ -173,7 +184,7 @@ erDiagram
     question ||--o{ user_answer : "question_id"
     user ||..o{ subscription : "user_id"
     plan ||..o{ subscription : "plan_id"
-    profile ||--o{ profile_tag : "profile_id"
+    profile_version ||--o{ profile_tag : "profile_version_id"
     tag ||--o{ profile_tag : "tag_id"
     user ||..o{ report : "author_id"
     user ||..o{ report : "reported_user_id"
