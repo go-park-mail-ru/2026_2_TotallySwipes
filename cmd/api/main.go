@@ -54,7 +54,7 @@ func run() error {
 	profileRepo := repository.NewProfileRepository(db)
 
 	authSvc := service.NewAuthService(
-		repository.NewUserRepository(db),
+		repository.NewAuthUserRepository(db),
 		profileRepo,
 		repository.NewSessionRepository(rdb),
 		storage.NewLocalPhotoStorage(cfg.PhotoDir),

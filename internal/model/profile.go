@@ -92,6 +92,8 @@ type ProfileVersionInput struct {
 	SearchSex     SearchSex
 	SearchAgeFrom int
 	SearchAgeTo   int
+
+	Tags []Tag
 }
 
 type ProfilePsycho struct {

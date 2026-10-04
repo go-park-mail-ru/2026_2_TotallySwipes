@@ -1,16 +1,18 @@
+BEGIN;
+
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
 CREATE TABLE "user" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
     "email" TEXT NOT NULL UNIQUE,
     "password_hash" TEXT NOT NULL,
-    "birth_date" DATE NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "user_id_positive" CHECK (id > 0),
     CONSTRAINT "user_name_valid" CHECK (char_length(name) BETWEEN 1 AND 100 AND name ~ '[^[:space:]]'),
     CONSTRAINT "user_email_valid" CHECK (char_length(email) BETWEEN 1 AND 254 AND email !~ '[[:space:]]'),
     CONSTRAINT "user_password_hash_nonblank" CHECK (password_hash ~ '[^[:space:]]'),
-    CONSTRAINT "user_birth_date_finite" CHECK (isfinite(birth_date)),
     CONSTRAINT "user_created_at_finite" CHECK (isfinite(created_at)),
     CONSTRAINT "user_updated_at_finite" CHECK (isfinite(updated_at)),
     CONSTRAINT "user_updated_not_before_created" CHECK (updated_at >= created_at)
@@ -94,6 +96,7 @@ CREATE TABLE "profile_psycho" (
     "extraversion" NUMERIC,
     "agreeableness" NUMERIC,
     "neuroticism" NUMERIC,
+    "personality_type" TEXT NULL,
     UNIQUE ("profile_id", "revision"),
     CONSTRAINT "profile_psycho_id_positive" CHECK (id > 0),
     CONSTRAINT "profile_psycho_revision_positive" CHECK (revision > 0),
@@ -104,6 +107,11 @@ CREATE TABLE "profile_psycho" (
     CONSTRAINT "profile_psycho_extraversion_finite" CHECK (extraversion <> 'NaN'::numeric AND extraversion <> 'Infinity'::numeric AND extraversion <> '-Infinity'::numeric),
     CONSTRAINT "profile_psycho_agreeableness_finite" CHECK (agreeableness <> 'NaN'::numeric AND agreeableness <> 'Infinity'::numeric AND agreeableness <> '-Infinity'::numeric),
     CONSTRAINT "profile_psycho_neuroticism_finite" CHECK (neuroticism <> 'NaN'::numeric AND neuroticism <> 'Infinity'::numeric AND neuroticism <> '-Infinity'::numeric),
+    CONSTRAINT "profile_psycho_personality_type_valid" CHECK (personality_type IN (
+        'EXPLORER', 'VISIONARY', 'STRATEGIST', 'INVENTOR', 'DREAMER', 'CURATOR', 'INSPIRER', 'DEBATER',
+        'ORGANIZER', 'CONNECTOR', 'COMPANION', 'DRIVER', 'ANCHOR', 'CRAFTSPERSON', 'OBSERVER', 'KEEPER'
+    )),
+    CONSTRAINT "profile_psycho_personality_type_needs_scores" CHECK (personality_type IS NULL OR openness IS NOT NULL),
     CONSTRAINT "psycho_owner" FOREIGN KEY ("profile_id")
         REFERENCES "profile" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
     CONSTRAINT "psycho_test" FOREIGN KEY ("test_id")
@@ -115,12 +123,9 @@ CREATE TABLE "user_answer" (
     "question_id" BIGINT NOT NULL,
     "answer_value" SMALLINT NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY ("profile_psycho_id", "question_id"),
-    CONSTRAINT "user_answer_value_valid" CHECK (answer_value BETWEEN 0 AND 7),
+    CONSTRAINT "user_answer_value_valid" CHECK (answer_value BETWEEN 1 AND 7),
     CONSTRAINT "user_answer_created_at_finite" CHECK (isfinite(created_at)),
-    CONSTRAINT "user_answer_updated_at_finite" CHECK (isfinite(updated_at)),
-    CONSTRAINT "user_answer_updated_not_before_created" CHECK (updated_at >= created_at),
     CONSTRAINT "answer_result" FOREIGN KEY ("profile_psycho_id")
         REFERENCES "profile_psycho" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
     CONSTRAINT "answer_question" FOREIGN KEY ("question_id")
@@ -151,6 +156,10 @@ CREATE TABLE "subscription" (
     CONSTRAINT "subscription_id_positive" CHECK (id > 0),
     CONSTRAINT "subscription_period_finite" CHECK (isfinite(starts_at) AND isfinite(ends_at)),
     CONSTRAINT "subscription_period_valid" CHECK (ends_at > starts_at),
+    CONSTRAINT "subscription_no_overlap" EXCLUDE USING gist (
+        user_id WITH =,
+        tstzrange(starts_at, ends_at, '[)') WITH &&
+    ),
     CONSTRAINT "subscription_created_at_finite" CHECK (isfinite(created_at)),
     CONSTRAINT "subscription_updated_at_finite" CHECK (isfinite(updated_at)),
     CONSTRAINT "subscription_updated_not_before_created" CHECK (updated_at >= created_at),
@@ -173,16 +182,13 @@ CREATE TABLE "tag" (
 );
 
 CREATE TABLE "profile_tag" (
-    "profile_id" BIGINT NOT NULL,
+    "profile_version_id" BIGINT NOT NULL,
     "tag_id" BIGINT NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY ("profile_id", "tag_id"),
+    PRIMARY KEY ("profile_version_id", "tag_id"),
     CONSTRAINT "profile_tag_created_at_finite" CHECK (isfinite(created_at)),
-    CONSTRAINT "profile_tag_updated_at_finite" CHECK (isfinite(updated_at)),
-    CONSTRAINT "profile_tag_updated_not_before_created" CHECK (updated_at >= created_at),
-    CONSTRAINT "profile_tag_profile" FOREIGN KEY ("profile_id")
-        REFERENCES "profile" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
+    CONSTRAINT "profile_tag_version" FOREIGN KEY ("profile_version_id")
+        REFERENCES "profile_version" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
     CONSTRAINT "profile_tag_tag" FOREIGN KEY ("tag_id")
         REFERENCES "tag" ("id") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
@@ -261,12 +267,9 @@ CREATE TABLE "profile_like" (
     "author_id" BIGINT NOT NULL,
     "profile_id" BIGINT NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE ("author_id", "profile_id"),
     CONSTRAINT "profile_like_id_positive" CHECK (id > 0),
     CONSTRAINT "profile_like_created_at_finite" CHECK (isfinite(created_at)),
-    CONSTRAINT "profile_like_updated_at_finite" CHECK (isfinite(updated_at)),
-    CONSTRAINT "profile_like_updated_not_before_created" CHECK (updated_at >= created_at),
     CONSTRAINT "profile_like_author" FOREIGN KEY ("author_id")
         REFERENCES "user" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
     CONSTRAINT "profile_like_profile" FOREIGN KEY ("profile_id")
@@ -309,3 +312,168 @@ CREATE TABLE "message" (
     CONSTRAINT "message_sender" FOREIGN KEY ("sender_id")
         REFERENCES "user" ("id") ON DELETE CASCADE ON UPDATE RESTRICT
 );
+
+
+CREATE INDEX user_answer_question_id_idx ON user_answer (question_id);
+
+-- Защищает смысл сохранённых ответов: использованный вопрос нельзя переписать.
+CREATE FUNCTION protect_answered_question() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF (NEW.body, NEW.operation_id, NEW.test_id)
+        IS DISTINCT FROM (OLD.body, OLD.operation_id, OLD.test_id)
+        AND EXISTS (SELECT 1 FROM user_answer WHERE question_id = OLD.id)
+    THEN
+        RAISE EXCEPTION 'question % already has answers; create a new question instead', OLD.id
+            USING ERRCODE = '23514', CONSTRAINT = 'question_definition_immutable';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+-- Запрещает менять текст, операцию расчёта и принадлежность тесту у вопроса,
+-- на который уже есть ответы. Обновление без изменения этих значений допустимо.
+CREATE TRIGGER question_definition_immutable
+    BEFORE UPDATE OF body, operation_id, test_id ON question
+    FOR EACH ROW EXECUTE FUNCTION protect_answered_question();
+
+CREATE FUNCTION lock_answer_question() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    -- Создаём новую версию строки без изменения её данных и updated_at.
+    -- Это сериализует запись ответа с редактированием вопроса, в том числе
+    -- вызывает serialization failure при устаревшем снимке REPEATABLE READ.
+    -- Одна лишь блокировка SELECT FOR SHARE не обновила бы версию строки.
+    UPDATE question SET updated_at = updated_at WHERE id = NEW.question_id;
+    RETURN NEW;
+END;
+$$;
+
+-- Синхронизирует запись ответа с редактированием соответствующего вопроса
+-- через техническое обновление строки вопроса без изменения её значений.
+-- Изменение question_id также вызывает эту проверку, но затем любой UPDATE
+-- ответа отклоняется триггером user_answer_no_update.
+CREATE TRIGGER user_answer_lock_question
+    BEFORE INSERT OR UPDATE OF question_id ON user_answer
+    FOR EACH ROW EXECUTE FUNCTION lock_answer_question();
+
+-- Общая функция запрета UPDATE исторических строк, даже без изменения значений.
+-- Возвращает ошибку 23514 с именем сработавшего триггера. INSERT и DELETE не запрещает.
+CREATE FUNCTION reject_history_update() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION '% rows cannot be updated; create a new record instead', TG_TABLE_NAME
+        USING ERRCODE = '23514', CONSTRAINT = TG_NAME;
+END;
+$$;
+
+-- Запрещает переписывать сохранённый ответ, его вопрос, прохождение и время создания.
+-- Повторное прохождение должно создавать новые ответы с другим profile_psycho_id.
+CREATE TRIGGER user_answer_no_update
+    BEFORE UPDATE ON user_answer
+    FOR EACH ROW EXECUTE FUNCTION reject_history_update();
+
+-- Запрещает менять связь тега с версией анкеты и время создания этой связи.
+-- Новый набор интересов записывается отдельными строками для новой версии анкеты.
+CREATE TRIGGER profile_tag_no_update
+    BEFORE UPDATE ON profile_tag
+    FOR EACH ROW EXECUTE FUNCTION reject_history_update();
+
+-- Запрещает менять сохранённый лайк, включая автора, целевой профиль и время.
+-- Лайк относится к profile и не переносится при появлении новой версии анкеты.
+CREATE TRIGGER profile_like_no_update
+    BEFORE UPDATE ON profile_like
+    FOR EACH ROW EXECUTE FUNCTION reject_history_update();
+
+-- Запрещает перезапись снимка анкеты. Изменения сохраняются новой ревизией.
+CREATE TRIGGER profile_version_no_update
+    BEFORE UPDATE ON profile_version
+    FOR EACH ROW EXECUTE FUNCTION reject_history_update();
+
+-- При существующем CHECK достаточно проверить openness: показатели либо все NULL,
+-- либо все заполнены. Заполненный результат нельзя обновлять даже теми же значениями.
+-- У незавершённого результата разрешено заполнить показатели, но нельзя менять
+-- id, владельца, тест, ревизию и recorded_at. DELETE эта функция не ограничивает.
+CREATE FUNCTION protect_completed_psycho() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF OLD.openness IS NOT NULL OR
+       (NEW.id, NEW.profile_id, NEW.test_id, NEW.revision, NEW.recorded_at)
+       IS DISTINCT FROM
+       (OLD.id, OLD.profile_id, OLD.test_id, OLD.revision, OLD.recorded_at)
+    THEN
+        RAISE EXCEPTION 'psycho result % cannot be rewritten', OLD.id
+            USING ERRCODE = '23514', CONSTRAINT = 'profile_psycho_no_rewrite';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+-- Защищает готовый результат от перезаписи и возврата показателей в NULL,
+-- а незавершённое прохождение — от изменения его идентификаторов и времени записи.
+CREATE TRIGGER profile_psycho_no_rewrite
+    BEFORE UPDATE ON profile_psycho
+    FOR EACH ROW EXECUTE FUNCTION protect_completed_psycho();
+
+-- Запрещает удалять историческую строку, пока существует её владелец.
+-- При ON DELETE CASCADE родитель уже удалён и дочерняя строка может быть удалена.
+-- Проверяется наличие родителя, а не глубина вызова: вложенный пользовательский
+-- триггер сам по себе не должен давать право обходить запрет.
+CREATE FUNCTION protect_history_delete() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    owner_exists BOOLEAN;
+BEGIN
+    CASE TG_TABLE_NAME
+        WHEN 'user_answer' THEN
+            SELECT EXISTS (SELECT 1 FROM profile_psycho WHERE id = OLD.profile_psycho_id)
+                INTO owner_exists;
+        WHEN 'profile_tag' THEN
+            SELECT EXISTS (SELECT 1 FROM profile_version WHERE id = OLD.profile_version_id)
+                INTO owner_exists;
+        WHEN 'profile_like' THEN
+            SELECT EXISTS (SELECT 1 FROM "user" WHERE id = OLD.author_id)
+               AND EXISTS (SELECT 1 FROM profile WHERE id = OLD.profile_id)
+                INTO owner_exists;
+        WHEN 'profile_version', 'profile_psycho' THEN
+            SELECT EXISTS (SELECT 1 FROM profile WHERE id = OLD.profile_id)
+                INTO owner_exists;
+        ELSE
+            RAISE EXCEPTION 'unsupported history table: %', TG_TABLE_NAME;
+    END CASE;
+
+    IF owner_exists THEN
+        RAISE EXCEPTION '% historical rows cannot be deleted directly', TG_TABLE_NAME
+            USING ERRCODE = '23514', CONSTRAINT = TG_NAME;
+    END IF;
+    RETURN OLD;
+END;
+$$;
+
+-- Сохранённый ответ нельзя удалить отдельно от его прохождения.
+CREATE TRIGGER user_answer_no_delete
+    BEFORE DELETE ON user_answer
+    FOR EACH ROW EXECUTE FUNCTION protect_history_delete();
+
+-- Тег нельзя удалить из сохранённого снимка анкеты.
+CREATE TRIGGER profile_tag_no_delete
+    BEFORE DELETE ON profile_tag
+    FOR EACH ROW EXECUTE FUNCTION protect_history_delete();
+
+-- Факт лайка сохраняется, пока существуют его автор и целевой профиль.
+CREATE TRIGGER profile_like_no_delete
+    BEFORE DELETE ON profile_like
+    FOR EACH ROW EXECUTE FUNCTION protect_history_delete();
+
+-- Версии нельзя удалить отдельно от профиля, в том числе ради удаления их тегов.
+CREATE TRIGGER profile_version_no_delete
+    BEFORE DELETE ON profile_version
+    FOR EACH ROW EXECUTE FUNCTION protect_history_delete();
+
+-- Прохождение нельзя удалить отдельно от профиля, в том числе ради удаления ответов.
+-- Запрет относится и к готовым результатам, и к строкам с NULL-показателями.
+CREATE TRIGGER profile_psycho_no_delete
+    BEFORE DELETE ON profile_psycho
+    FOR EACH ROW EXECUTE FUNCTION protect_history_delete();
+
+COMMIT;

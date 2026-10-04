@@ -12,13 +12,14 @@ import (
 	"dating-app/internal/model"
 )
 
-// Ключи по схеме db/normalized/relations.md:
-//
-//	refresh:session:<id>        - hash: user_id, token_hash, expires_at, revoked
-//	refresh:hash:<token_hash>   - string: <id>
-//
-// У обоих ключей одинаковое абсолютное время истечения
-func sessionKey(id string) string       { return "refresh:session:" + id }
+// sessionKey формирует ключ данных refresh-сессии в Redis.
+// Принимает: ID сессии id.
+// Возвращает: строку refresh:session:<id>.
+func sessionKey(id string) string { return "refresh:session:" + id }
+
+// sessionHashKey формирует ключ индекса refresh-токена в Redis.
+// Принимает: хеш токена hash.
+// Возвращает: строку refresh:hash:<hash>.
 func sessionHashKey(hash string) string { return "refresh:hash:" + hash }
 
 // revokeScript помечает сессию отозванной, только если она ещё существует
@@ -40,10 +41,16 @@ type SessionRepo struct {
 	rdb *redis.Client
 }
 
+// NewSessionRepository создаёт репозиторий refresh-сессий.
+// Принимает: клиент Redis rdb.
+// Возвращает: экземпляр SessionRepo.
 func NewSessionRepository(rdb *redis.Client) *SessionRepo {
 	return &SessionRepo{rdb: rdb}
 }
 
+// Create сохраняет сессию и индекс её токена в Redis с одинаковым сроком истечения.
+// Принимает: контекст ctx и данные сессии s.
+// Возвращает: nil при успехе или ошибку записи.
 func (r *SessionRepo) Create(ctx context.Context, s *model.Session) error {
 	if s == nil {
 		return fmt.Errorf("create session: input is nil")
@@ -67,7 +74,9 @@ func (r *SessionRepo) Create(ctx context.Context, s *model.Session) error {
 	return nil
 }
 
-// GetByTokenHash - model.ErrNotFound, если сессии нет или она истекла
+// GetByTokenHash находит refresh-сессию по хешу токена.
+// Принимает: контекст ctx и хеш tokenHash.
+// Возвращает: сессию или ошибку; если ключи отсутствуют, в том числе после истечения TTL, — model.ErrNotFound.
 func (r *SessionRepo) GetByTokenHash(ctx context.Context, tokenHash string) (*model.Session, error) {
 	id, err := r.rdb.Get(ctx, sessionHashKey(tokenHash)).Result()
 	if errors.Is(err, redis.Nil) {
@@ -103,7 +112,9 @@ func (r *SessionRepo) GetByTokenHash(ctx context.Context, tokenHash string) (*mo
 	}, nil
 }
 
-// Revoke не считает ошибкой отсутствие сессии
+// Revoke помечает существующую refresh-сессию отозванной.
+// Принимает: контекст ctx и ID сессии id.
+// Возвращает: nil при успехе или отсутствии сессии, иначе ошибку Redis.
 func (r *SessionRepo) Revoke(ctx context.Context, id string) error {
 	if err := revokeScript.Run(ctx, r.rdb, []string{sessionKey(id)}).Err(); err != nil {
 		return fmt.Errorf("revoke session id=%s: %w", id, err)
@@ -111,7 +122,9 @@ func (r *SessionRepo) Revoke(ctx context.Context, id string) error {
 	return nil
 }
 
-// RevokeIfActive - true, если сессию отозвал именно этот вызов
+// RevokeIfActive атомарно отзывает сессию, если её флаг revoked равен false.
+// Принимает: контекст ctx и ID сессии id.
+// Возвращает: true, если именно этот вызов отозвал сессию, иначе false; при сбое — ошибку.
 func (r *SessionRepo) RevokeIfActive(ctx context.Context, id string) (bool, error) {
 	n, err := revokeActiveScript.Run(ctx, r.rdb, []string{sessionKey(id)}).Int()
 	if err != nil {
@@ -120,6 +133,9 @@ func (r *SessionRepo) RevokeIfActive(ctx context.Context, id string) (bool, erro
 	return n == 1, nil
 }
 
+// boolToFlag преобразует логическое значение в строковый флаг Redis.
+// Принимает: логическое значение b.
+// Возвращает: строку «1» для true или «0» для false.
 func boolToFlag(b bool) string {
 	if b {
 		return "1"
