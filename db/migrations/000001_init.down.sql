@@ -19,10 +19,10 @@ DROP TABLE "profile_version";
 DROP TABLE "profile";
 DROP TABLE "user";
 
-DROP FUNCTION protect_history_delete();
-DROP FUNCTION protect_completed_psycho();
-DROP FUNCTION reject_history_update();
-DROP FUNCTION lock_answer_question();
-DROP FUNCTION protect_answered_question();
+DROP FUNCTION IF EXISTS protect_history_delete();
+DROP FUNCTION IF EXISTS protect_completed_psycho();
+DROP FUNCTION IF EXISTS reject_history_update();
+DROP FUNCTION IF EXISTS lock_answer_question();
+DROP FUNCTION IF EXISTS protect_answered_question();
 
 COMMIT;
