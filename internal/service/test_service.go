@@ -9,14 +9,32 @@ import (
 )
 
 type TestService interface {
+	// GetCurrentTest получает текущий тест с вопросами и вариантами ответов.
+	// Принимает: контекст ctx.
+	// Возвращает: тест или ошибку, если получить его не удалось.
 	GetCurrentTest(ctx context.Context) (*model.Test, error)
+	// SubmitTestAnswers рассчитывает результат попытки и сохраняет ответы вместе со сглаженным психопрофилем.
+	// Принимает: контекст ctx, ID пользователя userID и ответы answers с ID текущего теста.
+	// Возвращает: результат текущей попытки с нормализованным вектором, типом и описанием личности либо ошибку.
 	SubmitTestAnswers(ctx context.Context, userID int64, answers *model.TestAnswers) (*model.TestResult, error)
+	// GetMyTestResult получает последний сохранённый результат и добавляет описание типа личности.
+	// Принимает: контекст ctx и ID пользователя userID.
+	// Возвращает: результат со сглаженным вектором или ошибку, включая model.ErrProfileRequired и model.ErrTestResultNotFound.
 	GetMyTestResult(ctx context.Context, userID int64) (*model.TestResult, error)
 }
 
 type TestRepository interface {
+	// GetCurrentTest получает текущий тест с вопросами и вариантами ответов.
+	// Принимает: контекст ctx.
+	// Возвращает: тест или ошибку, если получить его не удалось.
 	GetCurrentTest(ctx context.Context) (*model.Test, error)
+	// SaveTestResult атомарно сохраняет новую ревизию психопрофиля и ответы на тест.
+	// Принимает: контекст ctx, ID профиля profileID, ответы answers и рассчитанный психопрофиль psycho.
+	// Возвращает: метаданные результата (ID, ID теста, ревизию и время) или ошибку; Big Five в возвращаемом объекте не заполняет.
 	SaveTestResult(ctx context.Context, profileID int64, answers *model.TestAnswers, psycho *model.ProfilePsychoInput) (*model.TestResult, error)
+	// GetTestResult читает последнюю завершённую ревизию результата тестирования.
+	// Принимает: контекст ctx и ID профиля profileID.
+	// Возвращает: сохранённый вектор, тип личности и метаданные результата либо ошибку; при отсутствии — model.ErrNotFound.
 	GetTestResult(ctx context.Context, profileID int64) (*model.TestResult, error)
 }
 
@@ -27,10 +45,16 @@ type TestServiceImpl struct {
 	testRepo TestRepository
 }
 
+// NewTestService создаёт сервис прохождения тестов.
+// Принимает: репозиторий repo, сервис профилей profiles и сервис расчётов compatibility.
+// Возвращает: экземпляр TestServiceImpl.
 func NewTestService(repo TestRepository, profiles ProfileService, compatibility CompatibilityService) *TestServiceImpl {
 	return &TestServiceImpl{testRepo: repo, profileSvc: profiles, compatibilitySvc: compatibility}
 }
 
+// GetCurrentTest получает текущий тест с вопросами и вариантами ответов.
+// Принимает: контекст ctx.
+// Возвращает: тест или ошибку, если получить его не удалось.
 func (s *TestServiceImpl) GetCurrentTest(ctx context.Context) (*model.Test, error) {
 	test, err := s.testRepo.GetCurrentTest(ctx)
 	if errors.Is(err, model.ErrNotFound) {
@@ -44,6 +68,9 @@ func (s *TestServiceImpl) GetCurrentTest(ctx context.Context) (*model.Test, erro
 	return test, nil
 }
 
+// SubmitTestAnswers рассчитывает результат попытки и сохраняет ответы вместе со сглаженным психопрофилем.
+// Принимает: контекст ctx, ID пользователя userID и ответы answers с ID текущего теста.
+// Возвращает: результат текущей попытки с нормализованным вектором, типом и описанием личности либо ошибку.
 func (s *TestServiceImpl) SubmitTestAnswers(ctx context.Context, userID int64, answers *model.TestAnswers) (*model.TestResult, error) {
 
 	if answers == nil || answers.TestID <= 0 {
@@ -134,7 +161,9 @@ func (s *TestServiceImpl) SubmitTestAnswers(ctx context.Context, userID int64, a
 	return result, nil
 }
 
-// GetMyTestResult возвращает сглаженные баллы профиля
+// GetMyTestResult получает последний сохранённый результат и добавляет описание типа личности.
+// Принимает: контекст ctx и ID пользователя userID.
+// Возвращает: результат со сглаженным вектором или ошибку, включая model.ErrProfileRequired и model.ErrTestResultNotFound.
 func (s *TestServiceImpl) GetMyTestResult(ctx context.Context, userID int64) (*model.TestResult, error) {
 	profile, err := s.profileSvc.GetByUserIDCurrentProfile(ctx, userID)
 	if errors.Is(err, model.ErrNotFound) {
@@ -190,6 +219,9 @@ var personalityPrototypes = [...]personalityPrototype{
 	{model.PersonalityKeeper, [5]float64{0.2, 0.8, 0.2, 0.8, 0.8}},
 }
 
+// ClassifyPersonality выбирает ближайший прототип личности по квадрату евклидова расстояния.
+// Принимает: полный нормализованный вектор vector.
+// Возвращает: тип личности, его описание и ошибку; при некорректном векторе — model.ErrInvalidBigFive. При равенстве выбирает первый прототип.
 func (s *TestServiceImpl) ClassifyPersonality(vector model.BigFive) (model.PersonalityType, string, error) {
 
 	fields := [5]*float64{vector.Openness, vector.Conscientiousness, vector.Extraversion, vector.Agreeableness, vector.Neuroticism}

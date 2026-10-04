@@ -14,10 +14,16 @@ type ProfileRepo struct {
 	db *sql.DB
 }
 
+// NewProfileRepository создаёт репозиторий профилей.
+// Принимает: подключение к PostgreSQL db.
+// Возвращает: экземпляр ProfileRepo.
 func NewProfileRepository(db *sql.DB) *ProfileRepo {
 	return &ProfileRepo{db: db}
 }
 
+// GetByUserIDCurrentProfile загружает профиль с актуальной версией, психопрофилем, тегами и фото.
+// Принимает: контекст ctx и ID пользователя.
+// Возвращает: профиль или ошибку; при отсутствии — model.ErrNotFound.
 func (r *ProfileRepo) GetByUserIDCurrentProfile(ctx context.Context, userID int64) (*model.Profile, error) {
 
 	var profileID int64
@@ -33,6 +39,9 @@ func (r *ProfileRepo) GetByUserIDCurrentProfile(ctx context.Context, userID int6
 	return r.GetByIDCurrentProfile(ctx, profileID)
 }
 
+// GetByIDCurrentProfile загружает актуальное состояние профиля в согласованном снимке БД.
+// Принимает: контекст ctx и ID профиля id.
+// Возвращает: профиль с версией, психопрофилем, тегами и фото либо ошибку, включая model.ErrNotFound.
 func (r *ProfileRepo) GetByIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error) {
 
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
@@ -48,7 +57,7 @@ func (r *ProfileRepo) GetByIDCurrentProfile(ctx context.Context, id int64) (*mod
 		return nil, err
 	}
 
-	profile.Tags, err = loadTags(ctx, tx, id)
+	profile.Tags, err = loadTags(ctx, tx, profile.CurrentVersion.ID)
 
 	if err != nil {
 		return nil, fmt.Errorf("get current profile id=%d: tags: %w", id, err)
@@ -66,40 +75,46 @@ func (r *ProfileRepo) GetByIDCurrentProfile(ctx context.Context, id int64) (*mod
 	return profile, nil
 }
 
-func (r *ProfileRepo) CreateProfile(ctx context.Context, input *model.ProfileInput) (int64, error) {
-
-	if input == nil {
-		return 0, fmt.Errorf("create profile: input is nil")
+// createProfileTx создаёт профиль, первую версию с тегами и фотографии в переданной транзакции.
+// Принимает: контекст ctx, транзакцию tx, userID, данные version, имена tags и метаданные photos.
+// Возвращает: nil при успехе или ошибку; не изменяет version и не завершает транзакцию.
+func createProfileTx(ctx context.Context, tx *sql.Tx, userID int64,
+	version *model.ProfileVersionInput, tags []string, photos []model.PhotoInput) error {
+	if version == nil {
+		return fmt.Errorf("create profile: version is nil")
 	}
 
-	tx, err := r.db.BeginTx(ctx, nil)
+	profileID, err := insertProfile(ctx, tx, userID)
 	if err != nil {
-		return 0, fmt.Errorf("CreateProfile: begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	profileID, err := insertProfile(ctx, tx, input.UserID)
-	if err != nil {
-		return 0, err
+		return err
 	}
 
-	if err := insertProfileVersion(ctx, tx, profileID, &input.CurrentVersion); err != nil {
-		return 0, err
+	initialVersion := *version
+	initialVersion.Tags = make([]model.Tag, 0, len(tags))
+	for _, name := range tags {
+		tagID, err := upsertTag(ctx, tx, name)
+		if err != nil {
+			return err
+		}
+		initialVersion.Tags = append(initialVersion.Tags, model.Tag{ID: tagID, Name: name})
 	}
 
-	if psycho := input.CurrentPsycho; psycho != nil {
-		if err := insertProfilePsycho(ctx, tx, profileID, psycho); err != nil {
-			return 0, err
+	if _, err := insertProfileVersion(ctx, tx, profileID, &initialVersion); err != nil {
+		return err
+	}
+
+	for _, photo := range photos {
+		if err := insertPhoto(ctx, tx, profileID, photo); err != nil {
+			return err
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("CreateProfile: commit transaction: %w", err)
-	}
-
-	return profileID, nil
+	return nil
 }
 
+// AddProfileVersion добавляет новую версию профиля вместе с полным набором её тегов.
+// Принимает: контекст ctx, ID профиля profileID и данные input; пустой список тегов означает версию без тегов.
+// Возвращает: nil при успехе или ошибку; версия и теги сохраняются в одной транзакции.
 func (r *ProfileRepo) AddProfileVersion(ctx context.Context, profileID int64, input *model.ProfileVersionInput) error {
 
 	if input == nil {
@@ -116,7 +131,7 @@ func (r *ProfileRepo) AddProfileVersion(ctx context.Context, profileID int64, in
 		return fmt.Errorf("add profile version: %w", err)
 	}
 
-	if err := insertProfileVersion(ctx, tx, profileID, input); err != nil {
+	if _, err := insertProfileVersion(ctx, tx, profileID, input); err != nil {
 		return err
 	}
 
@@ -131,6 +146,21 @@ func (r *ProfileRepo) AddProfileVersion(ctx context.Context, profileID int64, in
 	return nil
 }
 
+// insertProfileVersionTags привязывает набор тегов к версии профиля в переданной транзакции.
+// Принимает: контекст ctx, транзакцию tx, ID версии versionID и tags, из которых используются ID.
+// Возвращает: nil при успехе или ошибку вставки; транзакцию не завершает.
+func insertProfileVersionTags(ctx context.Context, tx *sql.Tx, versionID int64, tags []model.Tag) error {
+	for _, tag := range tags {
+		if err := insertProfileVersionTag(ctx, tx, versionID, tag.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// AddProfilePsycho добавляет новую ревизию психопрофиля в отдельной транзакции.
+// Принимает: контекст ctx, ID профиля profileID и данные результата input.
+// Возвращает: nil при успехе или ошибку; ответы на вопросы этот метод не сохраняет.
 func (r *ProfileRepo) AddProfilePsycho(ctx context.Context, profileID int64, input *model.ProfilePsychoInput) error {
 
 	if input == nil {
@@ -162,37 +192,9 @@ func (r *ProfileRepo) AddProfilePsycho(ctx context.Context, profileID int64, inp
 	return nil
 }
 
-func (r *ProfileRepo) SetProfileTags(ctx context.Context, profileID int64, tagIDs []int64) error {
-
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("SetProfileTags: begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	if err := lockProfile(ctx, tx, profileID); err != nil {
-		return fmt.Errorf("set profile tags: %w", err)
-	}
-
-	if _, err = tx.ExecContext(ctx, `DELETE FROM profile_tag WHERE profile_id = $1`, profileID); err != nil {
-		return fmt.Errorf("set profile tags profile_id=%d: delete: %w", profileID, err)
-	}
-
-	for _, id := range tagIDs {
-		if err := insertProfileTag(ctx, tx, profileID, id); err != nil {
-			return err
-		}
-	}
-
-	if err := touchProfile(ctx, tx, profileID); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("SetProfileTags: commit transaction: %w", err)
-	}
-	return nil
-}
-
+// AddProfilePhotos добавляет фотографии профиля в одной транзакции.
+// Принимает: контекст ctx, ID профиля profileID и метаданные photos.
+// Возвращает: nil при успехе или ошибку записи.
 func (r *ProfileRepo) AddProfilePhotos(ctx context.Context, profileID int64, photos []model.PhotoInput) error {
 
 	if len(photos) == 0 {
@@ -224,7 +226,9 @@ func (r *ProfileRepo) AddProfilePhotos(ctx context.Context, profileID int64, pho
 	return nil
 }
 
-// IsProfileCompleted - профиль считается заполненным, когда пройден психотест
+// IsProfileCompleted проверяет наличие хотя бы одной записи profile_psycho у пользователя.
+// Принимает: контекст ctx и ID пользователя userID.
+// Возвращает: признак наличия записи и ошибку запроса; заполненность пяти координат не проверяет.
 func (r *ProfileRepo) IsProfileCompleted(ctx context.Context, userID int64) (bool, error) {
 	var completed bool
 	err := r.db.QueryRowContext(ctx,
@@ -240,9 +244,9 @@ func (r *ProfileRepo) IsProfileCompleted(ctx context.Context, userID int64) (boo
 	return completed, nil
 }
 
-// Хелперы ниже работают внутри чужой транзакции, их переиспользуют
-// и методы ProfileRepo, и регистрация (CreateUserWithProfile)
-
+// insertProfile создаёт запись профиля в переданной транзакции.
+// Принимает: контекст ctx, транзакцию tx и ID пользователя userID.
+// Возвращает: ID созданного профиля или ошибку; транзакцию не завершает.
 func insertProfile(ctx context.Context, tx *sql.Tx, userID int64) (int64, error) {
 	var profileID int64
 	err := tx.QueryRowContext(ctx,
@@ -254,26 +258,34 @@ func insertProfile(ctx context.Context, tx *sql.Tx, userID int64) (int64, error)
 	return profileID, nil
 }
 
-// insertProfileVersion добавляет следующую ревизию (для нового профиля - первую).
-// Пустой about_me хранится как NULL
-func insertProfileVersion(ctx context.Context, tx *sql.Tx, profileID int64, v *model.ProfileVersionInput) error {
-	_, err := tx.ExecContext(ctx,
-		`INSERT INTO profile_version (
-		    profile_id, revision, birth_date,
-		    sex, search_sex, search_age_from, search_age_to, dating_goal, about_me)
-		SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6, $7, $8 FROM profile_version
-		WHERE profile_id = $1`,
-		profileID, v.BirthDate, v.Sex, v.SearchSex,
-		v.SearchAgeFrom, v.SearchAgeTo, v.DatingGoal, v.AboutMe,
-	)
+// insertProfileVersion создаёт следующую ревизию профиля и сохраняет её теги.
+// Принимает: контекст ctx, транзакцию tx, ID профиля profileID и данные версии v.
+// Возвращает: ID версии или ошибку; транзакцией и блокировкой профиля управляет вызывающий код.
+func insertProfileVersion(ctx context.Context, tx *sql.Tx, profileID int64, v *model.ProfileVersionInput) (int64, error) {
+	const query = `INSERT INTO profile_version (
+     profile_id, revision, birth_date, sex, search_sex,
+     search_age_from, search_age_to, dating_goal, about_me)
+     SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6, $7, $8
+     FROM profile_version WHERE profile_id = $1 RETURNING id`
+
+	var versionID int64
+	err := tx.QueryRowContext(ctx, query, profileID, v.BirthDate, v.Sex, v.SearchSex,
+		v.SearchAgeFrom, v.SearchAgeTo, v.DatingGoal, v.AboutMe).Scan(&versionID)
+
 	if err != nil {
-		return fmt.Errorf("insert profile version profile_id=%d: %w", profileID, err)
+		return 0, fmt.Errorf("insert profile version profile_id=%d: %w", profileID, err)
 	}
-	return nil
+
+	if err := insertProfileVersionTags(ctx, tx, versionID, v.Tags); err != nil {
+		return 0, fmt.Errorf("insert tags for profile version %d: %w", versionID, err)
+	}
+
+	return versionID, nil
 }
 
-// insertProfilePsycho добавляет следующую ревизию результатов психотеста
-// (для нового профиля - первую)
+// insertProfilePsycho создаёт следующую ревизию психопрофиля в переданной транзакции.
+// Принимает: контекст ctx, транзакцию tx, ID профиля profileID и данные p.
+// Возвращает: nil при успехе или ошибку; транзакцией и блокировкой профиля управляет вызывающий код.
 func insertProfilePsycho(ctx context.Context, tx *sql.Tx, profileID int64, p *model.ProfilePsychoInput) error {
 	_, err := tx.ExecContext(ctx,
 		`INSERT INTO profile_psycho (
@@ -291,10 +303,16 @@ func insertProfilePsycho(ctx context.Context, tx *sql.Tx, profileID int64, p *mo
 	return nil
 }
 
+// nullIfEmpty преобразует строку в значение для nullable-столбца SQL.
+// Принимает: строку s.
+// Возвращает: sql.NullString с Valid=false для пустой строки, иначе с исходным значением.
 func nullIfEmpty(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: s != ""}
 }
 
+// insertPhoto сохраняет метаданные фотографии профиля в переданной транзакции.
+// Принимает: контекст ctx, транзакцию tx, ID профиля profileID и метаданные photo.
+// Возвращает: nil при успехе или ошибку; файл не загружает и транзакцию не завершает.
 func insertPhoto(ctx context.Context, tx *sql.Tx, profileID int64, photo model.PhotoInput) error {
 	_, err := tx.ExecContext(ctx,
 		`INSERT INTO photo (profile_id, storage_key, position) VALUES ($1, $2, $3)`,
@@ -305,16 +323,21 @@ func insertPhoto(ctx context.Context, tx *sql.Tx, profileID int64, photo model.P
 	return nil
 }
 
-func insertProfileTag(ctx context.Context, tx *sql.Tx, profileID, tagID int64) error {
-	_, err := tx.ExecContext(ctx,
-		`INSERT INTO profile_tag (profile_id, tag_id) VALUES ($1, $2)`, profileID, tagID)
-	if err != nil {
-		return fmt.Errorf("insert profile tag profile_id=%d tag_id=%d: %w", profileID, tagID, err)
+// insertProfileVersionTag создаёт связь версии профиля с тегом в переданной транзакции.
+// Принимает: контекст ctx, транзакцию tx, ID версии versionID и ID тега tagID.
+// Возвращает: nil при успехе или ошибку; транзакцию не завершает.
+func insertProfileVersionTag(ctx context.Context, tx *sql.Tx, versionID, tagID int64) error {
+	const query = `INSERT INTO profile_tag (profile_version_id, tag_id) VALUES ($1, $2)`
+	if _, err := tx.ExecContext(ctx, query, versionID, tagID); err != nil {
+		return fmt.Errorf("insert profile tag version_id=%d tag_id=%d: %w", versionID, tagID, err)
+
 	}
 	return nil
 }
 
-// upsertTag возвращает id тега по имени, создавая его при необходимости
+// upsertTag находит тег по имени или создаёт его в переданной транзакции.
+// Принимает: контекст ctx, транзакцию tx и имя name.
+// Возвращает: ID существующего или нового тега либо ошибку; транзакцию не завершает.
 func upsertTag(ctx context.Context, tx *sql.Tx, name string) (int64, error) {
 	var tagID int64
 	err := tx.QueryRowContext(ctx,
@@ -328,6 +351,9 @@ func upsertTag(ctx context.Context, tx *sql.Tx, name string) (int64, error) {
 	return tagID, nil
 }
 
+// lockProfile блокирует строку профиля через SELECT FOR UPDATE до завершения транзакции.
+// Принимает: контекст ctx, транзакцию tx и ID профиля profileID.
+// Возвращает: nil при успехе или ошибку; при отсутствии профиля — model.ErrNotFound.
 func lockProfile(ctx context.Context, tx *sql.Tx, profileID int64) error {
 
 	var id int64
@@ -342,6 +368,9 @@ func lockProfile(ctx context.Context, tx *sql.Tx, profileID int64) error {
 	return nil
 }
 
+// touchProfile обновляет время изменения профиля в переданной транзакции.
+// Принимает: контекст ctx, транзакцию tx и ID профиля profileID.
+// Возвращает: nil при успехе или ошибку запроса; транзакцию не завершает.
 func touchProfile(ctx context.Context, tx *sql.Tx, profileID int64) error {
 
 	_, err := tx.ExecContext(ctx, `UPDATE profile SET updated_at = CURRENT_TIMESTAMP WHERE id = $1`, profileID)
@@ -351,6 +380,9 @@ func touchProfile(ctx context.Context, tx *sql.Tx, profileID int64) error {
 	return nil
 }
 
+// getProfileVersionAndPsycho читает профиль с последними ревизиями анкеты и психопрофиля.
+// Принимает: контекст ctx, транзакцию tx и ID профиля profileID.
+// Возвращает: профиль без отдельно загружаемых тегов и фото либо ошибку, включая model.ErrNotFound.
 func getProfileVersionAndPsycho(ctx context.Context, tx *sql.Tx, profileID int64) (*model.Profile, error) {
 	const query = `
 		SELECT p.id, p.user_id, p.created_at, p.updated_at, u.name,
@@ -422,6 +454,9 @@ func getProfileVersionAndPsycho(ctx context.Context, tx *sql.Tx, profileID int64
 	return &profile, nil
 }
 
+// GetProfilesByCursorAndLimit читает страницу профилей по возрастанию ID пользователей, исключая самого пользователя.
+// Принимает: контекст ctx, ID пользователя userID, положительный limit и cursor — последний ID пользователя или nil.
+// Возвращает: профили с тегами и фото, курсор следующей страницы (nil в конце) и ошибку.
 func (r *ProfileRepo) GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.Profile, *int64, error) {
 
 	afterID := int64(0)
@@ -508,13 +543,16 @@ func (r *ProfileRepo) GetProfilesByCursorAndLimit(ctx context.Context, userID in
 	return profiles, nextCursor, nil
 }
 
+// loadFeedRelations дополняет профили ленты тегами актуальных версий и фотографиями.
+// Принимает: контекст ctx, транзакцию tx и срез profiles.
+// Возвращает: обновлённый срез или ошибку; изменяет элементы переданного среза.
 func loadFeedRelations(ctx context.Context, tx *sql.Tx, profiles []model.Profile) ([]model.Profile, error) {
 
 	for i := range profiles {
 
 		profile := &profiles[i]
 
-		tags, err := loadTags(ctx, tx, profile.ID)
+		tags, err := loadTags(ctx, tx, profile.CurrentVersion.ID)
 		if err != nil {
 			return nil, fmt.Errorf("load profile id=%d tags: %w", profile.ID, err)
 		}
@@ -532,11 +570,14 @@ func loadFeedRelations(ctx context.Context, tx *sql.Tx, profiles []model.Profile
 	return profiles, nil
 }
 
-func loadTags(ctx context.Context, tx *sql.Tx, profileID int64) ([]model.Tag, error) {
+// loadTags загружает теги конкретной версии профиля.
+// Принимает: контекст ctx, транзакцию tx и ID версии versionID.
+// Возвращает: срез тегов или ошибку чтения.
+func loadTags(ctx context.Context, tx *sql.Tx, versionID int64) ([]model.Tag, error) {
 
 	rows, err := tx.QueryContext(ctx,
 		`SELECT t.id, t.name FROM tag AS t
-		JOIN profile_tag AS pt ON pt.tag_id = t.id WHERE pt.profile_id = $1 ORDER BY t.id`, profileID)
+		JOIN profile_tag AS pt ON pt.tag_id = t.id WHERE pt.profile_version_id = $1 ORDER BY t.id`, versionID)
 
 	if err != nil {
 		return nil, err
@@ -559,6 +600,9 @@ func loadTags(ctx context.Context, tx *sql.Tx, profileID int64) ([]model.Tag, er
 	return tags, nil
 }
 
+// loadPhoto загружает фотографии профиля в порядке отображения.
+// Принимает: контекст ctx, транзакцию tx и ID профиля profileID.
+// Возвращает: срез фотографий или ошибку чтения.
 func loadPhoto(ctx context.Context, tx *sql.Tx, profileID int64) ([]model.Photo, error) {
 
 	rows, err := tx.QueryContext(ctx,
@@ -585,6 +629,9 @@ func loadPhoto(ctx context.Context, tx *sql.Tx, profileID int64) ([]model.Photo,
 	return photos, nil
 }
 
+// GetShortByUserID читает краткие данные профиля и ключ его главной фотографии.
+// Принимает: контекст ctx и ID пользователя userID.
+// Возвращает: краткий профиль без вычисления возраста и URL либо ошибку, включая model.ErrNotFound.
 func (r *ProfileRepo) GetShortByUserID(ctx context.Context, userID int64) (*model.ProfileShort, error) {
 	var short model.ProfileShort
 	var photoKey sql.NullString
@@ -605,6 +652,7 @@ func (r *ProfileRepo) GetShortByUserID(ctx context.Context, userID int64) (*mode
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, model.ErrNotFound
 	}
+
 	if err != nil {
 		return nil, fmt.Errorf("get short profile user_id=%d: %w", userID, err)
 	}
@@ -612,5 +660,6 @@ func (r *ProfileRepo) GetShortByUserID(ctx context.Context, userID int64) (*mode
 	if photoKey.Valid {
 		short.MainPhotoKey = &photoKey.String
 	}
+
 	return &short, nil
 }

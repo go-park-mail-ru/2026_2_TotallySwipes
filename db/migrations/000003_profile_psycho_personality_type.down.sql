@@ -1,1 +1,4 @@
-ALTER TABLE "profile_psycho" DROP COLUMN "personality_type";
+-- Поле personality_type теперь является частью базовой схемы 000001.
+-- При откате 000003 сохраняем поле, ограничения и исторические значения.
+-- Полное удаление выполняется вместе с profile_psycho в 000001_init.down.sql.
+SELECT 1;

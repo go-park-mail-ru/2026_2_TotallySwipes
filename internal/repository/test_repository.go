@@ -10,8 +10,17 @@ import (
 )
 
 type TestRepository interface {
+	// GetCurrentTest получает текущий тест с вопросами и вариантами ответов.
+	// Принимает: контекст ctx.
+	// Возвращает: тест или ошибку, если получить его не удалось.
 	GetCurrentTest(ctx context.Context) (*model.Test, error)
+	// SaveTestResult атомарно сохраняет новую ревизию психопрофиля и ответы на тест.
+	// Принимает: контекст ctx, ID профиля profileID, ответы answers и рассчитанный психопрофиль psycho.
+	// Возвращает: метаданные результата (ID, ID теста, ревизию и время) или ошибку; Big Five в возвращаемом объекте не заполняет.
 	SaveTestResult(ctx context.Context, profileID int64, answers *model.TestAnswers, psycho *model.ProfilePsychoInput) (*model.TestResult, error)
+	// GetTestResult читает последнюю завершённую ревизию результата тестирования.
+	// Принимает: контекст ctx и ID профиля profileID.
+	// Возвращает: сохранённый вектор, тип личности и метаданные результата либо ошибку; при отсутствии — model.ErrNotFound.
 	GetTestResult(ctx context.Context, profileID int64) (*model.TestResult, error)
 }
 
@@ -20,10 +29,16 @@ type TestRepo struct {
 	currentTest model.Test
 }
 
+// NewTestRepository создаёт репозиторий тестов и их результатов.
+// Принимает: подключение db и конфигурацию текущего теста currentTest.
+// Возвращает: экземпляр TestRepo.
 func NewTestRepository(db *sql.DB, currentTest model.Test) *TestRepo {
 	return &TestRepo{db: db, currentTest: currentTest}
 }
 
+// GetCurrentTest получает текущий тест с вопросами и вариантами ответов.
+// Принимает: контекст ctx.
+// Возвращает: тест или ошибку, если получить его не удалось.
 func (r *TestRepo) GetCurrentTest(ctx context.Context) (*model.Test, error) {
 	if r.currentTest.ID <= 0 {
 		return nil, model.ErrNotFound
@@ -68,6 +83,9 @@ func (r *TestRepo) GetCurrentTest(ctx context.Context) (*model.Test, error) {
 	return &result, nil
 }
 
+// SaveTestResult атомарно сохраняет новую ревизию психопрофиля и ответы на тест.
+// Принимает: контекст ctx, ID профиля profileID, ответы answers и рассчитанный психопрофиль psycho.
+// Возвращает: метаданные результата (ID, ID теста, ревизию и время) или ошибку; Big Five в возвращаемом объекте не заполняет.
 func (r *TestRepo) SaveTestResult(ctx context.Context, profileID int64, answers *model.TestAnswers, psycho *model.ProfilePsychoInput) (*model.TestResult, error) {
 
 	if answers == nil || psycho == nil {
@@ -145,7 +163,9 @@ func (r *TestRepo) SaveTestResult(ctx context.Context, profileID int64, answers 
 	return &result, nil
 }
 
-// GetTestResult - model.ErrNotFound, если тест не пройден
+// GetTestResult читает последнюю завершённую ревизию результата тестирования.
+// Принимает: контекст ctx и ID профиля profileID.
+// Возвращает: сохранённый вектор, тип личности и метаданные результата либо ошибку; при отсутствии — model.ErrNotFound.
 func (r *TestRepo) GetTestResult(ctx context.Context, profileID int64) (*model.TestResult, error) {
 	var result model.TestResult
 	var personalityType sql.NullString
