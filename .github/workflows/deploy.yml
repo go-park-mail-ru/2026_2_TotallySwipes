@@ -81,9 +81,16 @@ jobs:
           docker logout ghcr.io
 
           docker compose up -d --wait postgres redis
-          docker compose --profile tools run --rm migrate -path=/migrations -database "$DATABASE_URL" up
+          docker compose --profile tools run --rm -T migrate -path=/migrations -database "$DATABASE_URL" up </dev/null
           docker compose up -d --no-build --remove-orphans api
           docker image prune -f
 
           docker compose ps
+          for i in $(seq 1 15); do
+            curl -fsS "http://127.0.0.1:${PORT:-8080}/health" && exit 0
+            sleep 2
+          done
+          echo "API не ответил на /health" >&2
+          docker compose logs --tail 50 api
+          exit 1
           EOF

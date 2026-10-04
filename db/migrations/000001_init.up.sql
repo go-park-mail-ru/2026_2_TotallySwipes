@@ -1,0 +1,473 @@
+BEGIN;
+
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+CREATE TABLE "user" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "email" TEXT NOT NULL UNIQUE,
+    "password_hash" TEXT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "user_id_positive" CHECK (id > 0),
+    CONSTRAINT "user_name_valid" CHECK (char_length(name) BETWEEN 1 AND 100 AND name ~ '[^[:space:]]'),
+    CONSTRAINT "user_email_valid" CHECK (char_length(email) BETWEEN 1 AND 254 AND email !~ '[[:space:]]'),
+    CONSTRAINT "user_password_hash_nonblank" CHECK (password_hash ~ '[^[:space:]]'),
+    CONSTRAINT "user_created_at_finite" CHECK (isfinite(created_at)),
+    CONSTRAINT "user_updated_at_finite" CHECK (isfinite(updated_at)),
+    CONSTRAINT "user_updated_not_before_created" CHECK (updated_at >= created_at)
+);
+
+CREATE TABLE "profile" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
+    "user_id" BIGINT NOT NULL UNIQUE,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "profile_id_positive" CHECK (id > 0),
+    CONSTRAINT "profile_created_at_finite" CHECK (isfinite(created_at)),
+    CONSTRAINT "profile_updated_at_finite" CHECK (isfinite(updated_at)),
+    CONSTRAINT "profile_updated_not_before_created" CHECK (updated_at >= created_at),
+    CONSTRAINT "profile_owner" FOREIGN KEY ("user_id")
+        REFERENCES "user" ("id") ON DELETE CASCADE ON UPDATE RESTRICT
+);
+
+CREATE TABLE "profile_version" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
+    "profile_id" BIGINT NOT NULL,
+    "revision" INTEGER NOT NULL,
+    "recorded_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "birth_date" DATE NOT NULL,
+    "sex" TEXT NOT NULL,
+    "dating_goal" TEXT NOT NULL,
+    "about_me" TEXT,
+    "search_sex" TEXT NOT NULL,
+    "search_age_from" INTEGER NOT NULL,
+    "search_age_to" INTEGER NOT NULL,
+    UNIQUE ("profile_id", "revision"),
+    CONSTRAINT "profile_version_id_positive" CHECK (id > 0),
+    CONSTRAINT "profile_version_revision_positive" CHECK (revision > 0),
+    CONSTRAINT "profile_version_recorded_at_finite" CHECK (isfinite(recorded_at)),
+    CONSTRAINT "profile_version_birth_date_finite" CHECK (isfinite(birth_date)),
+    CONSTRAINT "profile_version_sex_valid" CHECK (sex IN ('male', 'female')),
+    CONSTRAINT "profile_version_dating_goal_nonblank" CHECK (dating_goal ~ '[^[:space:]]'),
+    CONSTRAINT "profile_version_search_sex_valid" CHECK (search_sex IN ('male', 'female', 'all')),
+    CONSTRAINT "profile_version_search_age_valid" CHECK (search_age_from >= 18 AND search_age_to >= search_age_from),
+    CONSTRAINT "version_owner" FOREIGN KEY ("profile_id")
+        REFERENCES "profile" ("id") ON DELETE CASCADE ON UPDATE RESTRICT
+);
+
+CREATE TABLE "test" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "test_id_positive" CHECK (id > 0),
+    CONSTRAINT "test_name_valid" CHECK (char_length(name) BETWEEN 1 AND 200 AND name ~ '[^[:space:]]'),
+    CONSTRAINT "test_created_at_finite" CHECK (isfinite(created_at)),
+    CONSTRAINT "test_updated_at_finite" CHECK (isfinite(updated_at)),
+    CONSTRAINT "test_updated_not_before_created" CHECK (updated_at >= created_at)
+);
+
+CREATE TABLE "question" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
+    "test_id" BIGINT NOT NULL,
+    "operation_id" INTEGER NOT NULL,
+    "body" TEXT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "question_id_positive" CHECK (id > 0),
+    CONSTRAINT "question_operation_positive" CHECK (operation_id > 0),
+    CONSTRAINT "question_body_valid" CHECK (char_length(body) BETWEEN 1 AND 2000 AND body ~ '[^[:space:]]'),
+    CONSTRAINT "question_created_at_finite" CHECK (isfinite(created_at)),
+    CONSTRAINT "question_updated_at_finite" CHECK (isfinite(updated_at)),
+    CONSTRAINT "question_updated_not_before_created" CHECK (updated_at >= created_at),
+    CONSTRAINT "question_test" FOREIGN KEY ("test_id")
+        REFERENCES "test" ("id") ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+
+CREATE TABLE "profile_psycho" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
+    "profile_id" BIGINT NOT NULL,
+    "test_id" BIGINT NOT NULL,
+    "revision" INTEGER NOT NULL,
+    "recorded_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "openness" NUMERIC,
+    "conscientiousness" NUMERIC,
+    "extraversion" NUMERIC,
+    "agreeableness" NUMERIC,
+    "neuroticism" NUMERIC,
+    UNIQUE ("profile_id", "revision"),
+    CONSTRAINT "profile_psycho_id_positive" CHECK (id > 0),
+    CONSTRAINT "profile_psycho_revision_positive" CHECK (revision > 0),
+    CONSTRAINT "profile_psycho_recorded_at_finite" CHECK (isfinite(recorded_at)),
+    CONSTRAINT "profile_psycho_scores_complete" CHECK (( openness IS NULL AND conscientiousness IS NULL AND extraversion IS NULL AND agreeableness IS NULL AND neuroticism IS NULL ) OR ( openness IS NOT NULL AND conscientiousness IS NOT NULL AND extraversion IS NOT NULL AND agreeableness IS NOT NULL AND neuroticism IS NOT NULL )),
+    CONSTRAINT "profile_psycho_openness_finite" CHECK (openness <> 'NaN'::numeric AND openness <> 'Infinity'::numeric AND openness <> '-Infinity'::numeric),
+    CONSTRAINT "profile_psycho_conscientiousness_finite" CHECK (conscientiousness <> 'NaN'::numeric AND conscientiousness <> 'Infinity'::numeric AND conscientiousness <> '-Infinity'::numeric),
+    CONSTRAINT "profile_psycho_extraversion_finite" CHECK (extraversion <> 'NaN'::numeric AND extraversion <> 'Infinity'::numeric AND extraversion <> '-Infinity'::numeric),
+    CONSTRAINT "profile_psycho_agreeableness_finite" CHECK (agreeableness <> 'NaN'::numeric AND agreeableness <> 'Infinity'::numeric AND agreeableness <> '-Infinity'::numeric),
+    CONSTRAINT "profile_psycho_neuroticism_finite" CHECK (neuroticism <> 'NaN'::numeric AND neuroticism <> 'Infinity'::numeric AND neuroticism <> '-Infinity'::numeric),
+    CONSTRAINT "psycho_owner" FOREIGN KEY ("profile_id")
+        REFERENCES "profile" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
+    CONSTRAINT "psycho_test" FOREIGN KEY ("test_id")
+        REFERENCES "test" ("id") ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+
+CREATE TABLE "user_answer" (
+    "profile_psycho_id" BIGINT NOT NULL,
+    "question_id" BIGINT NOT NULL,
+    "answer_value" SMALLINT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY ("profile_psycho_id", "question_id"),
+    CONSTRAINT "user_answer_value_valid" CHECK (answer_value BETWEEN 1 AND 7),
+    CONSTRAINT "user_answer_created_at_finite" CHECK (isfinite(created_at)),
+    CONSTRAINT "answer_result" FOREIGN KEY ("profile_psycho_id")
+        REFERENCES "profile_psycho" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
+    CONSTRAINT "answer_question" FOREIGN KEY ("question_id")
+        REFERENCES "question" ("id") ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+
+CREATE TABLE "plan" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL UNIQUE,
+    "ads_enabled" BOOLEAN NOT NULL DEFAULT TRUE,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "plan_id_positive" CHECK (id > 0),
+    CONSTRAINT "plan_name_valid" CHECK (char_length(name) BETWEEN 1 AND 100 AND name ~ '[^[:space:]]'),
+    CONSTRAINT "plan_created_at_finite" CHECK (isfinite(created_at)),
+    CONSTRAINT "plan_updated_at_finite" CHECK (isfinite(updated_at)),
+    CONSTRAINT "plan_updated_not_before_created" CHECK (updated_at >= created_at)
+);
+
+CREATE TABLE "subscription" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
+    "user_id" BIGINT NOT NULL,
+    "plan_id" BIGINT NOT NULL,
+    "starts_at" TIMESTAMPTZ NOT NULL,
+    "ends_at" TIMESTAMPTZ NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "subscription_id_positive" CHECK (id > 0),
+    CONSTRAINT "subscription_period_finite" CHECK (isfinite(starts_at) AND isfinite(ends_at)),
+    CONSTRAINT "subscription_period_valid" CHECK (ends_at > starts_at),
+    CONSTRAINT "subscription_no_overlap" EXCLUDE USING gist (
+        user_id WITH =,
+        tstzrange(starts_at, ends_at, '[)') WITH &&
+    ),
+    CONSTRAINT "subscription_created_at_finite" CHECK (isfinite(created_at)),
+    CONSTRAINT "subscription_updated_at_finite" CHECK (isfinite(updated_at)),
+    CONSTRAINT "subscription_updated_not_before_created" CHECK (updated_at >= created_at),
+    CONSTRAINT "subscription_user" FOREIGN KEY ("user_id")
+        REFERENCES "user" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
+    CONSTRAINT "subscription_plan" FOREIGN KEY ("plan_id")
+        REFERENCES "plan" ("id") ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+
+CREATE TABLE "tag" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL UNIQUE,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "tag_id_positive" CHECK (id > 0),
+    CONSTRAINT "tag_name_valid" CHECK (char_length(name) BETWEEN 1 AND 100 AND name ~ '[^[:space:]]'),
+    CONSTRAINT "tag_created_at_finite" CHECK (isfinite(created_at)),
+    CONSTRAINT "tag_updated_at_finite" CHECK (isfinite(updated_at)),
+    CONSTRAINT "tag_updated_not_before_created" CHECK (updated_at >= created_at)
+);
+
+CREATE TABLE "profile_tag" (
+    "profile_version_id" BIGINT NOT NULL,
+    "tag_id" BIGINT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY ("profile_version_id", "tag_id"),
+    CONSTRAINT "profile_tag_created_at_finite" CHECK (isfinite(created_at)),
+    CONSTRAINT "profile_tag_version" FOREIGN KEY ("profile_version_id")
+        REFERENCES "profile_version" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
+    CONSTRAINT "profile_tag_tag" FOREIGN KEY ("tag_id")
+        REFERENCES "tag" ("id") ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+
+CREATE TABLE "report_type" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL UNIQUE,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "report_type_id_positive" CHECK (id > 0),
+    CONSTRAINT "report_type_name_valid" CHECK (char_length(name) BETWEEN 1 AND 100 AND name ~ '[^[:space:]]'),
+    CONSTRAINT "report_type_created_at_finite" CHECK (isfinite(created_at)),
+    CONSTRAINT "report_type_updated_at_finite" CHECK (isfinite(updated_at)),
+    CONSTRAINT "report_type_updated_not_before_created" CHECK (updated_at >= created_at)
+);
+
+CREATE TABLE "report" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
+    "author_id" BIGINT NOT NULL,
+    "reported_user_id" BIGINT NOT NULL,
+    "report_type_id" BIGINT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE ("author_id", "reported_user_id", "report_type_id"),
+    CONSTRAINT "report_id_positive" CHECK (id > 0),
+    CONSTRAINT "report_not_self" CHECK (author_id <> reported_user_id),
+    CONSTRAINT "report_created_at_finite" CHECK (isfinite(created_at)),
+    CONSTRAINT "report_updated_at_finite" CHECK (isfinite(updated_at)),
+    CONSTRAINT "report_updated_not_before_created" CHECK (updated_at >= created_at),
+    CONSTRAINT "report_author" FOREIGN KEY ("author_id")
+        REFERENCES "user" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
+    CONSTRAINT "report_target" FOREIGN KEY ("reported_user_id")
+        REFERENCES "user" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
+    CONSTRAINT "report_type_ref" FOREIGN KEY ("report_type_id")
+        REFERENCES "report_type" ("id") ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+
+CREATE TABLE "photo" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
+    "profile_id" BIGINT NOT NULL,
+    "storage_key" TEXT NOT NULL UNIQUE,
+    "position" SMALLINT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE ("profile_id", "position"),
+    CONSTRAINT "photo_id_positive" CHECK (id > 0),
+    CONSTRAINT "photo_storage_key_valid" CHECK (storage_key ~ '[^[:space:]]' AND char_length(storage_key) <= 1024),
+    CONSTRAINT "photo_position_positive" CHECK (position > 0),
+    CONSTRAINT "photo_created_at_finite" CHECK (isfinite(created_at)),
+    CONSTRAINT "photo_updated_at_finite" CHECK (isfinite(updated_at)),
+    CONSTRAINT "photo_updated_not_before_created" CHECK (updated_at >= created_at),
+    CONSTRAINT "photo_profile" FOREIGN KEY ("profile_id")
+        REFERENCES "profile" ("id") ON DELETE CASCADE ON UPDATE RESTRICT
+);
+
+CREATE TABLE "photo_comment" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
+    "author_id" BIGINT NOT NULL,
+    "photo_id" BIGINT NOT NULL,
+    "body" TEXT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "photo_comment_id_positive" CHECK (id > 0),
+    CONSTRAINT "photo_comment_body_valid" CHECK (char_length(body) BETWEEN 1 AND 2000 AND body ~ '[^[:space:]]'),
+    CONSTRAINT "photo_comment_created_at_finite" CHECK (isfinite(created_at)),
+    CONSTRAINT "photo_comment_updated_at_finite" CHECK (isfinite(updated_at)),
+    CONSTRAINT "photo_comment_updated_not_before_created" CHECK (updated_at >= created_at),
+    CONSTRAINT "photo_comment_author" FOREIGN KEY ("author_id")
+        REFERENCES "user" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
+    CONSTRAINT "photo_comment_photo" FOREIGN KEY ("photo_id")
+        REFERENCES "photo" ("id") ON DELETE CASCADE ON UPDATE RESTRICT
+);
+
+CREATE TABLE "profile_like" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
+    "author_id" BIGINT NOT NULL,
+    "profile_id" BIGINT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE ("author_id", "profile_id"),
+    CONSTRAINT "profile_like_id_positive" CHECK (id > 0),
+    CONSTRAINT "profile_like_created_at_finite" CHECK (isfinite(created_at)),
+    CONSTRAINT "profile_like_author" FOREIGN KEY ("author_id")
+        REFERENCES "user" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
+    CONSTRAINT "profile_like_profile" FOREIGN KEY ("profile_id")
+        REFERENCES "profile" ("id") ON DELETE CASCADE ON UPDATE RESTRICT
+);
+
+CREATE TABLE "match" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
+    "first_user_id" BIGINT NOT NULL,
+    "second_user_id" BIGINT NOT NULL,
+    "access_to_message" BOOLEAN NOT NULL DEFAULT TRUE,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE ("first_user_id", "second_user_id"),
+    CONSTRAINT "match_id_positive" CHECK (id > 0),
+    CONSTRAINT "match_users_canonical_order" CHECK (first_user_id < second_user_id),
+    CONSTRAINT "match_created_at_finite" CHECK (isfinite(created_at)),
+    CONSTRAINT "match_updated_at_finite" CHECK (isfinite(updated_at)),
+    CONSTRAINT "match_updated_not_before_created" CHECK (updated_at >= created_at),
+    CONSTRAINT "match_first_user" FOREIGN KEY ("first_user_id")
+        REFERENCES "user" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
+    CONSTRAINT "match_second_user" FOREIGN KEY ("second_user_id")
+        REFERENCES "user" ("id") ON DELETE CASCADE ON UPDATE RESTRICT
+);
+
+CREATE TABLE "message" (
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
+    "match_id" BIGINT NOT NULL,
+    "sender_id" BIGINT NOT NULL,
+    "body" TEXT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "message_id_positive" CHECK (id > 0),
+    CONSTRAINT "message_body_valid" CHECK (char_length(body) BETWEEN 1 AND 10000 AND body ~ '[^[:space:]]'),
+    CONSTRAINT "message_created_at_finite" CHECK (isfinite(created_at)),
+    CONSTRAINT "message_updated_at_finite" CHECK (isfinite(updated_at)),
+    CONSTRAINT "message_updated_not_before_created" CHECK (updated_at >= created_at),
+    CONSTRAINT "message_match" FOREIGN KEY ("match_id")
+        REFERENCES "match" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
+    CONSTRAINT "message_sender" FOREIGN KEY ("sender_id")
+        REFERENCES "user" ("id") ON DELETE CASCADE ON UPDATE RESTRICT
+);
+
+
+CREATE INDEX user_answer_question_id_idx ON user_answer (question_id);
+
+-- Защищает смысл сохранённых ответов: использованный вопрос нельзя переписать.
+CREATE FUNCTION protect_answered_question() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF (NEW.body, NEW.operation_id, NEW.test_id)
+        IS DISTINCT FROM (OLD.body, OLD.operation_id, OLD.test_id)
+        AND EXISTS (SELECT 1 FROM user_answer WHERE question_id = OLD.id)
+    THEN
+        RAISE EXCEPTION 'question % already has answers; create a new question instead', OLD.id
+            USING ERRCODE = '23514', CONSTRAINT = 'question_definition_immutable';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+-- Запрещает менять текст, операцию расчёта и принадлежность тесту у вопроса,
+-- на который уже есть ответы. Обновление без изменения этих значений допустимо.
+CREATE TRIGGER question_definition_immutable
+    BEFORE UPDATE OF body, operation_id, test_id ON question
+    FOR EACH ROW EXECUTE FUNCTION protect_answered_question();
+
+CREATE FUNCTION lock_answer_question() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    -- Создаём новую версию строки без изменения её данных и updated_at.
+    -- Это сериализует запись ответа с редактированием вопроса, в том числе
+    -- вызывает serialization failure при устаревшем снимке REPEATABLE READ.
+    -- Одна лишь блокировка SELECT FOR SHARE не обновила бы версию строки.
+    UPDATE question SET updated_at = updated_at WHERE id = NEW.question_id;
+    RETURN NEW;
+END;
+$$;
+
+-- Синхронизирует запись ответа с редактированием соответствующего вопроса
+-- через техническое обновление строки вопроса без изменения её значений.
+-- Изменение question_id также вызывает эту проверку, но затем любой UPDATE
+-- ответа отклоняется триггером user_answer_no_update.
+CREATE TRIGGER user_answer_lock_question
+    BEFORE INSERT OR UPDATE OF question_id ON user_answer
+    FOR EACH ROW EXECUTE FUNCTION lock_answer_question();
+
+-- Общая функция запрета UPDATE исторических строк, даже без изменения значений.
+-- Возвращает ошибку 23514 с именем сработавшего триггера. INSERT и DELETE не запрещает.
+CREATE FUNCTION reject_history_update() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION '% rows cannot be updated; create a new record instead', TG_TABLE_NAME
+        USING ERRCODE = '23514', CONSTRAINT = TG_NAME;
+END;
+$$;
+
+-- Запрещает переписывать сохранённый ответ, его вопрос, прохождение и время создания.
+-- Повторное прохождение должно создавать новые ответы с другим profile_psycho_id.
+CREATE TRIGGER user_answer_no_update
+    BEFORE UPDATE ON user_answer
+    FOR EACH ROW EXECUTE FUNCTION reject_history_update();
+
+-- Запрещает менять связь тега с версией анкеты и время создания этой связи.
+-- Новый набор интересов записывается отдельными строками для новой версии анкеты.
+CREATE TRIGGER profile_tag_no_update
+    BEFORE UPDATE ON profile_tag
+    FOR EACH ROW EXECUTE FUNCTION reject_history_update();
+
+-- Запрещает менять сохранённый лайк, включая автора, целевой профиль и время.
+-- Лайк относится к profile и не переносится при появлении новой версии анкеты.
+CREATE TRIGGER profile_like_no_update
+    BEFORE UPDATE ON profile_like
+    FOR EACH ROW EXECUTE FUNCTION reject_history_update();
+
+-- Запрещает перезапись снимка анкеты. Изменения сохраняются новой ревизией.
+CREATE TRIGGER profile_version_no_update
+    BEFORE UPDATE ON profile_version
+    FOR EACH ROW EXECUTE FUNCTION reject_history_update();
+
+-- При существующем CHECK достаточно проверить openness: показатели либо все NULL,
+-- либо все заполнены. Заполненный результат нельзя обновлять даже теми же значениями.
+-- У незавершённого результата разрешено заполнить показатели, но нельзя менять
+-- id, владельца, тест, ревизию и recorded_at. DELETE эта функция не ограничивает.
+CREATE FUNCTION protect_completed_psycho() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF OLD.openness IS NOT NULL OR
+       (NEW.id, NEW.profile_id, NEW.test_id, NEW.revision, NEW.recorded_at)
+       IS DISTINCT FROM
+       (OLD.id, OLD.profile_id, OLD.test_id, OLD.revision, OLD.recorded_at)
+    THEN
+        RAISE EXCEPTION 'psycho result % cannot be rewritten', OLD.id
+            USING ERRCODE = '23514', CONSTRAINT = 'profile_psycho_no_rewrite';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+-- Защищает готовый результат от перезаписи и возврата показателей в NULL,
+-- а незавершённое прохождение — от изменения его идентификаторов и времени записи.
+CREATE TRIGGER profile_psycho_no_rewrite
+    BEFORE UPDATE ON profile_psycho
+    FOR EACH ROW EXECUTE FUNCTION protect_completed_psycho();
+
+-- Запрещает удалять историческую строку, пока существует её владелец.
+-- При ON DELETE CASCADE родитель уже удалён и дочерняя строка может быть удалена.
+-- Проверяется наличие родителя, а не глубина вызова: вложенный пользовательский
+-- триггер сам по себе не должен давать право обходить запрет.
+CREATE FUNCTION protect_history_delete() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    owner_exists BOOLEAN;
+BEGIN
+    CASE TG_TABLE_NAME
+        WHEN 'user_answer' THEN
+            SELECT EXISTS (SELECT 1 FROM profile_psycho WHERE id = OLD.profile_psycho_id)
+                INTO owner_exists;
+        WHEN 'profile_tag' THEN
+            SELECT EXISTS (SELECT 1 FROM profile_version WHERE id = OLD.profile_version_id)
+                INTO owner_exists;
+        WHEN 'profile_like' THEN
+            SELECT EXISTS (SELECT 1 FROM "user" WHERE id = OLD.author_id)
+               AND EXISTS (SELECT 1 FROM profile WHERE id = OLD.profile_id)
+                INTO owner_exists;
+        WHEN 'profile_version', 'profile_psycho' THEN
+            SELECT EXISTS (SELECT 1 FROM profile WHERE id = OLD.profile_id)
+                INTO owner_exists;
+        ELSE
+            RAISE EXCEPTION 'unsupported history table: %', TG_TABLE_NAME;
+    END CASE;
+
+    IF owner_exists THEN
+        RAISE EXCEPTION '% historical rows cannot be deleted directly', TG_TABLE_NAME
+            USING ERRCODE = '23514', CONSTRAINT = TG_NAME;
+    END IF;
+    RETURN OLD;
+END;
+$$;
+
+-- Сохранённый ответ нельзя удалить отдельно от его прохождения.
+CREATE TRIGGER user_answer_no_delete
+    BEFORE DELETE ON user_answer
+    FOR EACH ROW EXECUTE FUNCTION protect_history_delete();
+
+-- Тег нельзя удалить из сохранённого снимка анкеты.
+CREATE TRIGGER profile_tag_no_delete
+    BEFORE DELETE ON profile_tag
+    FOR EACH ROW EXECUTE FUNCTION protect_history_delete();
+
+-- Факт лайка сохраняется, пока существуют его автор и целевой профиль.
+CREATE TRIGGER profile_like_no_delete
+    BEFORE DELETE ON profile_like
+    FOR EACH ROW EXECUTE FUNCTION protect_history_delete();
+
+-- Версии нельзя удалить отдельно от профиля, в том числе ради удаления их тегов.
+CREATE TRIGGER profile_version_no_delete
+    BEFORE DELETE ON profile_version
+    FOR EACH ROW EXECUTE FUNCTION protect_history_delete();
+
+-- Прохождение нельзя удалить отдельно от профиля, в том числе ради удаления ответов.
+-- Запрет относится и к готовым результатам, и к строкам с NULL-показателями.
+CREATE TRIGGER profile_psycho_no_delete
+    BEFORE DELETE ON profile_psycho
+    FOR EACH ROW EXECUTE FUNCTION protect_history_delete();
+
+COMMIT;
