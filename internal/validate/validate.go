@@ -14,7 +14,9 @@ import (
 )
 
 const (
-	emailMaxLen = 254
+	emailMaxLen       = 254
+	emailLocalMaxLen  = 64
+	emailDomainMinLen = 4
 
 	passwordMinLen = 8
 	passwordMaxLen = 128
@@ -69,10 +71,10 @@ var (
 	ErrPhotoFormat   = errors.New("фото должно быть в формате JPEG, PNG или WebP")
 )
 
-// emailRe - регулярка из HTML5 (input type="email")
-var emailRe = regexp.MustCompile("^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@" +
-	"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?" +
-	"(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$")
+// emailRe совпадает с регуляркой фронта: буквы любого алфавита в локальной части и домене
+var emailRe = regexp.MustCompile(`^[\p{L}0-9][\p{L}\p{M}0-9'_+&*-]*(?:\.[\p{L}\p{M}0-9'_+&*-]+)*` +
+	`@(?:[\p{L}0-9](?:[\p{L}\p{M}0-9-]{0,61}[\p{L}\p{M}0-9])?\.)+` +
+	`(?:\p{L}[\p{L}\p{M}]{1,62}|xn--[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,57}[a-zA-Z0-9])?)$`)
 
 var photoExtByContentType = map[string]string{
 	"image/jpeg": ".jpg",
@@ -85,7 +87,7 @@ var (
 	searchSexValues = []string{"male", "female", "all"}
 )
 
-// ValidateEmail ожидает уже обрезанную по краям строку
+// ValidateEmail ожидает уже обрезанную по краям строку в lower case
 func ValidateEmail(s string) error {
 	if s == "" {
 		return ErrRequired
@@ -93,10 +95,36 @@ func ValidateEmail(s string) error {
 	if utf8.RuneCountInString(s) > emailMaxLen {
 		return ErrEmailTooLong
 	}
-	if !emailRe.MatchString(s) {
+	at := strings.LastIndexByte(s, '@')
+	if at < 0 {
+		return ErrEmailFormat
+	}
+	local, domain := s[:at], s[at+1:]
+	if local == "" || utf8.RuneCountInString(local) > emailLocalMaxLen {
+		return ErrEmailFormat
+	}
+	if utf8.RuneCountInString(domain) < emailDomainMinLen {
+		return ErrEmailFormat
+	}
+	if !emailRe.MatchString(s) || mixedScriptLabel(domain) {
 		return ErrEmailFormat
 	}
 	return nil
+}
+
+// mixedScriptLabel - есть ли метка домена с латиницей и кириллицей одновременно
+func mixedScriptLabel(domain string) bool {
+	for label := range strings.SplitSeq(domain, ".") {
+		var latin, cyr bool
+		for _, r := range label {
+			latin = latin || unicode.Is(unicode.Latin, r)
+			cyr = cyr || unicode.Is(unicode.Cyrillic, r)
+		}
+		if latin && cyr {
+			return true
+		}
+	}
+	return false
 }
 
 // ValidatePassword - правила для нового пароля при регистрации

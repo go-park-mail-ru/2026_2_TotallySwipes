@@ -13,8 +13,8 @@
 
 * [Figma](https://www.figma.com/)
 * [Frontend](https://github.com/frontend-park-mail-ru/2026_2_TotallySwipes)
-* [Deploy](https://meow)
-* [Jira](https:/meow)
+* [Deploy](http://161.104.105.207)
+* [Jira](https://totallyswipes.atlassian.net/jira/software/projects/TS/boards/1?filter=&groupBy=none)
 
 ## Бэкенд: команды Makefile
 
