@@ -6,3 +6,10 @@
 *.test
 /bin/
 *.DS_Store
+*/data
+/test/
+docker-compose.local.yml
+coverage.out
+coverage.html
+scripts/seed/photos/*
+!scripts/seed/photos/.gitkeep

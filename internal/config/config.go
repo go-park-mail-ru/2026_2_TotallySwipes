@@ -1,104 +1,170 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
 
 type Config struct {
-	Port          string
-	DatabaseURL   string
+	CurrentTestID int64
+	PhotoDir      string
+	Database      DatabaseConfig
+	Redis         RedisConfig
+	Auth          AuthConfig
+	HTTP          HTTPConfig
+}
+
+type DatabaseConfig struct {
+	URL string
+}
+
+type RedisConfig struct {
+	Addr string
+}
+
+type AuthConfig struct {
 	JWTSecret     string
 	JWTAccessTTL  time.Duration
 	JWTRefreshTTL time.Duration
-
-	HTTPReadHeaderTimeout time.Duration
-	HTTPReadTimeout       time.Duration
-	HTTPWriteTimeout      time.Duration
-	HTTPIdleTimeout       time.Duration
+	CookieSecure  bool
 }
 
-const (
-	defaultPort = "8080"
-
-	defaultJWTAccessTTL  = 15 * time.Minute
-	defaultJWTRefreshTTL = 30 * 24 * time.Hour
-
-	defaultHTTPReadHeaderTimeout = 5 * time.Second
-	defaultHTTPReadTimeout       = 10 * time.Second
-	defaultHTTPWriteTimeout      = 10 * time.Second
-	defaultHTTPIdleTimeout       = 60 * time.Second
-)
+type HTTPConfig struct {
+	Port              string
+	PublicURL         string
+	CORSOrigins       []string
+	ReadHeaderTimeout time.Duration
+	ReadTimeout       time.Duration
+	WriteTimeout      time.Duration
+	IdleTimeout       time.Duration
+}
 
 // Load читает конфигурацию из переменных окружения. Обязательны только
 // DATABASE_URL и JWT_SECRET - у них нет разумного дефолта. Остальное - с
-// дефолтом, но если задано криво, тоже ошибка.
+// дефолтом, но если задано криво, тоже ошибка. Все ошибки отдаются разом
 func Load() (*Config, error) {
+	var r envReader
+
 	cfg := &Config{
-		Port: envOrDefault("PORT", defaultPort),
+		CurrentTestID: r.nonNegativeInt64("CURRENT_TEST_ID", 1),
+		PhotoDir:      r.str("PHOTO_DIR", "./db/data/cats"),
+		Database: DatabaseConfig{
+			URL: r.required("DATABASE_URL"),
+		},
+		Redis: RedisConfig{
+			Addr: r.str("REDIS_ADDR", "localhost:6379"),
+		},
+		Auth: AuthConfig{
+			JWTSecret:     r.required("JWT_SECRET"),
+			JWTAccessTTL:  r.positiveDuration("JWT_ACCESS_TTL", 15*time.Minute),
+			JWTRefreshTTL: r.positiveDuration("JWT_REFRESH_TTL", 30*24*time.Hour),
+			CookieSecure:  r.boolean("COOKIE_SECURE", true),
+		},
+		HTTP: HTTPConfig{
+			Port:              r.str("PORT", "8080"),
+			CORSOrigins:       r.list("CORS_ORIGINS", "http://localhost:5173"),
+			ReadHeaderTimeout: r.duration("HTTP_READ_HEADER_TIMEOUT", 5*time.Second),
+			ReadTimeout:       r.duration("HTTP_READ_TIMEOUT", 10*time.Second),
+			WriteTimeout:      r.duration("HTTP_WRITE_TIMEOUT", 10*time.Second),
+			IdleTimeout:       r.duration("HTTP_IDLE_TIMEOUT", 60*time.Second),
+		},
 	}
 
-	var missing []string
-
-	cfg.DatabaseURL = requireEnv("DATABASE_URL", &missing)
-	cfg.JWTSecret = requireEnv("JWT_SECRET", &missing)
-
-	if len(missing) > 0 {
-		return nil, fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
-	}
-
-	var err error
-
-	if cfg.JWTAccessTTL, err = envDurationOrDefault("JWT_ACCESS_TTL", defaultJWTAccessTTL, false); err != nil {
+	if err := r.err(); err != nil {
 		return nil, err
 	}
-	if cfg.JWTRefreshTTL, err = envDurationOrDefault("JWT_REFRESH_TTL", defaultJWTRefreshTTL, false); err != nil {
-		return nil, err
-	}
-	if cfg.HTTPReadHeaderTimeout, err = envDurationOrDefault("HTTP_READ_HEADER_TIMEOUT", defaultHTTPReadHeaderTimeout, true); err != nil {
-		return nil, err
-	}
-	if cfg.HTTPReadTimeout, err = envDurationOrDefault("HTTP_READ_TIMEOUT", defaultHTTPReadTimeout, true); err != nil {
-		return nil, err
-	}
-	if cfg.HTTPWriteTimeout, err = envDurationOrDefault("HTTP_WRITE_TIMEOUT", defaultHTTPWriteTimeout, true); err != nil {
-		return nil, err
-	}
-	if cfg.HTTPIdleTimeout, err = envDurationOrDefault("HTTP_IDLE_TIMEOUT", defaultHTTPIdleTimeout, true); err != nil {
-		return nil, err
-	}
-
+	cfg.HTTP.PublicURL = r.str("PUBLIC_URL", "http://localhost:"+cfg.HTTP.Port)
 	return cfg, nil
 }
 
-func envOrDefault(key, def string) string {
+// envReader читает переменные и копит ошибки
+type envReader struct {
+	errs []error
+}
+
+func (r *envReader) err() error {
+	return errors.Join(r.errs...)
+}
+
+func (r *envReader) fail(key, v string, err error) {
+	r.errs = append(r.errs, fmt.Errorf("invalid %s %q: %w", key, v, err))
+}
+
+func (r *envReader) required(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		r.errs = append(r.errs, fmt.Errorf("missing required environment variable %s", key))
+	}
+	return v
+}
+
+func (r *envReader) str(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return def
 }
 
-func requireEnv(key string, missing *[]string) string {
-	v := os.Getenv(key)
-	if v == "" {
-		*missing = append(*missing, key)
+func (r *envReader) list(key, def string) []string {
+	var items []string
+	for _, item := range strings.Split(r.str(key, def), ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
 	}
-	return v
+	return items
 }
 
-func envDurationOrDefault(key string, def time.Duration, allowZero bool) (time.Duration, error) {
+func (r *envReader) boolean(key string, def bool) bool {
 	v := os.Getenv(key)
 	if v == "" {
-		return def, nil
+		return def
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		r.fail(key, v, err)
+	}
+	return b
+}
+
+// duration допускает 0
+func (r *envReader) duration(key string, def time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
 	}
 	d, err := time.ParseDuration(v)
 	if err != nil {
-		return 0, fmt.Errorf("invalid %s %q: %w", key, v, err)
+		r.fail(key, v, err)
+		return 0
 	}
-	if d < 0 || (d == 0 && !allowZero) {
-		return 0, fmt.Errorf("invalid %s %q: must be positive", key, v)
+	if d < 0 {
+		r.fail(key, v, errors.New("must not be negative"))
 	}
-	return d, nil
+	return d
+}
+
+func (r *envReader) positiveDuration(key string, def time.Duration) time.Duration {
+	before := len(r.errs)
+	d := r.duration(key, def)
+	// Если duration уже ругнулся, второй ошибки про ту же переменную не нужно
+	if len(r.errs) == before && d == 0 {
+		r.fail(key, os.Getenv(key), errors.New("must be positive"))
+	}
+	return d
+}
+
+func (r *envReader) nonNegativeInt64(key string, def int64) int64 {
+	value := r.str(key, strconv.FormatInt(def, 10))
+	n, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		r.fail(key, value, err)
+	} else if n < 0 {
+		r.fail(key, value, errors.New("must not be negative"))
+	}
+	return n
 }
