@@ -40,12 +40,12 @@ func writeError(w http.ResponseWriter, status int, code, message string, fields 
 	writeJSON(w, status, dto.ErrorResponse{Error: dto.ErrorBody{Code: code, Message: message, Fields: fields}})
 }
 
-// Write sends a JSON response using the shared response encoder.
+// Write отправляет JSON-ответ с помощью общей функции кодирования ответа.
 func Write(w http.ResponseWriter, status int, data any) {
 	writeJSON(w, status, data)
 }
 
-// WriteError sends an error without field-level validation details.
+// WriteError отправляет ошибку без подробностей валидации отдельных полей.
 func WriteError(w http.ResponseWriter, status int, code, message string) {
 	writeError(w, status, code, message, nil)
 }

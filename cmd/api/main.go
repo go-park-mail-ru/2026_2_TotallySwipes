@@ -101,8 +101,6 @@ func run() error {
 	api.Handle("/tests/results/me", requireAuth(myTestResultHandler)).Methods(http.MethodGet)
 	api.Handle("/tests/{test_id}/results", requireAuth(testAnswersHandler)).Methods(http.MethodPost)
 
-	// Обёрнуто снаружи роутера, а не через r.Use(): у gorilla/mux r.Use()
-	// применяется только к совпавшим роутам, на 404/405 middleware не сработает.
 	var h http.Handler = r
 	h = middleware.Recovery(h)
 	h = middleware.CORS(cfg.HTTP.CORSOrigins)(h)
