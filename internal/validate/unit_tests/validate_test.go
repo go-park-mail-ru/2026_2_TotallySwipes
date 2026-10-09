@@ -213,9 +213,9 @@ func TestEnums(t *testing.T) {
 		{"sex case", ValidateSex, "Male", ErrSex},
 		{"search_sex all", ValidateSearchSex, "all", nil},
 		{"search_sex bad", ValidateSearchSex, "other", ErrSearchSex},
-		{"intent ok", ValidateDatingIntent, "Ищу половинку", nil},
-		{"intent bad", ValidateDatingIntent, "Ищу работу", ErrDatingIntent},
-		{"intent empty", ValidateDatingIntent, "", ErrRequired},
+		{"goal ok", ValidateDatingGoal, "relationship", nil},
+		{"goal bad", ValidateDatingGoal, "Ищу половинку", ErrDatingGoal},
+		{"goal empty", ValidateDatingGoal, "", ErrRequired},
 	}
 	for _, tt := range tests {
 		if got := tt.fn(tt.in); !errors.Is(got, tt.want) {

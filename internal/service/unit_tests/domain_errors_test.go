@@ -3,18 +3,12 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	"dating-app/internal/model"
+	"dating-app/internal/psychotest"
 	. "dating-app/internal/service"
 )
-
-type missingTestRepository struct{ TestRepository }
-
-func (missingTestRepository) GetCurrentTest(context.Context) (*model.Test, error) {
-	return nil, fmt.Errorf("repository lookup: %w", model.ErrNotFound)
-}
 
 func TestDomainErrorsSurviveServiceWrapping(t *testing.T) {
 	ctx := context.Background()
@@ -23,16 +17,12 @@ func TestDomainErrorsSurviveServiceWrapping(t *testing.T) {
 		run  func() error
 		want error
 	}{
-		{"current test", func() error {
-			_, err := NewTestService(missingTestRepository{}, nil, nil).GetCurrentTest(ctx)
-			return err
-		}, model.ErrActiveTestNotFound},
 		{"invalid test request", func() error {
-			_, err := NewTestService(nil, nil, nil).SubmitTestAnswers(ctx, 1, nil)
+			_, err := NewPsychoTestService(nil, nil, nil, model.Test{}).SubmitTestAnswers(ctx, 1, nil)
 			return err
 		}, model.ErrInvalidTestRequest},
 		{"invalid feed", func() error {
-			_, err := NewProfileService(nil, nil, nil).GetNextFeed(ctx, 0, 10, nil)
+			_, err := NewProfileService(nil, nil, nil, nil).GetNextFeed(ctx, 0, 10, nil)
 			return err
 		}, model.ErrInvalidFeedRequest},
 		{"invalid photo key", func() error {
@@ -48,11 +38,11 @@ func TestDomainErrorsSurviveServiceWrapping(t *testing.T) {
 			return err
 		}, model.ErrInvalidTestDefinition},
 		{"nested answer validation", func() error {
-			test := model.NewTIPITest(1)
-			for i := int64(1); i <= 10; i++ {
-				test.Questions = append(test.Questions, model.Question{ID: i, OperationID: i})
+			test, err := psychotest.Load()
+			if err != nil {
+				return err
 			}
-			_, err := (&CompatibilityServiceImpl{}).CalculateBigFive(&test, &model.TestAnswers{TestID: 1})
+			_, err = (&CompatibilityServiceImpl{}).CalculateBigFive(&test, &model.TestAnswers{TestID: test.ID})
 			return err
 		}, model.ErrInvalidAnswers},
 	}

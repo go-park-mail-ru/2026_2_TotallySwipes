@@ -46,8 +46,8 @@ func TestSessionRepo_CreateGetRevoke(t *testing.T) {
 		t.Errorf("got %+v, want %+v", *got, want)
 	}
 
-	if err := repo.Revoke(ctx, "sid"); err != nil {
-		t.Fatalf("revoke: %v", err)
+	if ok, err := repo.Revoke(ctx, "sid"); err != nil || !ok {
+		t.Fatalf("revoke: ok = %v, err = %v", ok, err)
 	}
 	got, _ = repo.GetByTokenHash(ctx, "h")
 	if !got.Revoked {
@@ -70,20 +70,20 @@ func TestSessionRepo_NotFound(t *testing.T) {
 	}
 
 	// Отзыв несуществующей сессии не должен создавать ключ без TTL
-	if err := repo.Revoke(ctx, "sid"); err != nil {
-		t.Fatalf("revoke missing: %v", err)
+	if ok, err := repo.Revoke(ctx, "sid"); err != nil || ok {
+		t.Fatalf("revoke missing: ok = %v, err = %v", ok, err)
 	}
 	if mr.Exists("refresh:session:sid") {
 		t.Error("revoke must not recreate expired session")
 	}
 }
 
-func TestSessionRepo_RevokeIfActive(t *testing.T) {
+func TestSessionRepo_RevokeOnce(t *testing.T) {
 	repo, mr := newTestSessionRepo(t)
 	ctx := context.Background()
 	_ = repo.Create(ctx, &model.Session{ID: "sid", UserID: 1, TokenHash: "h", ExpiresAt: time.Now().Add(time.Hour)})
 
-	ok, err := repo.RevokeIfActive(ctx, "sid")
+	ok, err := repo.Revoke(ctx, "sid")
 	if err != nil || !ok {
 		t.Fatalf("first revoke: ok = %v, err = %v", ok, err)
 	}
@@ -91,11 +91,11 @@ func TestSessionRepo_RevokeIfActive(t *testing.T) {
 		t.Error("session must be revoked")
 	}
 
-	if ok, err := repo.RevokeIfActive(ctx, "sid"); err != nil || ok {
+	if ok, err := repo.Revoke(ctx, "sid"); err != nil || ok {
 		t.Errorf("second revoke: ok = %v, err = %v", ok, err)
 	}
 
-	if ok, err := repo.RevokeIfActive(ctx, "missing"); err != nil || ok {
+	if ok, err := repo.Revoke(ctx, "missing"); err != nil || ok {
 		t.Errorf("missing: ok = %v, err = %v", ok, err)
 	}
 	if mr.Exists("refresh:session:missing") {

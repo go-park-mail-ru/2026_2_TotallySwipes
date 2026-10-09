@@ -10,12 +10,11 @@ import (
 )
 
 type Config struct {
-	CurrentTestID int64
-	PhotoDir      string
-	Database      DatabaseConfig
-	Redis         RedisConfig
-	Auth          AuthConfig
-	HTTP          HTTPConfig
+	PhotoDir string
+	Database DatabaseConfig
+	Redis    RedisConfig
+	Auth     AuthConfig
+	HTTP     HTTPConfig
 }
 
 type DatabaseConfig struct {
@@ -50,8 +49,7 @@ func Load() (*Config, error) {
 	var r envReader
 
 	cfg := &Config{
-		CurrentTestID: r.nonNegativeInt64("CURRENT_TEST_ID", 1),
-		PhotoDir:      r.str("PHOTO_DIR", "./db/data/cats"),
+		PhotoDir: r.str("PHOTO_DIR", "./db/data/cats"),
 		Database: DatabaseConfig{
 			URL: r.required("DATABASE_URL"),
 		},
@@ -156,15 +154,4 @@ func (r *envReader) positiveDuration(key string, def time.Duration) time.Duratio
 		r.fail(key, os.Getenv(key), errors.New("must be positive"))
 	}
 	return d
-}
-
-func (r *envReader) nonNegativeInt64(key string, def int64) int64 {
-	value := r.str(key, strconv.FormatInt(def, 10))
-	n, err := strconv.ParseInt(value, 10, 64)
-	if err != nil {
-		r.fail(key, value, err)
-	} else if n < 0 {
-		r.fail(key, value, errors.New("must not be negative"))
-	}
-	return n
 }

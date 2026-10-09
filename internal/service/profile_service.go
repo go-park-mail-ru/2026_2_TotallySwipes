@@ -5,136 +5,184 @@ import (
 	"dating-app/internal/model"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
-type ProfileService interface {
-	// GetNextFeed формирует страницу анкет с возрастом, URL фото и совместимостью при наличии обоих векторов.
-	// Принимает: контекст ctx, ID пользователя userID, limit от 1 до 10 и необязательный cursor.
-	// Возвращает: страницу ленты или ошибку, включая model.ErrInvalidFeedRequest и model.ErrProfileRequired.
-	GetNextFeed(ctx context.Context, userID int64, limit int, cursor *int64) (*model.FeedPage, error)
-
-	// AddProfilePsycho добавляет новую ревизию психопрофиля в отдельной транзакции.
-	// Принимает: контекст ctx, ID профиля profileID и данные результата input.
-	// Возвращает: nil при успехе или ошибку; ответы на вопросы этот метод не сохраняет.
-	AddProfilePsycho(ctx context.Context, profileID int64, psycho *model.ProfilePsychoInput) error
-	// GetByUserIDCurrentProfile загружает профиль с актуальной версией, психопрофилем, тегами и фото.
-	// Принимает: контекст ctx и ID пользователя.
-	// Возвращает: профиль или ошибку; при отсутствии — model.ErrNotFound.
-	GetByUserIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error)
-	// GetShortProfile получает краткий профиль, вычисляет возраст и URL главного фото.
-	// Принимает: контекст ctx и ID пользователя userID.
-	// Возвращает: краткий профиль или ошибку; при отсутствии профиля — model.ErrProfileRequired.
-	GetShortProfile(ctx context.Context, userID int64) (*model.ProfileShort, error)
+type PhotoStorage interface {
+	// Save сохраняет файл и возвращает его ключ в хранилище.
+	Save(ctx context.Context, data []byte, ext string) (key string, err error)
+	Delete(ctx context.Context, key string) error
 }
 
 type ProfileRepository interface {
-	// GetByIDCurrentProfile загружает актуальное состояние профиля в согласованном снимке БД.
-	// Принимает: контекст ctx и ID профиля id.
-	// Возвращает: профиль с версией, психопрофилем, тегами и фото либо ошибку, включая model.ErrNotFound.
-	GetByIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error)
-	// GetByUserIDCurrentProfile загружает профиль с актуальной версией, психопрофилем, тегами и фото.
-	// Принимает: контекст ctx и ID пользователя.
-	// Возвращает: профиль или ошибку; при отсутствии — model.ErrNotFound.
-	GetByUserIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error)
-	// GetShortByUserID читает краткие данные профиля и ключ его главной фотографии.
-	// Принимает: контекст ctx и ID пользователя userID.
-	// Возвращает: краткий профиль без вычисления возраста и URL либо ошибку, включая model.ErrNotFound.
-	GetShortByUserID(ctx context.Context, userID int64) (*model.ProfileShort, error)
-
-	// AddProfileVersion добавляет новую версию профиля вместе с полным набором её тегов.
-	// Принимает: контекст ctx, ID профиля profileID и данные input; пустой список тегов означает версию без тегов.
-	// Возвращает: nil при успехе или ошибку; версия и теги сохраняются в одной транзакции.
-	AddProfileVersion(ctx context.Context, profileID int64, version *model.ProfileVersionInput) error
-	// AddProfilePsycho добавляет новую ревизию психопрофиля в отдельной транзакции.
-	// Принимает: контекст ctx, ID профиля profileID и данные результата input.
-	// Возвращает: nil при успехе или ошибку; ответы на вопросы этот метод не сохраняет.
-	AddProfilePsycho(ctx context.Context, profileID int64, psycho *model.ProfilePsychoInput) error
-
-	// AddProfilePhotos добавляет фотографии профиля в одной транзакции.
-	// Принимает: контекст ctx, ID профиля profileID и метаданные photos.
-	// Возвращает: nil при успехе или ошибку записи.
-	AddProfilePhotos(ctx context.Context, profileID int64, photos []model.PhotoInput) error
-
-	// GetProfilesByCursorAndLimit читает страницу профилей по возрастанию ID пользователей, исключая самого пользователя.
-	// Принимает: контекст ctx, ID пользователя userID, положительный limit и cursor — последний ID пользователя или nil.
-	// Возвращает: профили с тегами и фото, курсор следующей страницы (nil в конце) и ошибку.
+	// GetByUserIDCurrentProfile возвращает анкету с тегами и фото или model.ErrNotFound.
+	GetByUserIDCurrentProfile(ctx context.Context, userID int64) (*model.Profile, error)
+	// PatchProfile сохраняет новую версию анкеты; ошибки model.ErrNotFound и model.ErrUnknownTag.
+	PatchProfile(ctx context.Context, userID int64, patch *model.ProfilePatch) error
+	// AddPhoto добавляет фото в конец; model.ErrPhotoLimit, если фото уже model.MaxPhotos.
+	AddPhoto(ctx context.Context, userID int64, storageKey string) error
+	// DeletePhoto удаляет фото и возвращает ключ его файла; model.ErrPhotoNotFound и model.ErrLastPhoto.
+	DeletePhoto(ctx context.Context, userID, photoID int64) (string, error)
+	// GetProfilesByCursorAndLimit возвращает страницу заполненных анкет и курсор следующей (nil в конце).
 	GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.Profile, *int64, error)
 }
 
-type ProfileServiceImpl struct {
+type ProfileService struct {
 	profileRepo      ProfileRepository
 	media            URLProvider
+	photos           PhotoStorage
 	compatibilitySvc CompatibilityService
 }
 
 // NewProfileService создаёт сервис профилей и ленты.
-// Принимает: репозиторий repo, сервис совместимости svc и поставщик URL media.
-// Возвращает: экземпляр ProfileServiceImpl.
-func NewProfileService(repo ProfileRepository, svc CompatibilityService, media URLProvider) *ProfileServiceImpl {
-	return &ProfileServiceImpl{profileRepo: repo, compatibilitySvc: svc, media: media}
+// Принимает: репозиторий repo, сервис совместимости svc, поставщик URL media и хранилище файлов photos.
+// Возвращает: экземпляр ProfileService.
+func NewProfileService(repo ProfileRepository, svc CompatibilityService, media URLProvider, photos PhotoStorage) *ProfileService {
+	return &ProfileService{profileRepo: repo, compatibilitySvc: svc, media: media, photos: photos}
 }
 
 // GetByUserIDCurrentProfile загружает профиль с актуальной версией, психопрофилем, тегами и фото.
 // Принимает: контекст ctx и ID пользователя.
 // Возвращает: профиль или ошибку; при отсутствии — model.ErrNotFound.
-func (s *ProfileServiceImpl) GetByUserIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error) {
+func (s *ProfileService) GetByUserIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error) {
 	profile, err := s.profileRepo.GetByUserIDCurrentProfile(ctx, id)
-
 	if err != nil {
 		return nil, fmt.Errorf("get user profile id=%d: %w", id, err)
 	}
-
 	return profile, nil
 }
 
-// GetShortProfile получает краткий профиль, вычисляет возраст и URL главного фото.
+// GetMyProfile получает анкету пользователя целиком, с URL фотографий.
+// Принимает: контекст ctx и ID пользователя userID.
+// Возвращает: профиль или ошибку; при отсутствии профиля — model.ErrProfileRequired.
+func (s *ProfileService) GetMyProfile(ctx context.Context, userID int64) (*model.Profile, error) {
+	profile, err := s.profileRepo.GetByUserIDCurrentProfile(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get my profile user id=%d: %w", userID, profileRequired(err))
+	}
+	if err := s.fillPhotoURLs(ctx, profile.Photos); err != nil {
+		return nil, fmt.Errorf("get my profile user id=%d: %w", userID, err)
+	}
+	return profile, nil
+}
+
+// UpdateProfile сохраняет новую версию анкеты с наложенным патчем.
+// Принимает: контекст ctx, ID пользователя userID и непустой проверенный patch.
+// Возвращает: обновлённый профиль или ошибку, включая model.ErrUnknownTag.
+func (s *ProfileService) UpdateProfile(ctx context.Context, userID int64, patch *model.ProfilePatch) (*model.Profile, error) {
+	if err := s.profileRepo.PatchProfile(ctx, userID, patch); err != nil {
+		return nil, fmt.Errorf("update profile user id=%d: %w", userID, profileRequired(err))
+	}
+	return s.GetMyProfile(ctx, userID)
+}
+
+// AddPhoto сохраняет файл и добавляет фото в конец списка анкеты.
+// Принимает: контекст ctx, ID пользователя userID и проверенный upload.
+// Возвращает: актуальный список фото или ошибку, включая model.ErrPhotoLimit.
+func (s *ProfileService) AddPhoto(ctx context.Context, userID int64, upload model.PhotoUpload) ([]model.Photo, error) {
+	key, err := s.photos.Save(ctx, upload.Data, upload.Ext)
+	if err != nil {
+		return nil, fmt.Errorf("add photo user id=%d: save file: %w", userID, err)
+	}
+
+	if err := s.profileRepo.AddPhoto(ctx, userID, key); err != nil {
+		s.deleteFile(ctx, key)
+		return nil, fmt.Errorf("add photo user id=%d: %w", userID, profileRequired(err))
+	}
+	return s.myPhotos(ctx, userID)
+}
+
+// DeletePhoto удаляет фото анкеты и его файл.
+// Принимает: контекст ctx, ID пользователя userID и ID фото photoID.
+// Возвращает: актуальный список фото или ошибку, включая model.ErrPhotoNotFound и model.ErrLastPhoto.
+func (s *ProfileService) DeletePhoto(ctx context.Context, userID, photoID int64) ([]model.Photo, error) {
+	key, err := s.profileRepo.DeletePhoto(ctx, userID, photoID)
+	if err != nil {
+		return nil, fmt.Errorf("delete photo id=%d user id=%d: %w", photoID, userID, profileRequired(err))
+	}
+	// Запись уже удалена; если файл не удалился, он просто останется сиротой
+	s.deleteFile(ctx, key)
+	return s.myPhotos(ctx, userID)
+}
+
+// Missing возвращает обязательные поля, которых не хватает анкете пользователя.
+// Принимает: контекст ctx и ID пользователя userID.
+// Возвращает: список полей (пустой - анкета заполнена) или ошибку.
+func (s *ProfileService) Missing(ctx context.Context, userID int64) ([]string, error) {
+	profile, err := s.profileRepo.GetByUserIDCurrentProfile(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("profile missing user id=%d: %w", userID, err)
+	}
+	return profile.Missing(), nil
+}
+
+func (s *ProfileService) myPhotos(ctx context.Context, userID int64) ([]model.Photo, error) {
+	profile, err := s.GetMyProfile(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return profile.Photos, nil
+}
+
+func (s *ProfileService) fillPhotoURLs(ctx context.Context, photos []model.Photo) error {
+	for i := range photos {
+		url, err := s.media.GetURL(ctx, photos[i].StorageKey)
+		if err != nil {
+			return fmt.Errorf("photo id=%d url: %w", photos[i].ID, err)
+		}
+		photos[i].URL = url
+	}
+	return nil
+}
+
+func (s *ProfileService) deleteFile(ctx context.Context, key string) {
+	if err := s.photos.Delete(context.WithoutCancel(ctx), key); err != nil {
+		slog.Error("delete photo file", "key", key, "error", err)
+	}
+}
+
+// GetShortProfile получает краткий профиль: имя, возраст, главное фото, missing.
 // Принимает: контекст ctx и ID пользователя userID.
 // Возвращает: краткий профиль или ошибку; при отсутствии профиля — model.ErrProfileRequired.
-func (s *ProfileServiceImpl) GetShortProfile(ctx context.Context, userID int64) (*model.ProfileShort, error) {
-
-	short, err := s.profileRepo.GetShortByUserID(ctx, userID)
-	if errors.Is(err, model.ErrNotFound) {
-		return nil, fmt.Errorf("get short profile user id=%d: %w", userID, model.ErrProfileRequired)
-	}
-
+func (s *ProfileService) GetShortProfile(ctx context.Context, userID int64) (*model.ProfileShort, error) {
+	profile, err := s.GetMyProfile(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("get short profile user id=%d: %w", userID, err)
+		return nil, err
 	}
 
-	short.Age = CalculateAge(short.BirthDate, time.Now())
-	if short.MainPhotoKey != nil {
-		url, err := s.media.GetURL(ctx, *short.MainPhotoKey)
-
-		if err != nil {
-			return nil, fmt.Errorf("get short profile photo user id=%d: %w", userID, err)
-		}
-		short.MainPhotoURL = &url
+	fields := profile.CurrentVersion.ProfileFields
+	short := &model.ProfileShort{
+		UserID:        profile.UserID,
+		Name:          fields.Name,
+		Missing:       profile.Missing(),
 	}
-
+	if fields.BirthDate != nil {
+		age := model.AgeAt(*fields.BirthDate, time.Now())
+		short.Age = &age
+	}
+	if len(profile.Photos) > 0 {
+		short.MainPhotoURL = &profile.Photos[0].URL
+	}
 	return short, nil
 }
 
 // GetNextFeed формирует страницу анкет с возрастом, URL фото и совместимостью при наличии обоих векторов.
 // Принимает: контекст ctx, ID пользователя userID, limit от 1 до 10 и необязательный cursor.
 // Возвращает: страницу ленты или ошибку, включая model.ErrInvalidFeedRequest и model.ErrProfileRequired.
-func (s *ProfileServiceImpl) GetNextFeed(ctx context.Context, userID int64, limit int, cursor *int64) (*model.FeedPage, error) {
+func (s *ProfileService) GetNextFeed(ctx context.Context, userID int64, limit int, cursor *int64) (*model.FeedPage, error) {
 
 	if userID <= 0 || limit < 1 || limit > 10 || (cursor != nil && *cursor <= 0) {
 		return nil, fmt.Errorf("%w: invalid user ID, limit or cursor", model.ErrInvalidFeedRequest)
 	}
 
 	userProfile, err := s.profileRepo.GetByUserIDCurrentProfile(ctx, userID)
-	if errors.Is(err, model.ErrNotFound) {
-		return nil, fmt.Errorf("get feed user id=%d: %w", userID, model.ErrProfileRequired)
-	}
-
 	if err != nil {
-		return nil, fmt.Errorf("get feed viewer profile: %w", err)
+		return nil, fmt.Errorf("get feed viewer profile: %w", profileRequired(err))
 	}
 
-	if userProfile == nil {
-		return nil, fmt.Errorf("get feed: viewer profile is nil")
+	if len(userProfile.Missing()) > 0 {
+		return nil, fmt.Errorf("get feed user id=%d: profile incomplete: %w", userID, model.ErrProfileRequired)
 	}
 	userVector, userHasTest := feedBigFive(userProfile.CurrentPsycho)
 	profiles, nextCursor, err := s.profileRepo.GetProfilesByCursorAndLimit(ctx, userID, limit, cursor)
@@ -145,6 +193,12 @@ func (s *ProfileServiceImpl) GetNextFeed(ctx context.Context, userID int64, limi
 
 	page := &model.FeedPage{Items: make([]model.FeedItem, 0, len(profiles)), NextCursor: nextCursor}
 	for _, profile := range profiles {
+		// SQL уже отбирает заполненные анкеты; проверка страхует от расхождения
+		// SQL-фильтра с Missing, иначе ниже разыменовался бы nil
+		if missing := profile.Missing(); len(missing) > 0 {
+			slog.Warn("feed: incomplete profile passed SQL filter", "user_id", profile.UserID, "missing", missing)
+			continue
+		}
 
 		profileVector, candidateHasTest := feedBigFive(profile.CurrentPsycho)
 		var compatibilityRes *float64
@@ -156,11 +210,14 @@ func (s *ProfileServiceImpl) GetNextFeed(ctx context.Context, userID int64, limi
 			compatibilityRes = &compatibility
 		}
 
+		// В ленту попадают только заполненные анкеты, обязательные поля заданы
+		fields := profile.CurrentVersion.ProfileFields
 		item := model.FeedItem{
-			UserID: profile.UserID, Name: profile.Name,
-			Age:           CalculateAge(profile.CurrentVersion.BirthDate, time.Now()),
-			AboutMe:       profile.CurrentVersion.AboutMe,
-			DatingIntent:  profile.CurrentVersion.DatingGoal,
+			UserID:        profile.UserID,
+			Name:          *fields.Name,
+			Age:           model.AgeAt(*fields.BirthDate, time.Now()),
+			AboutMe:       fields.AboutMe,
+			DatingGoal:    *fields.DatingGoal,
 			Compatibility: compatibilityRes,
 			Tags:          make([]string, 0, len(profile.Tags)),
 			Photos:        make([]model.FeedPhoto, 0, len(profile.Photos)),
@@ -187,15 +244,13 @@ func (s *ProfileServiceImpl) GetNextFeed(ctx context.Context, userID int64, limi
 	return page, nil
 }
 
-// CalculateAge вычисляет число полных лет на заданную дату.
-// Принимает: дату рождения birthDate и дату расчёта today.
-// Возвращает: возраст в годах с учётом наступления дня рождения.
-func CalculateAge(birthDate, today time.Time) int {
-	age := today.Year() - birthDate.Year()
-	if today.Month() < birthDate.Month() || (today.Month() == birthDate.Month() && today.Day() < birthDate.Day()) {
-		age--
+// profileRequired переводит отсутствие анкеты в ошибку, которую видит клиент (409 PROFILE_REQUIRED).
+// Остальные ошибки возвращает без изменений.
+func profileRequired(err error) error {
+	if errors.Is(err, model.ErrNotFound) {
+		return model.ErrProfileRequired
 	}
-	return age
+	return err
 }
 
 // feedBigFive извлекает все пять координат из психопрофиля.
@@ -211,14 +266,4 @@ func feedBigFive(psycho *model.ProfilePsycho) (*model.BigFive, bool) {
 		Extraversion: psycho.Extraversion, Agreeableness: psycho.Agreeableness,
 		Neuroticism: psycho.Neuroticism,
 	}, true
-}
-
-// AddProfilePsycho добавляет новую ревизию психопрофиля в отдельной транзакции.
-// Принимает: контекст ctx, ID профиля profileID и данные результата input.
-// Возвращает: nil при успехе или ошибку; ответы на вопросы этот метод не сохраняет.
-func (s *ProfileServiceImpl) AddProfilePsycho(ctx context.Context, profileID int64, psycho *model.ProfilePsychoInput) error {
-	if err := s.profileRepo.AddProfilePsycho(ctx, profileID, psycho); err != nil {
-		return fmt.Errorf("add profile psycho profile id=%d: %w", profileID, err)
-	}
-	return nil
 }

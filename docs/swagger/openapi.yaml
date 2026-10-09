@@ -10,40 +10,26 @@ paths:
     post:
       summary: Зарегистрировать пользователя
       description: >-
-        Данные анкеты и выбранные на пятом шаге фотографии передаются вместе
-        при завершении регистрации. Каждый файл передаётся отдельной частью
-        multipart/form-data с одинаковым именем photos. Порядок частей photos
-        задаёт порядок фотографий в профиле. Требуется от 1 до 6 фотографий.
-        Отсутствие photos, null и пустой массив недопустимы.
+        Создаёт аккаунт по почте и паролю, пустую анкету и сессию. Анкета и фото
+        заполняются после регистрации на онбординге через PATCH /api/v1/profile/me
+        и POST /api/v1/profile/me/photos. В ответе missing перечисляет все
+        обязательные поля анкеты.
       requestBody:
         required: true
         content:
-          multipart/form-data:
+          application/json:
             schema:
               type: object
-              required:
-                - name
-                - email
-                - password
-                - birth_date
-                - sex
-                - search_sex
-                - dating_intent
-                - search_age_from
-                - search_age_to
-                - photos
+              additionalProperties: false
+              required: [email, password]
               properties:
                 email:
                   type: string
                   format: email
-                  minLength: 1
                   maxLength: 254
-                  pattern: "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$"
                   description: >-
-                    Обязательный email. Перед проверкой сервер удаляет Unicode-пробелы по краям
-                    и приводит регистр к нижнему. Ограничения применяются после нормализации.
-                    Формат должен соответствовать pattern; домен содержит хотя бы одну точку.
-                    Внутренние пробелы и кириллица не допускаются.
+                    Сервер обрезает пробелы по краям и приводит регистр к нижнему,
+                    ограничения проверяются после нормализации.
                   example: alex@example.com
                 password:
                   type: string
@@ -51,225 +37,34 @@ paths:
                   writeOnly: true
                   minLength: 8
                   maxLength: 128
-                  description: >-
-                    Обязательный пароль длиной 8–128 Unicode-символов (кодовых точек).
-                    Нужны хотя бы одна Unicode-буква и одна десятичная
-                    Unicode-цифра. Заглавные буквы и спецсимволы необязательны.
-                    Пробелы не обрезаются, регистр не меняется. Дополнительно при хешировании
-                    bcrypt отклоняет пароль длиннее 72 байт UTF-8, даже если проверка длины
-                    в символах пройдена.
-                  x-max-utf8-bytes: 72
-                  x-frontend-validation:
-                    pattern: '(?=[\s\S]*\p{L})(?=[\s\S]*\p{Nd})'
-                    flags: u
+                  description: Не короче 8 символов, хотя бы одна буква и одна цифра. Пробелы не обрезаются.
                   example: qwerty123
-                name:
-                  type: string
-                  minLength: 1
-                  maxLength: 64
-                  description: >-
-                    Обязательное имя. Перед проверкой сервер обрезает пробелы по краям
-                    и заменяет несколько пробелов подряд одним. После этого длина
-                    1–64 Unicode-символа (кодовых точек). Допускаются буквы любого алфавита,
-                    диакритические знаки сразу после буквы и разделители: пробел, дефис,
-                    апостроф ('), точка. Начинается с буквы, заканчивается буквой или точкой,
-                    два разделителя подряд недопустимы.
-                  x-frontend-validation:
-                    pattern: "^\\p{L}\\p{M}*(?:[ '.\\-]?\\p{L}\\p{M}*)*\\.?$"
-                    flags: u
-                  example: Robert Downey Jr.
-                about_me:
-                  type: string
-                  nullable: true
-                  description: >-
-                    Необязательное описание. Если значение null на клиенте, часть about_me
-                    не отправляется. Пустая строка допустима и сохраняется как отсутствие описания.
-                    Пробелы не обрезаются.
-                  example: Люблю путешествия и настольные игры.
-                birth_date:
-                  type: string
-                  format: date
-                  pattern: '^\d{4}-\d{2}-\d{2}$'
-                  description: >-
-                    Обязательная существующая календарная дата строго в формате YYYY-MM-DD,
-                    без времени и пробелов. Одного совпадения с pattern недостаточно:
-                    например, 2005-02-30 недопустима. На текущую серверную дату должно
-                    исполниться 18 лет; будущие даты отклоняются. Максимальный возраст
-                    валидатором не ограничен. Для родившихся 29 февраля восемнадцатилетие
-                    в невисокосном году считается наступившим 1 марта.
-                  example: '2005-08-17'
-                sex:
-                  type: string
-                  enum:
-                    - male
-                    - female
-                  description: >-
-                    Пол пользователя. Обязательное поле. Допустимо только точное значение
-                    из enum; регистр и пробелы не нормализуются.
-                search_sex:
-                  type: string
-                  enum:
-                    - male
-                    - female
-                    - all
-                  description: >-
-                    Пол для поиска; all означает любой. Обязательное поле. Допустимо только точное значение
-                    из enum; регистр и пробелы не нормализуются.
-                dating_intent:
-                  type: string
-                  enum:
-                    - Ищу общение
-                    - Ищу половинку
-                    - Ищу встречи
-                  description: >-
-                    Цель знакомства; передаётся русская строка из enum. Обязательное поле. Допустимо только точное значение
-                    из enum; регистр и пробелы не нормализуются.
-                search_age_from:
-                  type: integer
-                  minimum: 18
-                  maximum: 100
-                  description: >-
-                    Нижняя граница возраста поиска. Обязательное целое число от 18 до 100 включительно.
-                    В multipart передаётся текстовым десятичным целым, без дроби и экспоненты;
-                    пробелы по краям удаляются перед разбором. Дополнительно search_age_to
-                    должен быть не меньше search_age_from; равенство допустимо.
-                  example: 18
-                search_age_to:
-                  type: integer
-                  minimum: 18
-                  maximum: 100
-                  description: >-
-                    Верхняя граница возраста поиска. Обязательное целое число от 18 до 100 включительно.
-                    В multipart передаётся текстовым десятичным целым, без дроби и экспоненты;
-                    пробелы по краям удаляются перед разбором. Дополнительно search_age_to
-                    должен быть не меньше search_age_from; равенство допустимо.
-                  example: 30
-                photos:
-                  type: array
-                  minItems: 1
-                  maxItems: 6
-                  description: >-
-                    Обязательный массив от 1 до 6 файлов. Отсутствие, null и пустой массив
-                    недопустимы. Каждый файл передаётся отдельной частью photos, не URL и не Base64.
-                    Допустимы JPEG, PNG и WebP. Пустой файл отклоняется как неподдерживаемый формат.
-                  items:
-                    type: string
-                    format: binary
-                    x-max-size-bytes: 5242880
-                tags:
-                  type: array
-                  minItems: 0
-                  maxItems: 10
-                  uniqueItems: true
-                  description: >-
-                    Необязательный список, максимум 10 тегов. Для пустого списка или null
-                    на клиенте части tags не отправляются. Каждый тег передаётся отдельной
-                    текстовой частью tags. Тег содержит 1–30 Unicode-символов (кодовых точек)
-                    и не состоит только из Unicode-пробелов. Пробелы не обрезаются.
-                    Дубликаты запрещены по точному совпадению строк с учётом регистра и пробелов:
-                    «спорт», «Спорт» и « спорт » считаются разными тегами.
-                  items:
-                    type: string
-                    minLength: 1
-                    maxLength: 30
-                  example:
-                    - sport
-                    - gaming
       responses:
         '201':
-          description: Пользователь зарегистрирован, сессия открыта. Если открыть сессию не удалось, cookies не выставляются - клиент должен отправить пользователя на логин.
+          description: >-
+            Пользователь зарегистрирован, сессия открыта. Если открыть сессию не удалось,
+            cookies не выставляются - клиент должен отправить пользователя на логин.
           headers:
             Set-Cookie:
               $ref: '#/components/headers/SessionCookies'
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - user_id
-                  - profile_completed
-                properties:
-                  user_id:
-                    minimum: 1
-                    type: integer
-                    format: int64
-                    example: 12
-                  profile_completed:
-                    type: boolean
-                    example: false
+                $ref: '#/components/schemas/AuthResponse'
         '400':
-          description: Некорректные данные
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - error
-                properties:
-                  error:
-                    type: object
-                    required:
-                      - code
-                      - message
-                    properties:
-                      code:
-                        type: string
-                        example: VALIDATION_ERROR
-                      message:
-                        type: string
-                        example: Некорректные данные
-                      fields:
-                        type: object
-                        description: >-
-                          Ошибки по полям тела запроса: ключ - имя поля, значение - текст ошибки.
-                          Отсутствует, если ошибка не относится к конкретным полям.
-                        additionalProperties:
-                          type: string
-                        example:
-                          email: некорректный email
-                          search_age_to: верхняя граница возраста не может быть меньше нижней
+          $ref: '#/components/responses/ValidationError'
         '409':
           description: Почта уже занята
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - error
-                properties:
-                  error:
-                    type: object
-                    required:
-                      - code
-                      - message
-                    properties:
-                      code:
-                        type: string
-                        example: EMAIL_ALREADY_EXISTS
-                      message:
-                        type: string
-                        example: Почта уже занята
-        '413':
-          description: Тело запроса превышает 32505856 байт (31 МиБ), включая все файлы, поля и multipart-разделители.
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - error
-                properties:
-                  error:
-                    type: object
-                    required:
-                      - code
-                      - message
-                    properties:
-                      code:
-                        type: string
-                        example: PAYLOAD_TOO_LARGE
-                      message:
-                        type: string
-                        example: Слишком большой запрос
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: EMAIL_ALREADY_EXISTS
+                  message: Почта уже занята
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -322,19 +117,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - user_id
-                  - profile_completed
-                properties:
-                  user_id:
-                    minimum: 1
-                    type: integer
-                    format: int64
-                    example: 12
-                  profile_completed:
-                    type: boolean
-                    example: true
+                $ref: '#/components/schemas/AuthResponse'
         '401':
           description: Неверная почта или пароль
           content:
@@ -356,48 +139,6 @@ paths:
                       message:
                         type: string
                         example: Неверная почта или пароль
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  /api/v1/auth/email/check:
-    post:
-      summary: Проверить, свободна ли почта для регистрации
-      description: >-
-        Авторизация не нужна. Email нормализуется и проверяется так же, как при
-        регистрации. Ответ раскрывает, зарегистрирован ли email.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - email
-              properties:
-                email:
-                  type: string
-                  format: email
-                  minLength: 1
-                  maxLength: 254
-                  description: >-
-                    Перед проверкой сервер удаляет пробелы по краям и приводит регистр к нижнему.
-                  example: alex@example.com
-      responses:
-        '200':
-          description: Результат проверки
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - available
-                properties:
-                  available:
-                    type: boolean
-                    description: true, если почта свободна
-                    example: true
-        '400':
-          $ref: '#/components/responses/ValidationError'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -464,10 +205,11 @@ paths:
       summary: Получить текущий тест для расчёта совместимости
       description: >-
         Требуется действующая сессия; пользователь определяется middleware.
-        Сервер возвращает текущий TIPI-тест, заданный настройкой CURRENT_TEST_ID.
+        Сервер возвращает единственный тест TIPI. Он встроен в бинарник
+        (internal/psychotest/tipi.json), в БД не хранится, test_id всегда '1'.
         Клиент отображает вопросы и answer_options в полученном порядке,
         не фиксируя число вопросов или шкалу. GET не создаёт прохождение.
-        test_id определяет неизменяемые вопросы, шкалу и правила расчёта.
+        ID вопросов — номера пунктов TIPI от '1' до '10'.
       responses:
         '200':
           description: Полный тест с вопросами и общей шкалой ответов.
@@ -477,16 +219,6 @@ paths:
                 $ref: '#/components/schemas/CompatibilityTest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: Текущий опубликованный тест не настроен.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TestError'
-              example:
-                error:
-                  code: ACTIVE_TEST_NOT_FOUND
-                  message: Текущий тест не настроен
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -498,9 +230,8 @@ paths:
       description: >-
         Пользователь определяется middleware, его профиль находится сервером.
         Возвращает текущие результаты пользователя в том же формате, что и
-        POST /api/v1/tests/{test_id}/results. В отличие от POST, big_five — это
-        показатели профиля, сглаженные по всем прохождениям; personality_type —
-        тип, сохранённый при последнем прохождении.
+        POST /api/v1/tests/{test_id}/results: big_five и personality_type последнего
+        прохождения. Повторное прохождение заменяет результат, прошлые попытки не смешиваются.
       responses:
         '200':
           description: Текущие результаты пользователя по тестам.
@@ -529,7 +260,7 @@ paths:
               example:
                 error:
                   code: PROFILE_REQUIRED
-                  message: Для прохождения теста необходимо создать профиль
+                  message: Сначала необходимо заполнить анкету
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -541,8 +272,8 @@ paths:
       description: >-
         Пользователь определяется middleware, его профиль находится сервером.
         Клиент передаёт только ответы; методика, шкала и правила расчёта определяются
-        сервером по test_id из GET. Принимаются ответы только на текущий тест;
-        если он сменился, необходимо заново получить тест через GET.
+        сервером. Тест в приложении один, test_id всегда '1'; другой test_id
+        даёт 404 TEST_NOT_FOUND.
         Требуется ровно один допустимый ответ на каждый вопрос, без повторов и чужих ID.
         Ответы и пять показателей Big Five сохраняются атомарно в новом прохождении.
         Эти показатели используются сервисом совместимости при формировании feed;
@@ -563,9 +294,9 @@ paths:
               $ref: '#/components/schemas/TestAnswers'
             example:
               answers:
-                - question_id: '101'
+                - question_id: '1'
                   value: 4
-                - question_id: '102'
+                - question_id: '2'
                   value: 2
       responses:
         '201':
@@ -584,7 +315,7 @@ paths:
                 $ref: '#/components/schemas/TestError'
               example:
                 error:
-                  code: INVALID_REQUEST
+                  code: VALIDATION_ERROR
                   message: Некорректный JSON, типы, неизвестные поля или формат test_id.
         '404':
           description: Тест не найден или больше не является текущим.
@@ -597,7 +328,7 @@ paths:
                   code: TEST_NOT_FOUND
                   message: Тест не найден или больше не является текущим.
         '409':
-          description: Для прохождения теста необходимо создать профиль.
+          description: У пользователя нет анкеты.
           content:
             application/json:
               schema:
@@ -605,7 +336,7 @@ paths:
               example:
                 error:
                   code: PROFILE_REQUIRED
-                  message: Для прохождения теста необходимо создать профиль.
+                  message: Сначала необходимо заполнить анкету
         '415':
           description: Требуется Content-Type application/json.
           content:
@@ -635,8 +366,9 @@ paths:
         - cookieAuth: []
       summary: Краткие данные своей анкеты
       description: >-
-        Имя и главное фото (минимальная позиция) текущего пользователя для
-        отображения в шапке, аватарке и т.п.
+        Имя, возраст и главное фото для шапки и аватарки, а также состояние онбординга.
+        Если missing не пуст, клиент ведёт пользователя на онбординг.
+        Пройден ли психотест, видно по GET /api/v1/tests/results/me (404 - не пройден).
       responses:
         '200':
           description: Данные получены
@@ -644,52 +376,178 @@ paths:
             application/json:
               schema:
                 type: object
-                required:
-                  - user_id
-                  - name
-                  - age
-                  - photo_url
+                required: [user_id, name, age, photo_url, missing]
                 properties:
                   user_id:
-                    minimum: 1
                     type: integer
                     format: int64
                     example: 42
                   name:
                     type: string
+                    nullable: true
                     example: Аня
                   age:
-                    minimum: 18
                     type: integer
+                    nullable: true
                     example: 22
                   photo_url:
                     type: string
                     nullable: true
-                    description: URL главного фото. null, если фото не загружено.
+                    description: URL главного фото (photos[0]). null, если фото нет.
                     example: http://localhost:8080/cats/cat-1.jpg
+                  missing:
+                    $ref: '#/components/schemas/Missing'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: Анкета текущего пользователя не найдена
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/profile/me:
+    get:
+      security:
+        - cookieAuth: []
+      summary: Своя анкета целиком
+      description: Используется онбордингом и редактированием профиля. Незаполненные поля - null.
+      responses:
+        '200':
+          description: Анкета
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - error
-                properties:
-                  error:
-                    type: object
-                    required:
-                      - code
-                      - message
-                    properties:
-                      code:
-                        type: string
-                        example: PROFILE_NOT_FOUND
-                      message:
-                        type: string
-                        example: Анкета не найдена
+                $ref: '#/components/schemas/Profile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      security:
+        - cookieAuth: []
+      summary: Изменить анкету
+      description: >-
+        Любое непустое подмножество полей; отсутствующие поля не меняются.
+        Каждый шаг онбординга - один такой запрос, «пропустить» - ничего не отправлять.
+        Каждый успешный вызов создаёт новую версию анкеты. Обязательные поля очистить
+        нельзя; about_me очищается через null или пустую строку; tags заменяются целиком.
+        search_age_from и search_age_to передаются только вместе.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfilePatch'
+            example:
+              name: Аня
+              birth_date: '2003-05-01'
+              sex: female
+      responses:
+        '200':
+          description: Анкета после изменения
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/profile/me/photos:
+    post:
+      security:
+        - cookieAuth: []
+      summary: Загрузить фото
+      description: >-
+        Одно фото в части photo multipart/form-data, добавляется в конец списка.
+        Загружается сразу при выборе; ошибка касается только этого фото.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+                  description: JPEG, PNG или WebP, не больше 5 МБ.
+      responses:
+        '201':
+          description: Актуальный список фото
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Photos'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: В анкете уже 6 фото
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: PHOTO_LIMIT
+                  message: Можно загрузить не больше 6 фотографий
+        '413':
+          description: Слишком большой запрос
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/profile/me/photos/{photo_id}:
+    delete:
+      security:
+        - cookieAuth: []
+      summary: Удалить фото
+      description: >-
+        Следующие фото сдвигаются на его место; если удалена главная, главной
+        становится следующая. Единственное фото заполненной анкеты удалить нельзя.
+      parameters:
+        - name: photo_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        '200':
+          description: Актуальный список фото
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Photos'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Фото не найдено в анкете
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: PHOTO_NOT_FOUND
+                  message: Фото не найдено
+        '409':
+          description: Это единственное фото заполненной анкеты
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: LAST_PHOTO
+                  message: Нельзя удалить единственное фото заполненной анкеты
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -744,7 +602,7 @@ paths:
                         - name
                         - age
                         - about_me
-                        - dating_intent
+                        - dating_goal
                         - compatibility
                         - tags
                         - photos
@@ -766,14 +624,8 @@ paths:
                           nullable: true
                           description: Описание пользователя в анкете. null, если описание не задано.
                           example: Люблю путешествия и настольные игры.
-                        dating_intent:
-                          type: string
-                          description: Цель знакомства пользователя в карточке.
-                          enum:
-                            - Ищу общение
-                            - Ищу половинку
-                            - Ищу встречи
-                          example: Ищу половинку
+                        dating_goal:
+                          $ref: '#/components/schemas/DatingGoal'
                         compatibility:
                           type: number
                           format: double
@@ -796,10 +648,7 @@ paths:
                           uniqueItems: true
                           type: array
                           items:
-                            type: string
-                            minLength: 1
-                            maxLength: 30
-                            pattern: '\S'
+                            $ref: '#/components/schemas/TagKey'
                           example: [sport]
                         photos:
                           type: array
@@ -849,28 +698,9 @@ paths:
                         example: PROFILE_REQUIRED
                       message:
                         type: string
-                        example: Для просмотра ленты необходимо создать профиль
+                        example: Сначала необходимо заполнить анкету
         '500':
-          description: Не удалось загрузить ленту из-за ошибки сервера
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - error
-                properties:
-                  error:
-                    type: object
-                    required:
-                      - code
-                      - message
-                    properties:
-                      code:
-                        type: string
-                        example: FEED_LOAD_FAILED
-                      message:
-                        type: string
-                        example: Не удалось загрузить ленту из-за ошибки сервера
+          $ref: '#/components/responses/InternalServerError'
 
   /api/v1/feed/swipe:
     post:
@@ -941,6 +771,150 @@ components:
         type: string
         example: access_token=eyJhbGciOi...; Path=/; HttpOnly; Secure; SameSite=Lax
   schemas:
+    DatingGoal:
+      type: string
+      description: Ключ цели знакомства; подписи хранит клиент.
+      enum: [relationship, friendship, casual]
+      example: relationship
+    Missing:
+      type: array
+      description: >-
+        Обязательные поля анкеты, которых не хватает, в порядке шагов онбординга.
+        Пустой массив - анкета заполнена и показывается в ленте. Тест сюда не входит.
+      items:
+        type: string
+        enum: [name, birth_date, sex, dating_goal, search_sex, search_age, photos]
+      example: [search_sex, search_age, photos]
+    AuthResponse:
+      type: object
+      required: [user_id, missing]
+      properties:
+        user_id:
+          type: integer
+          format: int64
+          example: 12
+        missing:
+          $ref: '#/components/schemas/Missing'
+    Photo:
+      type: object
+      required: [id, url]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 7
+        url:
+          type: string
+          example: http://localhost:8080/cats/cat-1.jpg
+    Photos:
+      type: object
+      required: [photos]
+      properties:
+        photos:
+          type: array
+          maxItems: 6
+          description: Фото в порядке отображения; photos[0] - главная.
+          items:
+            $ref: '#/components/schemas/Photo'
+    Profile:
+      type: object
+      required: [user_id, name, birth_date, age, sex, dating_goal, about_me, search_sex,
+        search_age_from, search_age_to, tags, photos, missing]
+      properties:
+        user_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          nullable: true
+        birth_date:
+          type: string
+          format: date
+          nullable: true
+        age:
+          type: integer
+          nullable: true
+        sex:
+          type: string
+          enum: [male, female]
+          nullable: true
+        dating_goal:
+          allOf:
+            - $ref: '#/components/schemas/DatingGoal'
+          nullable: true
+        about_me:
+          type: string
+          nullable: true
+        search_sex:
+          type: string
+          enum: [male, female, all]
+          nullable: true
+        search_age_from:
+          type: integer
+          nullable: true
+        search_age_to:
+          type: integer
+          nullable: true
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/TagKey'
+        photos:
+          type: array
+          items:
+            $ref: '#/components/schemas/Photo'
+        missing:
+          $ref: '#/components/schemas/Missing'
+    ProfilePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          maxLength: 64
+          description: Пробелы по краям обрезаются, внутренние схлопываются.
+        birth_date:
+          type: string
+          format: date
+          description: Пользователю должно быть не меньше 18 лет.
+        sex:
+          type: string
+          enum: [male, female]
+        dating_goal:
+          $ref: '#/components/schemas/DatingGoal'
+        about_me:
+          type: string
+          nullable: true
+          maxLength: 1000
+          description: null или пустая строка очищают описание.
+        search_sex:
+          type: string
+          enum: [male, female, all]
+        search_age_from:
+          type: integer
+          minimum: 18
+          maximum: 100
+        search_age_to:
+          type: integer
+          minimum: 18
+          maximum: 100
+          description: Не меньше search_age_from.
+        tags:
+          type: array
+          maxItems: 10
+          uniqueItems: true
+          description: Заменяет набор тегов целиком.
+          items:
+            $ref: '#/components/schemas/TagKey'
+    TagKey:
+      type: string
+      description: >-
+        Ключ тега из фиксированного справочника (таблица tag, миграция 000002).
+        Бэкенд справочник не изменяет.
+      enum: [coffee, books, music, hiking, bicycle, travel, photo, board_games,
+        cooking, running, painting, movies, concerts, animals, sport]
+      example: coffee
     TestIdentifier:
       type: string
       pattern: '^[1-9][0-9]*$'
@@ -1096,6 +1070,16 @@ components:
                     type: string
                     enum: [MISSING_ANSWER, DUPLICATE_QUESTION, QUESTION_NOT_IN_TEST, VALUE_OUT_OF_RANGE]
   responses:
+    UnsupportedMediaType:
+      description: Тело должно быть application/json
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TestError'
+          example:
+            error:
+              code: UNSUPPORTED_MEDIA_TYPE
+              message: Требуется Content-Type application/json
     Unauthorized:
       description: >-
         Access-токен отсутствует, недействителен или истёк. Клиенту нужно вызвать

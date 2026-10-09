@@ -1,15 +1,12 @@
 package handler
 
 import (
-	"bytes"
 	"context"
 	. "dating-app/internal/handler"
 	"dating-app/internal/handler/dto"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -30,7 +27,6 @@ type fakeAuth struct {
 	refresh  string
 	res      model.AuthResult
 	err      error
-	taken    bool
 }
 
 func (f *fakeAuth) Register(_ context.Context, in model.RegisterInput) (model.AuthResult, error) {
@@ -53,11 +49,6 @@ func (f *fakeAuth) Refresh(_ context.Context, refreshToken string) (model.Tokens
 	return f.res.Tokens, f.err
 }
 
-func (f *fakeAuth) IsEmailAvailable(_ context.Context, email string) (bool, error) {
-	f.called, f.email = true, email
-	return !f.taken, f.err
-}
-
 var testTokens = model.Tokens{
 	Access:           "acc",
 	AccessExpiresAt:  time.Now().Add(15 * time.Minute),
@@ -69,6 +60,7 @@ var testTokens = model.Tokens{
 func do(t *testing.T, h http.HandlerFunc, path, body string, cookies ...*http.Cookie) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	for _, c := range cookies {
 		req.AddCookie(c)
 	}
@@ -115,78 +107,12 @@ func checkSessionCookies(t *testing.T, rec *httptest.ResponseRecorder) {
 	}
 }
 
-var (
-	jpegData = []byte("\xff\xd8\xff\xe0 jpeg")
-	pngData  = []byte("\x89PNG\r\n\x1a\n png")
-)
-
-type registerForm struct {
-	fields map[string][]string
-	photos [][]byte
-}
-
-func validRegisterForm() registerForm {
-	return registerForm{
-		fields: map[string][]string{
-			"name":            {"alex"},
-			"email":           {"  alex@example.com "},
-			"password":        {"qwerty123"},
-			"birth_date":      {"2000-01-01"},
-			"sex":             {"male"},
-			"search_sex":      {"female"},
-			"dating_intent":   {"Ищу встречи"},
-			"search_age_from": {"18"},
-			"search_age_to":   {"30"},
-			"about_me":        {"Люблю горы"},
-			"tags":            {"sport", "music"},
-		},
-		photos: [][]byte{jpegData, pngData},
-	}
-}
-
-func multipartBody(t *testing.T, form registerForm) (*bytes.Buffer, string) {
+func doRegister(t *testing.T, svc *fakeAuth, body string) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	for name, values := range form.fields {
-		for _, v := range values {
-			if err := mw.WriteField(name, v); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	for i, data := range form.photos {
-		fw, err := mw.CreateFormFile("photos", fmt.Sprintf("photo%d", i))
-		if err != nil {
-			t.Fatal(err)
-		}
-		fw.Write(data)
-	}
-	if err := mw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return &buf, mw.FormDataContentType()
+	return do(t, NewAuthHandler(svc, true).Register, "/api/v1/auth/register", body)
 }
 
-func doRegisterRaw(t *testing.T, svc *fakeAuth, body io.Reader, contentType string) (*httptest.ResponseRecorder, map[string]any) {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", body)
-	req.Header.Set("Content-Type", contentType)
-	rec := httptest.NewRecorder()
-	NewAuthHandler(svc, true).Register(rec, req)
-
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("response is not JSON: %q", rec.Body.String())
-	}
-	return rec, resp
-}
-
-func doRegister(t *testing.T, svc *fakeAuth, form registerForm) (*httptest.ResponseRecorder, map[string]any) {
-	t.Helper()
-	body, contentType := multipartBody(t, form)
-	return doRegisterRaw(t, svc, body, contentType)
-}
+const validRegisterBody = `{"email": "  Alex@Example.com ", "password": "qwerty123"}`
 
 func errFields(resp map[string]any) map[string]any {
 	e, _ := resp["error"].(map[string]any)
@@ -195,138 +121,58 @@ func errFields(resp map[string]any) map[string]any {
 }
 
 func TestRegisterHandler_Created(t *testing.T) {
-	svc := &fakeAuth{res: model.AuthResult{UserID: 12, Tokens: testTokens}}
-	rec, resp := doRegister(t, svc, validRegisterForm())
+	svc := &fakeAuth{res: model.AuthResult{UserID: 12, Missing: []string{"name", "photos"}, Tokens: testTokens}}
+	rec, resp := doRegister(t, svc, validRegisterBody)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
 	}
-	if resp["user_id"] != float64(12) || resp["profile_completed"] != false {
+	if resp["user_id"] != float64(12) || !reflect.DeepEqual(resp["missing"], []any{"name", "photos"}) {
 		t.Errorf("body = %v", resp)
 	}
-	if svc.got.Email != "alex@example.com" {
-		t.Errorf("email must be trimmed, got %q", svc.got.Email)
-	}
-	if svc.got.DatingGoal != model.DatingGoalCasual {
-		t.Errorf("dating goal = %q, want %q", svc.got.DatingGoal, model.DatingGoalCasual)
-	}
-	if svc.got.BirthDate.Year() != 2000 || svc.got.AboutMe != "Люблю горы" || svc.got.SearchAgeTo != 30 {
+	if svc.got != (model.RegisterInput{Email: "alex@example.com", Password: "qwerty123"}) {
 		t.Errorf("input = %+v", svc.got)
-	}
-	if !reflect.DeepEqual(svc.got.Tags, []string{"sport", "music"}) {
-		t.Errorf("tags = %v", svc.got.Tags)
-	}
-	wantPhotos := []model.PhotoUpload{{Data: jpegData, Ext: ".jpg"}, {Data: pngData, Ext: ".png"}}
-	if !reflect.DeepEqual(svc.got.Photos, wantPhotos) {
-		t.Errorf("photos = %+v", svc.got.Photos)
 	}
 	checkSessionCookies(t, rec)
 }
 
-func TestRegisterHandler_OptionalFields(t *testing.T) {
-	form := validRegisterForm()
-	delete(form.fields, "about_me")
-	delete(form.fields, "tags")
-	svc := &fakeAuth{res: model.AuthResult{UserID: 1, Tokens: testTokens}}
-	rec, _ := doRegister(t, svc, form)
-
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
-	}
-	if svc.got.AboutMe != "" || len(svc.got.Tags) != 0 {
-		t.Errorf("input = %+v", svc.got)
-	}
-}
-
-func TestRegisterHandler_PasswordTooLongForHash(t *testing.T) {
-	rec, resp := doRegister(t, &fakeAuth{err: model.ErrPasswordTooLong}, validRegisterForm())
-	if rec.Code != http.StatusBadRequest || errCode(resp) != "VALIDATION_ERROR" {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
-	}
-}
-
 func TestRegisterHandler_ValidationError(t *testing.T) {
-	svc := &fakeAuth{}
-	rec, resp := doRegister(t, svc, registerForm{fields: map[string][]string{
-		"email":           {"nope"},
-		"password":        {"123"},
-		"search_age_from": {"abc"},
-	}})
-
-	if rec.Code != http.StatusBadRequest || errCode(resp) != "VALIDATION_ERROR" {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
-	}
-	if svc.called {
-		t.Error("service must not be called on invalid input")
-	}
-	fields := errFields(resp)
-	for _, f := range []string{"email", "password", "name", "birth_date", "photos"} {
-		if _, ok := fields[f]; !ok {
-			t.Errorf("fields has no %q: %v", f, fields)
-		}
-	}
-	if fields["search_age_from"] != "должно быть целым числом" || fields["search_age_to"] != "обязательное поле" {
-		t.Errorf("search ages: %v", fields)
-	}
-}
-
-func TestRegisterHandler_InvalidPhotos(t *testing.T) {
-	tooMany := validRegisterForm()
-	tooMany.photos = [][]byte{jpegData, jpegData, jpegData, jpegData, jpegData, jpegData, jpegData}
-
-	notImage := validRegisterForm()
-	notImage.photos = [][]byte{jpegData, []byte("GIF89a not supported")}
-
-	tooBig := validRegisterForm()
-	tooBig.photos = [][]byte{append(append([]byte{}, jpegData...), make([]byte, 5<<20)...)}
-
-	noPhotos := validRegisterForm()
-	noPhotos.photos = nil
-	noPhotos.fields["photos"] = []string{"https://example.com/a.jpg"}
-
-	for name, form := range map[string]registerForm{"too many": tooMany, "not image": notImage, "too big": tooBig, "as text": noPhotos} {
+	for name, body := range map[string]string{
+		"пусто":         `{}`,
+		"плохие поля":   `{"email": "nope", "password": "123"}`,
+		"старый формат": `{"email": "a@b.ru", "password": "qwerty123", "name": "alex"}`,
+	} {
 		svc := &fakeAuth{}
-		rec, resp := doRegister(t, svc, form)
-		if rec.Code != http.StatusBadRequest || svc.called {
-			t.Errorf("%s: status = %d, called = %v", name, rec.Code, svc.called)
-		}
-		if _, ok := errFields(resp)["photos"]; !ok {
-			t.Errorf("%s: fields = %v", name, errFields(resp))
-		}
-	}
-}
-
-func TestRegisterHandler_NotMultipart(t *testing.T) {
-	for _, contentType := range []string{"application/json", "multipart/form-data"} {
-		svc := &fakeAuth{}
-		rec, resp := doRegisterRaw(t, svc, strings.NewReader(`{"name":"alex"}`), contentType)
+		rec, resp := doRegister(t, svc, body)
 		if rec.Code != http.StatusBadRequest || errCode(resp) != "VALIDATION_ERROR" || svc.called {
-			t.Errorf("%s: status = %d, resp = %v", contentType, rec.Code, resp)
+			t.Errorf("%s: status = %d, body = %s", name, rec.Code, rec.Body)
 		}
 	}
-}
 
-func TestRegisterHandler_TooLarge(t *testing.T) {
-	form := validRegisterForm()
-	big := append(append([]byte{}, jpegData...), make([]byte, 5<<20-100)...)
-	form.photos = [][]byte{big, big, big, big, big, big, big}
-
-	svc := &fakeAuth{}
-	rec, resp := doRegister(t, svc, form)
-	if rec.Code != http.StatusRequestEntityTooLarge || errCode(resp) != "PAYLOAD_TOO_LARGE" || svc.called {
-		t.Errorf("status = %d, resp = %v", rec.Code, resp)
+	_, resp := doRegister(t, &fakeAuth{}, `{"email": "nope", "password": "123"}`)
+	if got := errFields(resp); got["email"] == nil || got["password"] == nil {
+		t.Errorf("fields = %v", got)
 	}
 }
 
-func TestRegisterHandler_EmailTaken(t *testing.T) {
-	svc := &fakeAuth{err: model.ErrEmailAlreadyExists}
-	rec, resp := doRegister(t, svc, validRegisterForm())
-
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("status = %d", rec.Code)
-	}
-	if resp["error"].(map[string]any)["code"] != "EMAIL_ALREADY_EXISTS" {
-		t.Errorf("resp = %v", resp)
+func TestRegisterHandler_ServiceErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		status int
+		code   string
+	}{
+		{"почта занята", model.ErrEmailAlreadyExists, http.StatusConflict, "EMAIL_ALREADY_EXISTS"},
+		{"пароль длиннее bcrypt", model.ErrPasswordTooLong, http.StatusBadRequest, "VALIDATION_ERROR"},
+		{"сбой", errors.New("db is down"), http.StatusInternalServerError, "INTERNAL_SERVER_ERROR"},
+	} {
+		rec, resp := doRegister(t, &fakeAuth{err: tc.err}, validRegisterBody)
+		if rec.Code != tc.status || errCode(resp) != tc.code || strings.Contains(rec.Body.String(), "db is down") {
+			t.Errorf("%s: status = %d, body = %s", tc.name, rec.Code, rec.Body)
+		}
+		if len(rec.Result().Cookies()) != 0 {
+			t.Errorf("%s: cookies must not be set", tc.name)
+		}
 	}
 }
 
@@ -335,12 +181,12 @@ func TestRegisterHandler_SessionNotOpened(t *testing.T) {
 		res: model.AuthResult{UserID: 12},
 		err: fmt.Errorf("%w: redis down", model.ErrSessionNotOpened),
 	}
-	rec, resp := doRegister(t, svc, validRegisterForm())
+	rec, resp := doRegister(t, svc, validRegisterBody)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
 	}
-	if resp["user_id"] != float64(12) {
+	if resp["user_id"] != float64(12) || !reflect.DeepEqual(resp["missing"], []any{}) {
 		t.Errorf("body = %v", resp)
 	}
 	if cookies := rec.Result().Cookies(); len(cookies) != 0 {
@@ -348,86 +194,17 @@ func TestRegisterHandler_SessionNotOpened(t *testing.T) {
 	}
 }
 
-func TestRegisterHandler_InternalError(t *testing.T) {
-	svc := &fakeAuth{err: errors.New("db is down")}
-	rec, resp := doRegister(t, svc, validRegisterForm())
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d", rec.Code)
-	}
-	e := resp["error"].(map[string]any)
-	if e["code"] != "INTERNAL_SERVER_ERROR" || strings.Contains(rec.Body.String(), "db is down") {
-		t.Errorf("internal details must not leak: %s", rec.Body)
-	}
-}
-
-func validRegister() dto.RegisterRequest {
-	return dto.RegisterRequest{
-		Name:          "alex",
-		Email:         "alex@example.com",
-		Password:      "qwerty123",
-		BirthDate:     "2000-01-01",
-		Sex:           "male",
-		SearchSex:     "female",
-		DatingIntent:  "Ищу половинку",
-		SearchAgeFrom: 18,
-		SearchAgeTo:   30,
-		Tags:          []string{"sport"},
-		Photos:        []model.PhotoUpload{{Data: []byte("x"), Ext: ".jpg"}},
-	}
-}
-
-func TestRegisterRequestValidate_OK(t *testing.T) {
-	if errs := validRegister().Validate(); len(errs) != 0 {
-		t.Fatalf("unexpected errors: %v", errs)
-	}
-}
-
-func TestRegisterRequestValidate_CollectsAllFields(t *testing.T) {
-	var r dto.RegisterRequest
-	errs := r.Validate()
-
-	want := []string{"birth_date", "dating_intent", "email", "name", "password", "photos", "search_age_from", "search_age_to", "search_sex", "sex"}
-	if got := keys(errs); !reflect.DeepEqual(got, want) {
-		t.Fatalf("fields = %v, want %v", got, want)
-	}
-}
-
-func TestRegisterRequestValidate_Underage(t *testing.T) {
-	r := validRegister()
-	r.BirthDate = "2099-01-01"
-	if _, ok := r.Validate()["birth_date"]; !ok {
-		t.Fatal("expected birth_date error")
-	}
-}
-
-func TestRegisterRequestValidate_SearchAgeRange(t *testing.T) {
-	r := validRegister()
-	r.SearchAgeFrom, r.SearchAgeTo = 30, 20
-	if got := keys(r.Validate()); !reflect.DeepEqual(got, []string{"search_age_to"}) {
-		t.Fatalf("fields = %v, want [search_age_to]", got)
-	}
-}
-
-func TestRegisterRequestNormalize(t *testing.T) {
-	r := validRegister()
-	r.Name = "  Анна   Мария "
-	r.Email = "  Alex@Example.COM \n"
-	r.Password = " qwerty123 "
+func TestRegisterRequest(t *testing.T) {
+	r := dto.RegisterRequest{Email: "  Alex@Example.COM \n", Password: " qwerty123 "}
 	r.Normalize()
-
-	if r.Name != "Анна Мария" {
-		t.Errorf("name = %q", r.Name)
-	}
-
-	if r.Email != "alex@example.com" {
-		t.Errorf("email = %q", r.Email)
-	}
-	if r.Password != " qwerty123 " {
-		t.Errorf("password must not be trimmed, got %q", r.Password)
+	if r.Email != "alex@example.com" || r.Password != " qwerty123 " {
+		t.Errorf("normalized = %+v", r)
 	}
 	if errs := r.Validate(); len(errs) != 0 {
 		t.Errorf("unexpected errors: %v", errs)
+	}
+	if got := keys(dto.RegisterRequest{}.Validate()); !reflect.DeepEqual(got, []string{"email", "password"}) {
+		t.Errorf("fields = %v", got)
 	}
 }
 
@@ -479,13 +256,13 @@ func doLogin(t *testing.T, svc *fakeAuth, body string) (*httptest.ResponseRecord
 }
 
 func TestLoginHandler_OK(t *testing.T) {
-	svc := &fakeAuth{res: model.AuthResult{UserID: 7, ProfileCompleted: true, Tokens: testTokens}}
+	svc := &fakeAuth{res: model.AuthResult{UserID: 7, Missing: []string{}, Tokens: testTokens}}
 	rec, resp := doLogin(t, svc, `{"email": " alex@example.com ", "password": "abc"}`)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
 	}
-	if resp["user_id"] != float64(7) || resp["profile_completed"] != true {
+	if resp["user_id"] != float64(7) || !reflect.DeepEqual(resp["missing"], []any{}) {
 		t.Errorf("body = %v", resp)
 	}
 	if svc.email != "alex@example.com" || svc.password != "abc" {
@@ -514,44 +291,6 @@ func TestLoginHandler_Errors(t *testing.T) {
 		}
 		if len(rec.Result().Cookies()) != 0 {
 			t.Errorf("%s: cookies must not be set", tt.name)
-		}
-	}
-}
-
-func TestCheckEmailHandler(t *testing.T) {
-	for _, taken := range []bool{false, true} {
-		svc := &fakeAuth{taken: taken}
-		rec, resp := do(t, NewAuthHandler(svc, true).CheckEmail, "/api/v1/auth/email/check", `{"email": " Alex@Example.com "}`)
-		if rec.Code != http.StatusOK || resp["available"] != !taken {
-			t.Errorf("taken=%v: status = %d, body = %s", taken, rec.Code, rec.Body)
-		}
-		if svc.email != "alex@example.com" {
-			t.Errorf("email must be normalized, got %q", svc.email)
-		}
-	}
-}
-
-func TestCheckEmailHandler_Errors(t *testing.T) {
-	tests := []struct {
-		name   string
-		body   string
-		err    error
-		status int
-		code   string
-	}{
-		{"битый JSON", `{`, nil, http.StatusBadRequest, "VALIDATION_ERROR"},
-		{"пустой email", `{}`, nil, http.StatusBadRequest, "VALIDATION_ERROR"},
-		{"кривой email", `{"email": "nope"}`, nil, http.StatusBadRequest, "VALIDATION_ERROR"},
-		{"ошибка сервиса", `{"email": "a@b.ru"}`, errors.New("db down"), http.StatusInternalServerError, "INTERNAL_SERVER_ERROR"},
-	}
-	for _, tt := range tests {
-		svc := &fakeAuth{err: tt.err}
-		rec, resp := do(t, NewAuthHandler(svc, true).CheckEmail, "/api/v1/auth/email/check", tt.body)
-		if rec.Code != tt.status || errCode(resp) != tt.code {
-			t.Errorf("%s: status = %d, body = %s", tt.name, rec.Code, rec.Body)
-		}
-		if tt.status == http.StatusBadRequest && svc.called {
-			t.Errorf("%s: service must not be called", tt.name)
 		}
 	}
 }
@@ -625,5 +364,25 @@ func TestRefreshHandler(t *testing.T) {
 	}
 	if len(rec.Result().Cookies()) != 0 {
 		t.Errorf("cookies must be kept on 500, got %v", rec.Result().Cookies())
+	}
+}
+
+func TestLoginHandler_StrictJSON(t *testing.T) {
+	for _, tc := range []struct {
+		name, contentType, body string
+		status                  int
+	}{
+		{"без Content-Type", "", `{"email":"a@b.ru","password":"x"}`, http.StatusUnsupportedMediaType},
+		{"неизвестное поле", "application/json", `{"email":"a@b.ru","password":"x","admin":true}`, http.StatusBadRequest},
+		{"два объекта", "application/json", `{"email":"a@b.ru","password":"x"}{}`, http.StatusBadRequest},
+	} {
+		svc := &fakeAuth{}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", tc.contentType)
+		rec := httptest.NewRecorder()
+		NewAuthHandler(svc, true).Login(rec, req)
+		if rec.Code != tc.status || svc.called {
+			t.Errorf("%s: status = %d, called = %v", tc.name, rec.Code, svc.called)
+		}
 	}
 }

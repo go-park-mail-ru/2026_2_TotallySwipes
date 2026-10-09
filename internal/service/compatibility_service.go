@@ -7,31 +7,18 @@ import (
 )
 
 type CompatibilityService interface {
-	// CalculateDistance вычисляет совместимость как единицу минус среднее абсолютное различие координат.
-	// Принимает: два полных нормализованных вектора candidate1 и candidate2.
-	// Возвращает: совместимость в [0,1], где 1 означает совпадение, или model.ErrInvalidBigFive.
+	// CalculateDistance возвращает совместимость в [0,1] или model.ErrInvalidBigFive.
 	CalculateDistance(candidate1 model.BigFive, candidate2 model.BigFive) (float64, error)
-
-	// CalculateBigFive проверяет ответы и вычисляет Big Five по методологии теста; сейчас поддерживает TIPI.
-	// Принимает: описание test и ответы answers.
-	// Возвращает: нормализованный вектор или ошибку определения теста либо ответов.
+	// CalculateBigFive считает Big Five по ответам; ошибки определения теста или ответов.
 	CalculateBigFive(test *model.Test, answers *model.TestAnswers) (*model.BigFive, error)
-
-	// UpdateBigFive сглаживает новые координаты с предыдущими, используя настроенный вес alpha.
-	// Принимает: прежний вектор current (допускается nil или неполный) и полный новый вектор incoming.
-	// Возвращает: новый вектор без изменения исходных либо ошибку; отсутствующие прежние координаты заменяет новыми.
-	UpdateBigFive(current *model.BigFive, incoming *model.BigFive) (*model.BigFive, error)
 }
 
-type CompatibilityServiceImpl struct {
-	alpha float64
-}
+type CompatibilityServiceImpl struct{}
 
 // NewCompatibilityService создаёт сервис расчёта совместимости и Big Five.
-// Принимает: вес нового результата alpha; допустимость диапазона [0,1] проверяется при обновлении вектора.
 // Возвращает: экземпляр CompatibilityServiceImpl.
-func NewCompatibilityService(alpha float64) *CompatibilityServiceImpl {
-	return &CompatibilityServiceImpl{alpha: alpha}
+func NewCompatibilityService() *CompatibilityServiceImpl {
+	return &CompatibilityServiceImpl{}
 }
 
 // difference вычисляет среднее абсолютное различие координат.
@@ -189,66 +176,9 @@ func validateAndCalculateTIPI(test model.Test, answers model.TestAnswers) (*mode
 	}, nil
 }
 
-// blend смешивает прежнее и новое значения по формуле (1-alpha)*current + alpha*incoming.
-// Принимает: значения current, incoming и вес нового значения alpha.
-// Возвращает: взвешенное значение; аргументы не проверяет.
-func blend(current, incoming, alpha float64) float64 {
-	return (1-alpha)*current + alpha*incoming
-}
-
 // isValid проверяет допустимость нормализованной координаты.
 // Принимает: число v.
 // Возвращает: true для конечного значения в [0,1], иначе false.
 func isValid(v float64) bool {
 	return !math.IsNaN(v) && v >= 0 && v <= 1
-}
-
-// UpdateBigFive сглаживает новые координаты с предыдущими, используя настроенный вес alpha.
-// Принимает: прежний вектор current (допускается nil или неполный) и полный новый вектор incoming.
-// Возвращает: новый вектор без изменения исходных либо ошибку; отсутствующие прежние координаты заменяет новыми.
-func (s *CompatibilityServiceImpl) UpdateBigFive(current *model.BigFive, incoming *model.BigFive) (*model.BigFive, error) {
-
-	if incoming == nil {
-		return nil, fmt.Errorf("incoming Big Five is required: %w", model.ErrInvalidBigFive)
-	}
-	if current == nil {
-		current = &model.BigFive{}
-	}
-	if math.IsNaN(s.alpha) || s.alpha < 0 || s.alpha > 1 {
-		return nil, fmt.Errorf("alpha must be in [0,1]")
-	}
-
-	result := &model.BigFive{}
-
-	fields := []struct {
-		name     string
-		current  *float64
-		incoming *float64
-		result   **float64
-	}{
-		{"openness", current.Openness, incoming.Openness, &result.Openness},
-		{"conscientiousness", current.Conscientiousness, incoming.Conscientiousness, &result.Conscientiousness},
-		{"extraversion", current.Extraversion, incoming.Extraversion, &result.Extraversion},
-		{"agreeableness", current.Agreeableness, incoming.Agreeableness, &result.Agreeableness},
-		{"neuroticism", current.Neuroticism, incoming.Neuroticism, &result.Neuroticism},
-	}
-
-	for _, field := range fields {
-		if field.incoming == nil || !isValid(*field.incoming) {
-			return nil, fmt.Errorf("%s: invalid incoming value: %w", field.name, model.ErrInvalidBigFive)
-		}
-
-		value := *field.incoming
-		if field.current != nil {
-			if !isValid(*field.current) {
-				return nil, fmt.Errorf("%s: invalid current value: %w", field.name, model.ErrInvalidBigFive)
-			}
-
-			value = blend(*field.current, *field.incoming, s.alpha)
-		}
-
-		*field.result = &value
-	}
-
-	return result, nil
 }

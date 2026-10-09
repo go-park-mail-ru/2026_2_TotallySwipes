@@ -10,9 +10,7 @@ import (
 )
 
 type URLProvider interface {
-	// GetURL формирует публичный URL фотографии с экранированием пути.
-	// Принимает: контекст ctx (не используется) и относительный ключ storageKey.
-	// Возвращает: URL или model.ErrInvalidPhotoStorageKey, если ключ недопустим.
+	// GetURL возвращает публичный URL фото или model.ErrInvalidPhotoStorageKey.
 	GetURL(ctx context.Context, storageKey string) (string, error)
 }
 

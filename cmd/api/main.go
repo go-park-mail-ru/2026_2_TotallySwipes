@@ -14,7 +14,7 @@ import (
 	"dating-app/internal/config"
 	"dating-app/internal/handler"
 	"dating-app/internal/middleware"
-	"dating-app/internal/model"
+	"dating-app/internal/psychotest"
 	"dating-app/internal/repository"
 	"dating-app/internal/service"
 	"dating-app/internal/storage"
@@ -53,31 +53,33 @@ func run() error {
 	issuer := auth.NewJWTIssuer(cfg.Auth.JWTSecret, cfg.Auth.JWTAccessTTL)
 	profileRepo := repository.NewProfileRepository(db)
 
-	authSvc := service.NewAuthService(
-		repository.NewAuthUserRepository(db),
+	urlProvider := service.NewLocalPhotoURLProvider(cfg.HTTP.PublicURL)
+	compatibilitySvc := service.NewCompatibilityService()
+	profileSvc := service.NewProfileService(
 		profileRepo,
-		repository.NewSessionRepository(rdb),
+		compatibilitySvc,
+		urlProvider,
 		storage.NewLocalPhotoStorage(cfg.PhotoDir),
+	)
+	authSvc := service.NewAuthService(
+		repository.NewUserRepository(db),
+		profileSvc,
+		repository.NewSessionRepository(rdb),
 		auth.BcryptHasher{},
 		issuer,
 		cfg.Auth.JWTRefreshTTL,
 	)
-	urlProvider := service.NewLocalPhotoURLProvider(cfg.HTTP.PublicURL)
 	authHandler := handler.NewAuthHandler(authSvc, cfg.Auth.CookieSecure)
-	profileSvc := service.NewProfileService(
-		profileRepo,
-		&service.CompatibilityServiceImpl{},
-		urlProvider,
-	)
 
-	feedHandler := handler.NewGetFeedHandler(profileSvc)
-	profileShortHandler := handler.NewGetProfileShortHandler(profileSvc)
-	testRepo := repository.NewTestRepository(db, model.NewTIPITest(cfg.CurrentTestID))
-	compSvc := service.NewCompatibilityService(1)
-	testSvc := service.NewTestService(testRepo, profileSvc, compSvc)
-	getCurrentTestHandler := handler.NewGetCurrentTestHandler(testSvc)
-	testAnswersHandler := handler.NewPostTestResultsHandler(testSvc)
-	myTestResultHandler := handler.NewGetMyTestResultHandler(testSvc)
+	feedHandler := handler.NewFeedHandler(profileSvc)
+	profileHandler := handler.NewProfileHandler(profileSvc)
+	psychoTest, err := psychotest.Load()
+	if err != nil {
+		return err
+	}
+	psychoTestRepo := repository.NewPsychoTestRepository(db)
+	psychoTestSvc := service.NewPsychoTestService(psychoTestRepo, profileSvc, compatibilitySvc, psychoTest)
+	psychoTestHandler := handler.NewPsychoTestHandler(psychoTestSvc)
 
 	r := mux.NewRouter()
 	r.HandleFunc("/health", handler.GetHealth).Methods(http.MethodGet)
@@ -87,19 +89,23 @@ func run() error {
 
 	api := r.PathPrefix("/api/v1").Subrouter()
 	requireAuth := middleware.Auth(issuer)
+	authed := func(fn handler.UserHandlerFunc) http.Handler { return requireAuth(handler.WithUser(fn)) }
 
 	authRouter := api.PathPrefix("/auth").Subrouter()
 	authRouter.HandleFunc("/register", authHandler.Register).Methods(http.MethodPost)
 	authRouter.HandleFunc("/login", authHandler.Login).Methods(http.MethodPost)
 	authRouter.HandleFunc("/logout", authHandler.Logout).Methods(http.MethodPost)
 	authRouter.HandleFunc("/refresh", authHandler.Refresh).Methods(http.MethodPost)
-	authRouter.HandleFunc("/email/check", authHandler.CheckEmail).Methods(http.MethodPost)
 
-	api.Handle("/feed", requireAuth(feedHandler)).Methods(http.MethodGet)
-	api.Handle("/profile/me/short", requireAuth(profileShortHandler)).Methods(http.MethodGet)
-	api.Handle("/tests/current", requireAuth(getCurrentTestHandler)).Methods(http.MethodGet)
-	api.Handle("/tests/results/me", requireAuth(myTestResultHandler)).Methods(http.MethodGet)
-	api.Handle("/tests/{test_id}/results", requireAuth(testAnswersHandler)).Methods(http.MethodPost)
+	api.Handle("/feed", authed(feedHandler.Get)).Methods(http.MethodGet)
+	api.Handle("/profile/me", authed(profileHandler.Get)).Methods(http.MethodGet)
+	api.Handle("/profile/me", authed(profileHandler.Update)).Methods(http.MethodPatch)
+	api.Handle("/profile/me/short", authed(profileHandler.ShortProfile)).Methods(http.MethodGet)
+	api.Handle("/profile/me/photos", authed(profileHandler.AddPhoto)).Methods(http.MethodPost)
+	api.Handle("/profile/me/photos/{photo_id}", authed(profileHandler.DeletePhoto)).Methods(http.MethodDelete)
+	api.Handle("/tests/current", authed(psychoTestHandler.Current)).Methods(http.MethodGet)
+	api.Handle("/tests/results/me", authed(psychoTestHandler.MyResult)).Methods(http.MethodGet)
+	api.Handle("/tests/{test_id}/results", authed(psychoTestHandler.Submit)).Methods(http.MethodPost)
 
 	var h http.Handler = r
 	h = middleware.Recovery(h)

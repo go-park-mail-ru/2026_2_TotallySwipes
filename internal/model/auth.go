@@ -5,18 +5,8 @@ import (
 )
 
 type RegisterInput struct {
-	Name          string
-	Email         string
-	Password      string
-	BirthDate     time.Time
-	Sex           Sex
-	SearchSex     SearchSex
-	DatingGoal    DatingGoal
-	AboutMe       string
-	SearchAgeFrom int
-	SearchAgeTo   int
-	Tags          []string
-	Photos        []PhotoUpload
+	Email    string
+	Password string
 }
 
 // Tokens - пара токенов новой сессии
@@ -28,7 +18,7 @@ type Tokens struct {
 }
 
 type AuthResult struct {
-	UserID           int64
-	ProfileCompleted bool
-	Tokens           Tokens
+	UserID  int64
+	Missing []string
+	Tokens  Tokens
 }

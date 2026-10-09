@@ -10,7 +10,6 @@ var (
 	ErrInvalidSession     = errors.New("invalid session")
 	// ErrSessionNotOpened означает, что аккаунт создан, но сессия не открыта.
 	ErrSessionNotOpened       = errors.New("account created, session not opened")
-	ErrActiveTestNotFound     = errors.New("active test not found")
 	ErrInvalidFeedRequest     = errors.New("invalid feed request")
 	ErrInvalidTestRequest     = errors.New("invalid test request")
 	ErrInvalidAnswers         = errors.New("invalid test answers")
@@ -20,4 +19,11 @@ var (
 	ErrInvalidBigFive         = errors.New("invalid Big Five")
 	ErrInvalidTestDefinition  = errors.New("invalid test definition")
 	ErrInvalidPhotoStorageKey = errors.New("invalid photo storage key")
+	// ErrUnknownTag означает, что тега нет в справочнике tag.
+	ErrUnknownTag = errors.New("unknown tag")
+	// ErrPhotoLimit - в анкете уже MaxPhotos фотографий
+	ErrPhotoLimit = errors.New("photo limit reached")
+	// ErrLastPhoto - нельзя удалить единственное фото заполненной анкеты
+	ErrLastPhoto     = errors.New("last photo of completed profile")
+	ErrPhotoNotFound = errors.New("photo not found")
 )

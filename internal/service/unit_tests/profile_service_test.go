@@ -29,10 +29,12 @@ func TestProfileServiceGetNextFeed(t *testing.T) {
 	value := 0.5
 	complete := &model.ProfilePsycho{Openness: &value, Conscientiousness: &value, Extraversion: &value, Agreeableness: &value, Neuroticism: &value}
 	incomplete := &model.ProfilePsycho{Openness: &value}
-	viewer := &model.Profile{ID: 99, UserID: 7, CurrentPsycho: complete}
-	candidate := model.Profile{UserID: 20, Name: "Anna", CurrentPsycho: complete}
-	noTest := model.Profile{UserID: 21, Name: "Alex"}
-	partial := model.Profile{UserID: 22, CurrentPsycho: incomplete}
+	viewer := filledProfile(model.Profile{ID: 99, UserID: 7, CurrentPsycho: complete}, "Viewer")
+	candidate := filledProfile(model.Profile{UserID: 20, CurrentPsycho: complete}, "Anna")
+	noTest := filledProfile(model.Profile{UserID: 21}, "Alex")
+	partial := filledProfile(model.Profile{UserID: 22, CurrentPsycho: incomplete}, "Kate")
+	viewerNoTest := filledProfile(model.Profile{UserID: 7}, "Viewer")
+	viewerPartial := filledProfile(model.Profile{UserID: 7, CurrentPsycho: incomplete}, "Viewer")
 	zero, negative, cursor, next := int64(0), int64(-1), int64(10), int64(20)
 	failure := errors.New("dependency failure")
 	tests := []testCase{
@@ -43,18 +45,18 @@ func TestProfileServiceGetNextFeed(t *testing.T) {
 		{name: "zero cursor", userID: 7, limit: 10, cursor: &zero, wantErr: true},
 		{name: "negative cursor", userID: 7, limit: 10, cursor: &negative, wantErr: true},
 		{name: "viewer lookup failure", userID: 7, limit: 10, viewerErr: failure, wantErr: true, wantViewerCalls: 1},
-		{name: "nil viewer", userID: 7, limit: 10, wantErr: true, wantViewerCalls: 1},
-		{name: "feed lookup failure", userID: 7, limit: 10, viewer: viewer, feedErr: failure, wantErr: true, wantViewerCalls: 1, wantFeedCalls: 1},
-		{name: "empty feed and minimum limit", userID: 7, limit: 1, viewer: viewer, wantViewerCalls: 1, wantFeedCalls: 1},
-		{name: "viewer without test", userID: 7, limit: 10, viewer: &model.Profile{UserID: 7}, profiles: []model.Profile{candidate}, wantViewerCalls: 1, wantFeedCalls: 1},
-		{name: "incomplete viewer test", userID: 7, limit: 10, viewer: &model.Profile{CurrentPsycho: incomplete}, profiles: []model.Profile{candidate}, wantViewerCalls: 1, wantFeedCalls: 1},
-		{name: "candidate without test", userID: 7, limit: 10, viewer: viewer, profiles: []model.Profile{noTest}, wantViewerCalls: 1, wantFeedCalls: 1},
-		{name: "both without test", userID: 7, limit: 10, viewer: &model.Profile{}, profiles: []model.Profile{noTest}, wantViewerCalls: 1, wantFeedCalls: 1},
-		{name: "incomplete candidate test", userID: 7, limit: 10, viewer: viewer, profiles: []model.Profile{partial}, wantViewerCalls: 1, wantFeedCalls: 1},
-		{name: "valid zero", userID: 7, limit: 10, viewer: viewer, profiles: []model.Profile{candidate}, scores: []float64{0}, wantViewerCalls: 1, wantFeedCalls: 1, wantCalcCalls: 1},
-		{name: "maximum score", userID: 7, limit: 10, viewer: viewer, profiles: []model.Profile{candidate}, scores: []float64{1}, wantViewerCalls: 1, wantFeedCalls: 1, wantCalcCalls: 1},
-		{name: "mixed page with cursor", userID: 7, limit: 10, cursor: &cursor, viewer: viewer, profiles: []model.Profile{candidate, noTest, partial, candidate}, nextCursor: &next, scores: []float64{0.82, 0.35}, wantViewerCalls: 1, wantFeedCalls: 1, wantCalcCalls: 2},
-		{name: "calculation failure", userID: 7, limit: 10, viewer: viewer, profiles: []model.Profile{candidate}, calcErr: failure, wantErr: true, wantViewerCalls: 1, wantFeedCalls: 1, wantCalcCalls: 1},
+		{name: "viewer with incomplete profile", userID: 7, limit: 10, viewer: &model.Profile{UserID: 7}, wantErr: true, wantViewerCalls: 1},
+		{name: "feed lookup failure", userID: 7, limit: 10, viewer: &viewer, feedErr: failure, wantErr: true, wantViewerCalls: 1, wantFeedCalls: 1},
+		{name: "empty feed and minimum limit", userID: 7, limit: 1, viewer: &viewer, wantViewerCalls: 1, wantFeedCalls: 1},
+		{name: "viewer without test", userID: 7, limit: 10, viewer: &viewerNoTest, profiles: []model.Profile{candidate}, wantViewerCalls: 1, wantFeedCalls: 1},
+		{name: "incomplete viewer test", userID: 7, limit: 10, viewer: &viewerPartial, profiles: []model.Profile{candidate}, wantViewerCalls: 1, wantFeedCalls: 1},
+		{name: "candidate without test", userID: 7, limit: 10, viewer: &viewer, profiles: []model.Profile{noTest}, wantViewerCalls: 1, wantFeedCalls: 1},
+		{name: "both without test", userID: 7, limit: 10, viewer: &viewerNoTest, profiles: []model.Profile{noTest}, wantViewerCalls: 1, wantFeedCalls: 1},
+		{name: "incomplete candidate test", userID: 7, limit: 10, viewer: &viewer, profiles: []model.Profile{partial}, wantViewerCalls: 1, wantFeedCalls: 1},
+		{name: "valid zero", userID: 7, limit: 10, viewer: &viewer, profiles: []model.Profile{candidate}, scores: []float64{0}, wantViewerCalls: 1, wantFeedCalls: 1, wantCalcCalls: 1},
+		{name: "maximum score", userID: 7, limit: 10, viewer: &viewer, profiles: []model.Profile{candidate}, scores: []float64{1}, wantViewerCalls: 1, wantFeedCalls: 1, wantCalcCalls: 1},
+		{name: "mixed page with cursor", userID: 7, limit: 10, cursor: &cursor, viewer: &viewer, profiles: []model.Profile{candidate, noTest, partial, candidate}, nextCursor: &next, scores: []float64{0.82, 0.35}, wantViewerCalls: 1, wantFeedCalls: 1, wantCalcCalls: 2},
+		{name: "calculation failure", userID: 7, limit: 10, viewer: &viewer, profiles: []model.Profile{candidate}, calcErr: failure, wantErr: true, wantViewerCalls: 1, wantFeedCalls: 1, wantCalcCalls: 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -91,7 +93,7 @@ func TestProfileServiceGetNextFeed(t *testing.T) {
 				}
 				return tc.scores[calc.calls-1], nil
 			}
-			svc := NewProfileService(repo, calc, NewLocalPhotoURLProvider("https://media.example"))
+			svc := NewProfileService(repo, calc, NewLocalPhotoURLProvider("https://media.example"), nil)
 			page, err := svc.GetNextFeed(ctx, tc.userID, tc.limit, tc.cursor)
 			if repo.viewerCalls != tc.wantViewerCalls || repo.feedCalls != tc.wantFeedCalls || calc.calls != tc.wantCalcCalls {
 				t.Fatalf("calls: viewer=%d feed=%d calc=%d", repo.viewerCalls, repo.feedCalls, calc.calls)
@@ -128,7 +130,7 @@ func TestProfileServiceGetNextFeed(t *testing.T) {
 			}
 			scoreIndex := 0
 			for i, item := range page.Items {
-				if item.UserID != tc.profiles[i].UserID || item.Name != tc.profiles[i].Name || item.Tags == nil || item.Photos == nil {
+				if item.UserID != tc.profiles[i].UserID || item.Name != *tc.profiles[i].CurrentVersion.Name || item.Tags == nil || item.Photos == nil {
 					t.Fatalf("incorrect item: %+v", item)
 				}
 				hasScore := tc.wantCalcCalls > 0 && tc.profiles[i].CurrentPsycho == complete
@@ -188,7 +190,7 @@ func (m *feedCompatibilityMock) CalculateDistance(a, b model.BigFive) (float64, 
 	return m.calculate(a, b)
 }
 
-func TestCalculateAge(t *testing.T) {
+func TestAgeAt(t *testing.T) {
 	type testCase struct {
 		name         string
 		birth, today time.Time
@@ -205,7 +207,7 @@ func TestCalculateAge(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := CalculateAge(tc.birth, tc.today); got != tc.want {
+			if got := model.AgeAt(tc.birth, tc.today); got != tc.want {
 				t.Fatalf("age=%d, want=%d", got, tc.want)
 			}
 		})
@@ -223,7 +225,9 @@ func TestProfileServiceFeedItemMapping(t *testing.T) {
 	}
 	about := "Люблю путешествия"
 	tests := []testCase{
-		{name: "empty optional fields", wantTags: []string{}, wantPhotos: []model.FeedPhoto{}},
+		{name: "empty optional fields", wantTags: []string{},
+			photos:     []model.Photo{{ID: 8, StorageKey: "first.jpg", Position: 1}},
+			wantPhotos: []model.FeedPhoto{{ID: 8, URL: "https://media.example/cats/first.jpg"}}},
 		{name: "populated optional fields", about: &about,
 			tags:       []model.Tag{{ID: 4, Name: "music"}, {ID: 9, Name: "sport"}},
 			photos:     []model.Photo{{ID: 8, StorageKey: "first.jpg", Position: 0}, {ID: 3, StorageKey: "second.jpg", Position: 1}},
@@ -235,20 +239,22 @@ func TestProfileServiceFeedItemMapping(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Берём дату в середине текущего года жизни, чтобы тест не зависел от полуночи дня рождения.
 			birth := time.Now().AddDate(-25, -6, 0)
-			candidate := model.Profile{UserID: 42, Name: "Anna", CurrentVersion: model.ProfileVersion{BirthDate: birth, AboutMe: tc.about}, Tags: tc.tags, Photos: tc.photos}
+			candidate := filledProfile(model.Profile{UserID: 42, Tags: tc.tags, Photos: tc.photos}, "Anna")
+			candidate.CurrentVersion.BirthDate, candidate.CurrentVersion.AboutMe = &birth, tc.about
+			viewer := filledProfile(model.Profile{UserID: 7}, "Viewer")
 			repo := &feedRepositoryMock{t: t,
-				viewer: func(context.Context, int64) (*model.Profile, error) { return &model.Profile{}, nil },
+				viewer: func(context.Context, int64) (*model.Profile, error) { return &viewer, nil },
 				feed: func(context.Context, int64, int, *int64) ([]model.Profile, *int64, error) {
 					return []model.Profile{candidate}, nil, nil
 				},
 			}
 			calc := &feedCompatibilityMock{t: t}
-			svc := NewProfileService(repo, calc, NewLocalPhotoURLProvider("https://media.example"))
+			svc := NewProfileService(repo, calc, NewLocalPhotoURLProvider("https://media.example"), nil)
 			page, err := svc.GetNextFeed(context.Background(), 7, 10, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := model.FeedItem{UserID: 42, Name: "Anna", Age: 25, AboutMe: tc.about, Tags: tc.wantTags, Photos: tc.wantPhotos}
+			want := model.FeedItem{UserID: 42, Name: "Anna", Age: 25, DatingGoal: model.DatingGoalRelationship, AboutMe: tc.about, Tags: tc.wantTags, Photos: tc.wantPhotos}
 			if page == nil || len(page.Items) != 1 || !reflect.DeepEqual(page.Items[0], want) {
 				t.Fatalf("page=%+v, want item=%+v", page, want)
 			}
@@ -286,15 +292,136 @@ func (p failingURLProvider) GetURL(context.Context, string) (string, error) { re
 
 func TestProfileServicePropagatesURLProviderError(t *testing.T) {
 	failure := errors.New("URL provider failed")
+	viewer := filledProfile(model.Profile{UserID: 7}, "Viewer")
 	repo := &feedRepositoryMock{t: t,
-		viewer: func(context.Context, int64) (*model.Profile, error) { return &model.Profile{}, nil },
+		viewer: func(context.Context, int64) (*model.Profile, error) { return &viewer, nil },
 		feed: func(context.Context, int64, int, *int64) ([]model.Profile, *int64, error) {
-			return []model.Profile{{Photos: []model.Photo{{ID: 1, StorageKey: "image_1.jpg"}}}}, nil, nil
+			return []model.Profile{filledProfile(model.Profile{}, "Anna")}, nil, nil
 		},
 	}
-	svc := NewProfileService(repo, &feedCompatibilityMock{t: t}, failingURLProvider{err: failure})
+	svc := NewProfileService(repo, &feedCompatibilityMock{t: t}, failingURLProvider{err: failure}, nil)
 	page, err := svc.GetNextFeed(context.Background(), 7, 10, nil)
 	if page != nil || !errors.Is(err, failure) {
 		t.Fatalf("page=%v, err=%v; want provider error", page, err)
+	}
+}
+
+// filledProfile заполняет обязательные поля анкеты и добавляет фото, если его нет
+func filledProfile(p model.Profile, name string) model.Profile {
+	birth := time.Now().AddDate(-25, -6, 0)
+	sex, goal, searchSex := model.SexFemale, model.DatingGoalRelationship, model.SearchSexAll
+	from, to := 18, 100
+	p.CurrentVersion.ProfileFields = model.ProfileFields{
+		Name: &name, BirthDate: &birth, Sex: &sex, DatingGoal: &goal,
+		SearchSex: &searchSex, SearchAgeFrom: &from, SearchAgeTo: &to,
+	}
+	if len(p.Photos) == 0 {
+		p.Photos = []model.Photo{{ID: 1, StorageKey: "main.jpg", Position: 1}}
+	}
+	return p
+}
+
+func TestProfileMissing(t *testing.T) {
+	if got := (&model.Profile{}).Missing(); !reflect.DeepEqual(got, []string{"name", "birth_date", "sex", "dating_goal", "search_sex", "search_age", "photos"}) {
+		t.Fatalf("empty profile missing = %v", got)
+	}
+	p := filledProfile(model.Profile{}, "Anna")
+	if got := p.Missing(); len(got) != 0 {
+		t.Fatalf("filled profile missing = %v", got)
+	}
+	p.CurrentVersion.SearchAgeTo, p.Photos = nil, nil
+	if got := p.Missing(); !reflect.DeepEqual(got, []string{"search_age", "photos"}) {
+		t.Fatalf("missing = %v", got)
+	}
+}
+
+func TestProfilePatchApply(t *testing.T) {
+	p := filledProfile(model.Profile{}, "Anna")
+	about, newName := "привет", "Аня"
+	p.CurrentVersion.AboutMe = &about
+
+	got := model.ProfilePatch{Name: &newName}.Apply(p.CurrentVersion.ProfileFields)
+	if *got.Name != "Аня" || got.AboutMe == nil || *got.Sex != model.SexFemale {
+		t.Fatalf("patch must change only name: %+v", got)
+	}
+	if got := (model.ProfilePatch{AboutMeSet: true}).Apply(p.CurrentVersion.ProfileFields); got.AboutMe != nil {
+		t.Fatal("about_me must be cleared")
+	}
+	if !(model.ProfilePatch{}).IsEmpty() || (model.ProfilePatch{AboutMeSet: true}).IsEmpty() {
+		t.Fatal("IsEmpty is wrong")
+	}
+}
+
+type photoRepositoryMock struct {
+	ProfileRepository
+	addErr    error
+	deleteKey string
+	deleteErr error
+	added     []string
+}
+
+func (m *photoRepositoryMock) AddPhoto(_ context.Context, _ int64, key string) error {
+	m.added = append(m.added, key)
+	return m.addErr
+}
+func (m *photoRepositoryMock) DeletePhoto(context.Context, int64, int64) (string, error) {
+	return m.deleteKey, m.deleteErr
+}
+func (m *photoRepositoryMock) GetByUserIDCurrentProfile(context.Context, int64) (*model.Profile, error) {
+	return &model.Profile{Photos: []model.Photo{{ID: 1, StorageKey: "left.jpg"}}}, nil
+}
+
+func TestProfileServicePhotoFiles(t *testing.T) {
+	ctx := context.Background()
+	urls := NewLocalPhotoURLProvider("https://media.example")
+
+	repo, files := &photoRepositoryMock{}, &fakePhotos{}
+	photos, err := NewProfileService(repo, nil, urls, files).AddPhoto(ctx, 7, model.PhotoUpload{Data: []byte("a"), Ext: ".jpg"})
+	if err != nil || len(photos) != 1 || photos[0].URL != "https://media.example/cats/left.jpg" {
+		t.Fatalf("add: photos = %+v, err = %v", photos, err)
+	}
+	if !reflect.DeepEqual(repo.added, []string{"uploads/1.jpg"}) || len(files.deleted) != 0 {
+		t.Fatalf("add: added = %v, deleted = %v", repo.added, files.deleted)
+	}
+
+	repo, files = &photoRepositoryMock{addErr: model.ErrPhotoLimit}, &fakePhotos{}
+	if _, err := NewProfileService(repo, nil, urls, files).AddPhoto(ctx, 7, model.PhotoUpload{Data: []byte("a"), Ext: ".jpg"}); !errors.Is(err, model.ErrPhotoLimit) {
+		t.Fatalf("limit: err = %v", err)
+	}
+	if !reflect.DeepEqual(files.deleted, []string{"uploads/1.jpg"}) {
+		t.Errorf("saved file must be removed when photo is not added, deleted = %v", files.deleted)
+	}
+
+	repo, files = &photoRepositoryMock{deleteKey: "gone.jpg"}, &fakePhotos{}
+	if _, err := NewProfileService(repo, nil, urls, files).DeletePhoto(ctx, 7, 1); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(files.deleted, []string{"gone.jpg"}) {
+		t.Errorf("deleted = %v", files.deleted)
+	}
+
+	repo, files = &photoRepositoryMock{deleteErr: model.ErrLastPhoto}, &fakePhotos{}
+	if _, err := NewProfileService(repo, nil, urls, files).DeletePhoto(ctx, 7, 1); !errors.Is(err, model.ErrLastPhoto) || len(files.deleted) != 0 {
+		t.Errorf("last photo: err = %v, deleted = %v", err, files.deleted)
+	}
+}
+
+func TestProfileServiceFeedSkipsIncompleteProfiles(t *testing.T) {
+	viewer := filledProfile(model.Profile{UserID: 7}, "Viewer")
+	incomplete := filledProfile(model.Profile{UserID: 30}, "Broken")
+	incomplete.CurrentVersion.Name = nil
+	repo := &feedRepositoryMock{t: t,
+		viewer: func(context.Context, int64) (*model.Profile, error) { return &viewer, nil },
+		feed: func(context.Context, int64, int, *int64) ([]model.Profile, *int64, error) {
+			return []model.Profile{incomplete, filledProfile(model.Profile{UserID: 31}, "Anna")}, nil, nil
+		},
+	}
+	svc := NewProfileService(repo, &feedCompatibilityMock{t: t}, NewLocalPhotoURLProvider("https://media.example"), nil)
+	page, err := svc.GetNextFeed(context.Background(), 7, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Items[0].UserID != 31 {
+		t.Fatalf("items = %+v", page.Items)
 	}
 }

@@ -13,3 +13,5 @@ coverage.out
 coverage.html
 scripts/seed/photos/*
 !scripts/seed/photos/.gitkeep
+
+__pycache__/

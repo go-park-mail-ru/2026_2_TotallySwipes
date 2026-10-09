@@ -1,4 +1,4 @@
-"""Создаёт демо-пользователей через API: регистрация с фото и прохождение текущего теста."""
+"""Создаёт демо-пользователей через API: регистрация, онбординг анкеты, фото и прохождение теста."""
 import argparse
 import datetime
 import json
@@ -29,20 +29,19 @@ DESCRIPTIONS = ["Люблю утренние пробежки, книги и р�
                 "Люблю длинные прогулки, выставки и хорошие истории.",
                 "Путешествую по России и фотографирую архитектуру.",
                 "Ценю чувство юмора, искренность и совместные приключения."]
-TAGS = ["Кофе", "Книги", "Музыка", "Походы", "Велосипед", "Путешествия", "Фотография",
-        "Настолки", "Кулинария", "Бег", "Рисование", "Кино", "Концерты", "Животные"]
-INTENTS = ["Ищу общение", "Ищу половинку", "Ищу встречи"]
+# Ключи из справочника tag (миграция 000002); подписи показывает фронтенд.
+TAGS = ["coffee", "books", "music", "hiking", "bicycle", "travel", "photo",
+        "board_games", "cooking", "running", "painting", "movies", "concerts", "animals"]
+# Ключи целей знакомства; подписи показывает фронтенд.
+GOALS = ["friendship", "relationship", "casual"]
 # Разрешённые расширения фотографий и MIME-типы для их загрузки.
 CONTENT_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
 
 
-def multipart(fields, files):
-    # Собираем multipart/form-data: уникальная граница разделяет поля и файлы.
+def multipart(files):
+    # Собираем multipart/form-data: уникальная граница разделяет файлы.
     boundary = uuid.uuid4().hex
     body = bytearray()
-    # Каждое текстовое поле — отдельная часть; повторяющиеся tags образуют список.
-    for name, value in fields:
-        body += f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode()
     # Добавляем имя файла, MIME-тип и исходные байты фотографии.
     for name, path in files:
         body += (f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; filename="{path.name}"\r\n'
@@ -53,9 +52,9 @@ def multipart(fields, files):
     return bytes(body), f"multipart/form-data; boundary={boundary}"
 
 
-def request(url, data=None, content_type=None, token=None):
-    # Запрос с телом отправляется как POST, без тела — как GET.
-    req = urllib.request.Request(url, data=data, method="POST" if data is not None else "GET")
+def request(url, data=None, content_type=None, token=None, method=None):
+    # Запрос с телом по умолчанию отправляется как POST, без тела — как GET.
+    req = urllib.request.Request(url, data=data, method=method or ("POST" if data is not None else "GET"))
     if content_type:
         req.add_header("Content-Type", content_type)
     # API авторизует пользователя по cookie, полученной при регистрации.
@@ -105,36 +104,55 @@ def main():
     # Для каждого номера создаём аккаунт demo01@example.com, demo02@example.com и т. д.
     for i in range(1, args.count + 1):
         email = f"demo{i:02}@example.com"
-        # Данные регистрации включают анкету и предпочтения поиска.
-        fields = [
-            ("name", NAMES[(i - 1) % len(NAMES)]),
-            ("email", email),
-            ("password", PASSWORD),
-            ("birth_date", birth_date(i)),
-            ("sex", "female"),
-            ("search_sex", "all"),
-            ("dating_intent", INTENTS[i % 3]),
-            ("about_me", DESCRIPTIONS[(i - 1) % len(DESCRIPTIONS)]),
-            ("search_age_from", 18),
-            ("search_age_to", 100),
-        ]
-        # Чётным аккаунтам даём 5 интересов, нечётным — 6; внутри анкеты повторов нет.
-        fields += [("tags", TAGS[(i - 1 + j) % len(TAGS)]) for j in range(5 + i % 2)]
-        # Прикладываем одну фотографию; если их меньше аккаунтов, используем повторно.
-        body, content_type = multipart(fields, [("photos", photos[(i - 1) % len(photos)])])
 
-        # Регистрируем аккаунт с анкетой и фото через API.
-        status, headers, resp = request(f"{api}/auth/register", body, content_type)
-        # Существующие аккаунты пропускаем целиком, включая прохождение теста.
+        # Регистрация - только почта и пароль; анкета создаётся пустой.
+        # Если аккаунт уже есть (прошлый запуск мог упасть посередине), входим
+        # и дозаполняем только то, чего не хватает: анкету, фото и тест.
+        credentials = json.dumps({"email": email, "password": PASSWORD}).encode()
+        status, headers, resp = request(f"{api}/auth/register", credentials, "application/json")
+        created = status == 201
         if status == 409:
-            print(f"{email}: уже есть, пропускаю")
-            continue
-        # Для следующих запросов необходима сессия нового пользователя.
+            status, headers, resp = request(f"{api}/auth/login", credentials, "application/json")
+        # Для следующих запросов необходима сессия пользователя.
         token = access_token(headers)
-        if status != 201 or not token:
-            sys.exit(f"{email}: регистрация {status} {resp.decode()}")
+        if status not in (200, 201) or not token:
+            sys.exit(f"{email}: вход {status} {resp.decode()}")
+        missing = json.loads(resp)["missing"]
 
-        # Загружаем текущий тест, чтобы использовать реальные ID вопросов из БД.
+        # Онбординг одним PATCH: обязательные поля, описание и интересы.
+        # Чётным аккаунтам даём 5 интересов, нечётным — 6; внутри анкеты повторов нет.
+        if any(field != "photos" for field in missing):
+            profile = {
+                "name": NAMES[(i - 1) % len(NAMES)],
+                "birth_date": birth_date(i),
+                "sex": "female",
+                "dating_goal": GOALS[i % 3],
+                "about_me": DESCRIPTIONS[(i - 1) % len(DESCRIPTIONS)],
+                "search_sex": "all",
+                "search_age_from": 18,
+                "search_age_to": 100,
+                "tags": [TAGS[(i - 1 + j) % len(TAGS)] for j in range(5 + i % 2)],
+            }
+            status, _, resp = request(f"{api}/profile/me", json.dumps(profile).encode(), "application/json", token, "PATCH")
+            if status != 200:
+                sys.exit(f"{email}: анкета {status} {resp.decode()}")
+
+        # Загружаем одну фотографию; если их меньше аккаунтов, используем повторно.
+        if "photos" in missing:
+            body, content_type = multipart([("photo", photos[(i - 1) % len(photos)])])
+            status, _, resp = request(f"{api}/profile/me/photos", body, content_type, token)
+            if status != 201:
+                sys.exit(f"{email}: фото {status} {resp.decode()}")
+
+        # Тест проходим, только если он ещё не пройден.
+        status, _, resp = request(f"{api}/tests/results/me", token=token)
+        if status not in (200, 404):
+            sys.exit(f"{email}: результат теста {status} {resp.decode()}")
+        if status == 200:
+            print(f"{email}: уже есть, пропускаю" if not missing else f"{email}: дозаполнен, тест уже пройден")
+            continue
+
+        # Загружаем текущий тест, чтобы взять ID вопросов из ответа API.
         status, _, resp = request(f"{api}/tests/current", token=token)
         if status != 200:
             sys.exit(f"{email}: тест {status} {resp.decode()}")
@@ -147,8 +165,7 @@ def main():
                                   json.dumps({"answers": answers}).encode(), "application/json", token)
         if status != 201:
             sys.exit(f"{email}: ответы {status} {resp.decode()}")
-        # Сообщаем об успешном завершении регистрации и прохождения теста.
-        print(f"{email}: создан, тип личности {json.loads(resp)['personality_type']}")
+        print(f"{email}: {'создан' if created else 'дозаполнен'}, тип личности {json.loads(resp)['personality_type']}")
 
 
 # Запускаем наполнение только при прямом вызове файла, а не при импорте.

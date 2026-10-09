@@ -23,7 +23,6 @@
 erDiagram
     user {
         bigint id PK
-        text name
         text email UK
         text password_hash
         timestamptz created_at
@@ -42,35 +41,19 @@ erDiagram
         bigint profile_id FK, UK "U1"
         integer revision UK "U1"
         timestamptz recorded_at
-        date birth_date
-        text sex
-        text dating_goal
+        text name "NULL"
+        date birth_date "NULL"
+        text sex "NULL"
+        text dating_goal "NULL"
         text about_me
         text search_sex
         integer search_age_from
         integer search_age_to
     }
 
-    test {
-        bigint id PK
-        text name
-        timestamptz created_at
-        timestamptz updated_at
-    }
-
-    question {
-        bigint id PK
-        bigint test_id FK
-        integer operation_id
-        text body
-        timestamptz created_at
-        timestamptz updated_at
-    }
-
     profile_psycho {
         bigint id PK
         bigint profile_id FK, UK "U1"
-        bigint test_id FK
         integer revision UK "U1"
         timestamptz recorded_at
         numeric openness
@@ -83,7 +66,7 @@ erDiagram
 
     user_answer {
         bigint profile_psycho_id PK, FK
-        bigint question_id PK, FK
+        smallint question_no PK "1..10"
         smallint answer_value
         timestamptz created_at
     }
@@ -180,11 +163,8 @@ erDiagram
 
     user ||..o| profile : "user_id"
     profile ||..o{ profile_version : "profile_id"
-    test ||..o{ question : "test_id"
     profile ||..o{ profile_psycho : "profile_id"
-    test ||..o{ profile_psycho : "test_id"
     profile_psycho ||--o{ user_answer : "profile_psycho_id"
-    question ||--o{ user_answer : "question_id"
     user ||..o{ subscription : "user_id"
     plan ||..o{ subscription : "plan_id"
     profile_version ||--o{ profile_tag : "profile_version_id"

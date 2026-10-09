@@ -8,15 +8,17 @@ import (
 )
 
 const (
-	codeValidationError    = "VALIDATION_ERROR"
-	codeEmailAlreadyExists = "EMAIL_ALREADY_EXISTS"
-	codeInvalidCredentials = "INVALID_CREDENTIALS"
-	codeInternalError      = "INTERNAL_SERVER_ERROR"
-	codeUnauthorized       = "UNAUTHORIZED"
-	codePayloadTooLarge    = "PAYLOAD_TOO_LARGE"
+	codeValidationError      = "VALIDATION_ERROR"
+	codeEmailAlreadyExists   = "EMAIL_ALREADY_EXISTS"
+	codeInvalidCredentials   = "INVALID_CREDENTIALS"
+	codeInternalError        = "INTERNAL_SERVER_ERROR"
+	codeUnauthorized         = "UNAUTHORIZED"
+	codePayloadTooLarge      = "PAYLOAD_TOO_LARGE"
+	codeUnsupportedMediaType = "UNSUPPORTED_MEDIA_TYPE"
 
 	msgInternalError = "Внутренняя ошибка сервера"
 	msgUnauthorized  = "Необходимо войти заново"
+	msgInvalidData   = "Некорректные данные"
 )
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
@@ -38,14 +40,4 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 // запроса, для остальных ошибок nil
 func writeError(w http.ResponseWriter, status int, code, message string, fields map[string]string) {
 	writeJSON(w, status, dto.ErrorResponse{Error: dto.ErrorBody{Code: code, Message: message, Fields: fields}})
-}
-
-// Write отправляет JSON-ответ с помощью общей функции кодирования ответа.
-func Write(w http.ResponseWriter, status int, data any) {
-	writeJSON(w, status, data)
-}
-
-// WriteError отправляет ошибку без подробностей валидации отдельных полей.
-func WriteError(w http.ResponseWriter, status int, code, message string) {
-	writeError(w, status, code, message, nil)
 }

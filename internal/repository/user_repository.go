@@ -21,40 +21,34 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation
 }
 
-// AuthUserRepo выполняет операции с пользователем для регистрации и входа.
-type AuthUserRepo struct {
+// UserRepo хранит учётные записи пользователей (таблица user).
+type UserRepo struct {
 	db *sql.DB
 }
 
-// NewAuthUserRepository создаёт репозиторий регистрации и поиска пользователей.
+// NewUserRepository создаёт репозиторий пользователей.
 // Принимает: подключение к PostgreSQL db.
-// Возвращает: экземпляр AuthUserRepo.
-func NewAuthUserRepository(db *sql.DB) *AuthUserRepo {
-	return &AuthUserRepo{db: db}
+// Возвращает: экземпляр UserRepo.
+func NewUserRepository(db *sql.DB) *UserRepo {
+	return &UserRepo{db: db}
 }
 
-// CreateUserWithProfile атомарно создаёт пользователя, профиль, первую версию, теги и фото.
-// Принимает: контекст ctx, данные user и version, имена tags и метаданные photos.
+// CreateUser атомарно создаёт пользователя и пустой профиль. Версии анкеты
+// у профиля нет до первого изменения, но фото к нему уже можно привязать.
+// Принимает: контекст ctx и данные user.
 // Возвращает: ID пользователя или ошибку; при занятом email — model.ErrEmailAlreadyExists.
-func (r *AuthUserRepo) CreateUserWithProfile(ctx context.Context, user *model.UserInput,
-	version *model.ProfileVersionInput, tags []string, photos []model.PhotoInput) (int64, error) {
-
-	if user == nil || version == nil {
-		return 0, fmt.Errorf("create user with profile: input is nil")
-	}
-
+func (r *UserRepo) CreateUser(ctx context.Context, user *model.UserInput) (int64, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, fmt.Errorf("CreateUserWithProfile: begin transaction: %w", err)
+		return 0, fmt.Errorf("create user: begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
 	var userID int64
 	err = tx.QueryRowContext(ctx,
-		`INSERT INTO "user" (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id`,
-		user.Name, user.Email, user.PasswordHash,
+		`INSERT INTO "user" (email, password_hash) VALUES ($1, $2) RETURNING id`,
+		user.Email, user.PasswordHash,
 	).Scan(&userID)
-
 	if isUniqueViolation(err) {
 		return 0, model.ErrEmailAlreadyExists
 	}
@@ -62,12 +56,12 @@ func (r *AuthUserRepo) CreateUserWithProfile(ctx context.Context, user *model.Us
 		return 0, fmt.Errorf("create user: insert user: %w", err)
 	}
 
-	if err := createProfileTx(ctx, tx, userID, version, tags, photos); err != nil {
-		return 0, fmt.Errorf("create user id=%d: create profile: %w", userID, err)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO profile (user_id) VALUES ($1)`, userID); err != nil {
+		return 0, fmt.Errorf("create user id=%d: insert profile: %w", userID, err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("CreateUserWithProfile: commit transaction: %w", err)
+		return 0, fmt.Errorf("create user: commit transaction: %w", err)
 	}
 	return userID, nil
 }
@@ -75,13 +69,13 @@ func (r *AuthUserRepo) CreateUserWithProfile(ctx context.Context, user *model.Us
 // GetUserByEmail находит пользователя по email.
 // Принимает: контекст ctx и адрес email.
 // Возвращает: пользователя или ошибку; при отсутствии — model.ErrNotFound.
-func (r *AuthUserRepo) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
+func (r *UserRepo) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
 
 	user := model.User{}
 
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, name, email, password_hash FROM "user" WHERE email = $1`,
-		email).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash)
+		`SELECT id, email, password_hash FROM "user" WHERE email = $1`,
+		email).Scan(&user.ID, &user.Email, &user.PasswordHash)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, model.ErrNotFound

@@ -4,13 +4,11 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 CREATE TABLE "user" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
-    "name" TEXT NOT NULL,
     "email" TEXT NOT NULL UNIQUE,
     "password_hash" TEXT NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "user_id_positive" CHECK (id > 0),
-    CONSTRAINT "user_name_valid" CHECK (char_length(name) BETWEEN 1 AND 100 AND name ~ '[^[:space:]]'),
     CONSTRAINT "user_email_valid" CHECK (char_length(email) BETWEEN 1 AND 254 AND email !~ '[[:space:]]'),
     CONSTRAINT "user_password_hash_nonblank" CHECK (password_hash ~ '[^[:space:]]'),
     CONSTRAINT "user_created_at_finite" CHECK (isfinite(created_at)),
@@ -36,59 +34,34 @@ CREATE TABLE "profile_version" (
     "profile_id" BIGINT NOT NULL,
     "revision" INTEGER NOT NULL,
     "recorded_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "birth_date" DATE NOT NULL,
-    "sex" TEXT NOT NULL,
-    "dating_goal" TEXT NOT NULL,
+    -- Поля анкеты заполняются по шагам онбординга, поэтому все необязательны.
+    -- Обязательный минимум для показа в ленте проверяет backend.
+    "name" TEXT,
+    "birth_date" DATE,
+    "sex" TEXT,
+    "dating_goal" TEXT,
     "about_me" TEXT,
-    "search_sex" TEXT NOT NULL,
-    "search_age_from" INTEGER NOT NULL,
-    "search_age_to" INTEGER NOT NULL,
+    "search_sex" TEXT,
+    "search_age_from" INTEGER,
+    "search_age_to" INTEGER,
     UNIQUE ("profile_id", "revision"),
     CONSTRAINT "profile_version_id_positive" CHECK (id > 0),
     CONSTRAINT "profile_version_revision_positive" CHECK (revision > 0),
     CONSTRAINT "profile_version_recorded_at_finite" CHECK (isfinite(recorded_at)),
     CONSTRAINT "profile_version_birth_date_finite" CHECK (isfinite(birth_date)),
     CONSTRAINT "profile_version_sex_valid" CHECK (sex IN ('male', 'female')),
-    CONSTRAINT "profile_version_dating_goal_nonblank" CHECK (dating_goal ~ '[^[:space:]]'),
+    CONSTRAINT "profile_version_name_valid" CHECK (char_length(name) BETWEEN 1 AND 100 AND name ~ '[^[:space:]]'),
+    CONSTRAINT "profile_version_dating_goal_valid" CHECK (dating_goal IN ('relationship', 'friendship', 'casual')),
     CONSTRAINT "profile_version_search_sex_valid" CHECK (search_sex IN ('male', 'female', 'all')),
     CONSTRAINT "profile_version_search_age_valid" CHECK (search_age_from >= 18 AND search_age_to >= search_age_from),
+    CONSTRAINT "profile_version_search_age_pair" CHECK ((search_age_from IS NULL) = (search_age_to IS NULL)),
     CONSTRAINT "version_owner" FOREIGN KEY ("profile_id")
         REFERENCES "profile" ("id") ON DELETE CASCADE ON UPDATE RESTRICT
-);
-
-CREATE TABLE "test" (
-    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
-    "name" TEXT NOT NULL,
-    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "test_id_positive" CHECK (id > 0),
-    CONSTRAINT "test_name_valid" CHECK (char_length(name) BETWEEN 1 AND 200 AND name ~ '[^[:space:]]'),
-    CONSTRAINT "test_created_at_finite" CHECK (isfinite(created_at)),
-    CONSTRAINT "test_updated_at_finite" CHECK (isfinite(updated_at)),
-    CONSTRAINT "test_updated_not_before_created" CHECK (updated_at >= created_at)
-);
-
-CREATE TABLE "question" (
-    "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
-    "test_id" BIGINT NOT NULL,
-    "operation_id" INTEGER NOT NULL,
-    "body" TEXT NOT NULL,
-    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "question_id_positive" CHECK (id > 0),
-    CONSTRAINT "question_operation_positive" CHECK (operation_id > 0),
-    CONSTRAINT "question_body_valid" CHECK (char_length(body) BETWEEN 1 AND 2000 AND body ~ '[^[:space:]]'),
-    CONSTRAINT "question_created_at_finite" CHECK (isfinite(created_at)),
-    CONSTRAINT "question_updated_at_finite" CHECK (isfinite(updated_at)),
-    CONSTRAINT "question_updated_not_before_created" CHECK (updated_at >= created_at),
-    CONSTRAINT "question_test" FOREIGN KEY ("test_id")
-        REFERENCES "test" ("id") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE "profile_psycho" (
     "id" BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL PRIMARY KEY,
     "profile_id" BIGINT NOT NULL,
-    "test_id" BIGINT NOT NULL,
     "revision" INTEGER NOT NULL,
     "recorded_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "openness" NUMERIC,
@@ -113,23 +86,20 @@ CREATE TABLE "profile_psycho" (
     )),
     CONSTRAINT "profile_psycho_personality_type_needs_scores" CHECK (personality_type IS NULL OR openness IS NOT NULL),
     CONSTRAINT "psycho_owner" FOREIGN KEY ("profile_id")
-        REFERENCES "profile" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
-    CONSTRAINT "psycho_test" FOREIGN KEY ("test_id")
-        REFERENCES "test" ("id") ON DELETE RESTRICT ON UPDATE RESTRICT
+        REFERENCES "profile" ("id") ON DELETE CASCADE ON UPDATE RESTRICT
 );
 
 CREATE TABLE "user_answer" (
     "profile_psycho_id" BIGINT NOT NULL,
-    "question_id" BIGINT NOT NULL,
+    "question_no" SMALLINT NOT NULL,
     "answer_value" SMALLINT NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY ("profile_psycho_id", "question_id"),
+    PRIMARY KEY ("profile_psycho_id", "question_no"),
+    CONSTRAINT "user_answer_question_no_valid" CHECK (question_no BETWEEN 1 AND 10),
     CONSTRAINT "user_answer_value_valid" CHECK (answer_value BETWEEN 1 AND 7),
     CONSTRAINT "user_answer_created_at_finite" CHECK (isfinite(created_at)),
     CONSTRAINT "answer_result" FOREIGN KEY ("profile_psycho_id")
-        REFERENCES "profile_psycho" ("id") ON DELETE CASCADE ON UPDATE RESTRICT,
-    CONSTRAINT "answer_question" FOREIGN KEY ("question_id")
-        REFERENCES "question" ("id") ON DELETE RESTRICT ON UPDATE RESTRICT
+        REFERENCES "profile_psycho" ("id") ON DELETE CASCADE ON UPDATE RESTRICT
 );
 
 CREATE TABLE "plan" (
@@ -233,10 +203,12 @@ CREATE TABLE "photo" (
     "position" SMALLINT NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE ("profile_id", "position"),
+    -- DEFERRABLE: при удалении фото оставшиеся сдвигаются одним UPDATE,
+    -- уникальность проверяется в конце оператора, а не на каждой строке.
+    CONSTRAINT "photo_profile_position_key" UNIQUE ("profile_id", "position") DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT "photo_id_positive" CHECK (id > 0),
     CONSTRAINT "photo_storage_key_valid" CHECK (storage_key ~ '[^[:space:]]' AND char_length(storage_key) <= 1024),
-    CONSTRAINT "photo_position_positive" CHECK (position > 0),
+    CONSTRAINT "photo_position_valid" CHECK (position BETWEEN 1 AND 6),
     CONSTRAINT "photo_created_at_finite" CHECK (isfinite(created_at)),
     CONSTRAINT "photo_updated_at_finite" CHECK (isfinite(updated_at)),
     CONSTRAINT "photo_updated_not_before_created" CHECK (updated_at >= created_at),
@@ -314,49 +286,6 @@ CREATE TABLE "message" (
 );
 
 
-CREATE INDEX user_answer_question_id_idx ON user_answer (question_id);
-
--- Защищает смысл сохранённых ответов: использованный вопрос нельзя переписать.
-CREATE FUNCTION protect_answered_question() RETURNS trigger
-LANGUAGE plpgsql AS $$
-BEGIN
-    IF (NEW.body, NEW.operation_id, NEW.test_id)
-        IS DISTINCT FROM (OLD.body, OLD.operation_id, OLD.test_id)
-        AND EXISTS (SELECT 1 FROM user_answer WHERE question_id = OLD.id)
-    THEN
-        RAISE EXCEPTION 'question % already has answers; create a new question instead', OLD.id
-            USING ERRCODE = '23514', CONSTRAINT = 'question_definition_immutable';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
--- Запрещает менять текст, операцию расчёта и принадлежность тесту у вопроса,
--- на который уже есть ответы. Обновление без изменения этих значений допустимо.
-CREATE TRIGGER question_definition_immutable
-    BEFORE UPDATE OF body, operation_id, test_id ON question
-    FOR EACH ROW EXECUTE FUNCTION protect_answered_question();
-
-CREATE FUNCTION lock_answer_question() RETURNS trigger
-LANGUAGE plpgsql AS $$
-BEGIN
-    -- Создаём новую версию строки без изменения её данных и updated_at.
-    -- Это сериализует запись ответа с редактированием вопроса, в том числе
-    -- вызывает serialization failure при устаревшем снимке REPEATABLE READ.
-    -- Одна лишь блокировка SELECT FOR SHARE не обновила бы версию строки.
-    UPDATE question SET updated_at = updated_at WHERE id = NEW.question_id;
-    RETURN NEW;
-END;
-$$;
-
--- Синхронизирует запись ответа с редактированием соответствующего вопроса
--- через техническое обновление строки вопроса без изменения её значений.
--- Изменение question_id также вызывает эту проверку, но затем любой UPDATE
--- ответа отклоняется триггером user_answer_no_update.
-CREATE TRIGGER user_answer_lock_question
-    BEFORE INSERT OR UPDATE OF question_id ON user_answer
-    FOR EACH ROW EXECUTE FUNCTION lock_answer_question();
-
 -- Общая функция запрета UPDATE исторических строк, даже без изменения значений.
 -- Возвращает ошибку 23514 с именем сработавшего триггера. INSERT и DELETE не запрещает.
 CREATE FUNCTION reject_history_update() RETURNS trigger
@@ -393,14 +322,14 @@ CREATE TRIGGER profile_version_no_update
 -- При существующем CHECK достаточно проверить openness: показатели либо все NULL,
 -- либо все заполнены. Заполненный результат нельзя обновлять даже теми же значениями.
 -- У незавершённого результата разрешено заполнить показатели, но нельзя менять
--- id, владельца, тест, ревизию и recorded_at. DELETE эта функция не ограничивает.
+-- id, владельца, ревизию и recorded_at. DELETE эта функция не ограничивает.
 CREATE FUNCTION protect_completed_psycho() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
     IF OLD.openness IS NOT NULL OR
-       (NEW.id, NEW.profile_id, NEW.test_id, NEW.revision, NEW.recorded_at)
+       (NEW.id, NEW.profile_id, NEW.revision, NEW.recorded_at)
        IS DISTINCT FROM
-       (OLD.id, OLD.profile_id, OLD.test_id, OLD.revision, OLD.recorded_at)
+       (OLD.id, OLD.profile_id, OLD.revision, OLD.recorded_at)
     THEN
         RAISE EXCEPTION 'psycho result % cannot be rewritten', OLD.id
             USING ERRCODE = '23514', CONSTRAINT = 'profile_psycho_no_rewrite';

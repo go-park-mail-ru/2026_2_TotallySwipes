@@ -26,9 +26,9 @@ const (
 	tagsMaxCount = 10
 	tagMaxLen    = 30
 
-	photosMinCount = 1
-	photosMaxCount = 6
-	PhotoMaxSize   = 5 << 20
+	aboutMeMaxLen = 1000
+
+	PhotoMaxSize = 5 << 20
 
 	minAge       = 18  // нижняя граница в принципе на сервисе
 	maxSearchAge = 100 // верхняя граница возраста в фильтре поиска
@@ -52,23 +52,25 @@ var (
 	ErrDateFormat = errors.New("дата должна быть в формате YYYY-MM-DD")
 	ErrUnderage   = errors.New("пользователю должно быть не меньше 18 лет")
 
-	ErrSex          = errors.New("допустимые значения: male, female")
-	ErrSearchSex    = errors.New("допустимые значения: male, female, all")
-	ErrDatingIntent = errors.New("недопустимая цель знакомства")
+	ErrSex        = errors.New("допустимые значения: male, female")
+	ErrSearchSex  = errors.New("допустимые значения: male, female, all")
+	ErrDatingGoal = errors.New("допустимые значения: relationship, friendship, casual")
 
 	ErrSearchAgeTooLow  = errors.New("возраст для поиска должен быть не меньше 18")
 	ErrSearchAgeTooHigh = errors.New("возраст для поиска должен быть не больше 100")
 	ErrSearchAgeRange   = errors.New("верхняя граница возраста не может быть меньше нижней")
+	ErrSearchAgePair    = errors.New("search_age_from и search_age_to передаются вместе")
 
 	ErrTagsTooMany = errors.New("не больше 10 тегов")
 	ErrTagsNotUniq = errors.New("теги не должны повторяться")
 	ErrTagInvalid  = errors.New("тег должен быть от 1 до 30 символов и не состоять только из пробелов")
+	ErrTagUnknown  = errors.New("неизвестный тег")
 
 	ErrNotInteger = errors.New("должно быть целым числом")
 
-	ErrPhotosCount   = errors.New("нужно от 1 до 6 фотографий")
-	ErrPhotoTooLarge = errors.New("фото должно быть не больше 5 МБ")
-	ErrPhotoFormat   = errors.New("фото должно быть в формате JPEG, PNG или WebP")
+	ErrAboutMeTooLong = errors.New("описание должно быть не длиннее 1000 символов")
+	ErrPhotoTooLarge  = errors.New("фото должно быть не больше 5 МБ")
+	ErrPhotoFormat    = errors.New("фото должно быть в формате JPEG, PNG или WebP")
 )
 
 // emailRe совпадает с регуляркой фронта: буквы любого алфавита в локальной части и домене
@@ -243,12 +245,20 @@ func ValidateSearchSex(s string) error {
 	return oneOf(s, searchSexValues, ErrSearchSex)
 }
 
-func ValidateDatingIntent(s string) error {
+func ValidateDatingGoal(s string) error {
 	if s == "" {
 		return ErrRequired
 	}
-	if _, ok := model.DatingGoalByIntent[s]; !ok {
-		return ErrDatingIntent
+	if !slices.Contains(model.DatingGoals, model.DatingGoal(s)) {
+		return ErrDatingGoal
+	}
+	return nil
+}
+
+// ValidateAboutMe - описание необязательно, пустая строка допустима
+func ValidateAboutMe(s string) error {
+	if utf8.RuneCountInString(s) > aboutMeMaxLen {
+		return ErrAboutMeTooLong
 	}
 	return nil
 }
@@ -289,17 +299,12 @@ func ValidateTags(tags []string) error {
 	return nil
 }
 
-func ValidatePhotos(photos []model.PhotoUpload) error {
-	if len(photos) < photosMinCount || len(photos) > photosMaxCount {
-		return ErrPhotosCount
+func ValidatePhoto(p model.PhotoUpload) error {
+	if len(p.Data) > PhotoMaxSize {
+		return ErrPhotoTooLarge
 	}
-	for _, p := range photos {
-		if len(p.Data) > PhotoMaxSize {
-			return ErrPhotoTooLarge
-		}
-		if p.Ext == "" {
-			return ErrPhotoFormat
-		}
+	if p.Ext == "" {
+		return ErrPhotoFormat
 	}
 	return nil
 }

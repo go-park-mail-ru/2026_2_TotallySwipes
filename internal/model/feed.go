@@ -9,7 +9,7 @@ type FeedItem struct {
 	UserID        int64
 	Name          string
 	Age           int
-	DatingIntent  DatingGoal
+	DatingGoal    DatingGoal
 	Compatibility *float64
 	AboutMe       *string
 	Tags          []string

@@ -22,15 +22,9 @@ func sessionKey(id string) string { return "refresh:session:" + id }
 // Возвращает: строку refresh:hash:<hash>.
 func sessionHashKey(hash string) string { return "refresh:hash:" + hash }
 
-// revokeScript помечает сессию отозванной, только если она ещё существует
+// revokeScript отзывает сессию, только если она ещё активна. Несуществующий
+// (в том числе истёкший) ключ не создаётся: HGET вернёт nil, а не '0'
 var revokeScript = redis.NewScript(`
-if redis.call('EXISTS', KEYS[1]) == 1 then
-	return redis.call('HSET', KEYS[1], 'revoked', '1')
-end
-return 0`)
-
-// revokeActiveScript отзывает сессию, только если она ещё активна
-var revokeActiveScript = redis.NewScript(`
 if redis.call('HGET', KEYS[1], 'revoked') == '0' then
 	redis.call('HSET', KEYS[1], 'revoked', '1')
 	return 1
@@ -112,23 +106,14 @@ func (r *SessionRepo) GetByTokenHash(ctx context.Context, tokenHash string) (*mo
 	}, nil
 }
 
-// Revoke помечает существующую refresh-сессию отозванной.
+// Revoke атомарно отзывает сессию, если она ещё активна.
 // Принимает: контекст ctx и ID сессии id.
-// Возвращает: nil при успехе или отсутствии сессии, иначе ошибку Redis.
-func (r *SessionRepo) Revoke(ctx context.Context, id string) error {
-	if err := revokeScript.Run(ctx, r.rdb, []string{sessionKey(id)}).Err(); err != nil {
-		return fmt.Errorf("revoke session id=%s: %w", id, err)
-	}
-	return nil
-}
-
-// RevokeIfActive атомарно отзывает сессию, если её флаг revoked равен false.
-// Принимает: контекст ctx и ID сессии id.
-// Возвращает: true, если именно этот вызов отозвал сессию, иначе false; при сбое — ошибку.
-func (r *SessionRepo) RevokeIfActive(ctx context.Context, id string) (bool, error) {
-	n, err := revokeActiveScript.Run(ctx, r.rdb, []string{sessionKey(id)}).Int()
+// Возвращает: true, если именно этот вызов отозвал сессию; false, если она уже
+// отозвана или не существует; при сбое Redis — ошибку.
+func (r *SessionRepo) Revoke(ctx context.Context, id string) (bool, error) {
+	n, err := revokeScript.Run(ctx, r.rdb, []string{sessionKey(id)}).Int()
 	if err != nil {
-		return false, fmt.Errorf("revoke active session id=%s: %w", id, err)
+		return false, fmt.Errorf("revoke session id=%s: %w", id, err)
 	}
 	return n == 1, nil
 }

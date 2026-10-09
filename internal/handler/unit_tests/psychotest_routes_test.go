@@ -16,7 +16,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-type testServiceStub struct {
+type psychoTestServiceStub struct {
 	userID int64
 	testID int64
 }
@@ -30,17 +30,18 @@ func stubTestResult(testID int64) *model.TestResult {
 	}
 }
 
-func (s *testServiceStub) GetCurrentTest(context.Context) (*model.Test, error) {
-	test := model.NewTIPITest(42)
-	test.Title = "TIPI"
-	test.Questions = []model.Question{{ID: 101, Body: "Вопрос"}}
-	return &test, nil
+func (s *psychoTestServiceStub) GetCurrentTest(context.Context) (*model.Test, error) {
+	return &model.Test{
+		ID: 42, Methodology: model.MethodologyTIPI, Title: "TIPI",
+		AnswerOptions: []model.AnswerOption{{Value: 1, Label: "Нет"}, {Value: 7, Label: "Да"}},
+		Questions:     []model.Question{{ID: 1, OperationID: 1, Body: "Вопрос"}},
+	}, nil
 }
-func (s *testServiceStub) SubmitTestAnswers(_ context.Context, userID int64, answers *model.TestAnswers) (*model.TestResult, error) {
+func (s *psychoTestServiceStub) SubmitTestAnswers(_ context.Context, userID int64, answers *model.TestAnswers) (*model.TestResult, error) {
 	s.userID, s.testID = userID, answers.TestID
 	return stubTestResult(answers.TestID), nil
 }
-func (s *testServiceStub) GetMyTestResult(_ context.Context, userID int64) (*model.TestResult, error) {
+func (s *psychoTestServiceStub) GetMyTestResult(_ context.Context, userID int64) (*model.TestResult, error) {
 	if userID == 74 {
 		return nil, model.ErrTestResultNotFound
 	}
@@ -73,12 +74,13 @@ func TestProtectedTestRoutes(t *testing.T) {
 		{"my result not passed", "GET", "/api/v1/tests/results/me", noResultToken, "", "", 404},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			svc := &testServiceStub{}
+			svc := &psychoTestServiceStub{}
 			r := mux.NewRouter()
 			requireAuth := middleware.Auth(issuer)
-			r.Handle("/api/v1/tests/current", requireAuth(handler.NewGetCurrentTestHandler(svc))).Methods(http.MethodGet)
-			r.Handle("/api/v1/tests/results/me", requireAuth(handler.NewGetMyTestResultHandler(svc))).Methods(http.MethodGet)
-			r.Handle("/api/v1/tests/{test_id}/results", requireAuth(handler.NewPostTestResultsHandler(svc))).Methods(http.MethodPost)
+			tests := handler.NewPsychoTestHandler(svc)
+			r.Handle("/api/v1/tests/current", requireAuth(handler.WithUser(tests.Current))).Methods(http.MethodGet)
+			r.Handle("/api/v1/tests/results/me", requireAuth(handler.WithUser(tests.MyResult))).Methods(http.MethodGet)
+			r.Handle("/api/v1/tests/{test_id}/results", requireAuth(handler.WithUser(tests.Submit))).Methods(http.MethodPost)
 			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
 			if tc.token != "" {
 				req.AddCookie(&http.Cookie{Name: "access_token", Value: tc.token})
