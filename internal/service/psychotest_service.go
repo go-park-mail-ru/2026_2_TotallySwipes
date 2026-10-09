@@ -29,16 +29,11 @@ type PsychoTestService struct {
 	test model.Test
 }
 
-// NewPsychoTestService создаёт сервис прохождения теста.
-// Принимает: репозиторий repo, сервис профилей profiles, сервис расчётов compatibility и единственный тест test.
-// Возвращает: экземпляр PsychoTestService.
 func NewPsychoTestService(repo PsychoTestRepository, profiles ProfileReader, compatibility CompatibilityService, test model.Test) *PsychoTestService {
 	return &PsychoTestService{repo: repo, profiles: profiles, compatibilitySvc: compatibility, test: test}
 }
 
 // GetCurrentTest получает текущий тест с вопросами и вариантами ответов.
-// Принимает: контекст ctx.
-// Возвращает: тест или ошибку, если получить его не удалось.
 func (s *PsychoTestService) GetCurrentTest(_ context.Context) (*model.Test, error) {
 	return s.currentTest(), nil
 }
@@ -52,8 +47,6 @@ func (s *PsychoTestService) currentTest() *model.Test {
 }
 
 // SubmitTestAnswers рассчитывает результат попытки и сохраняет его вместе с ответами как новый психопрофиль.
-// Принимает: контекст ctx, ID пользователя userID и ответы answers с ID текущего теста.
-// Возвращает: результат текущей попытки с нормализованным вектором, типом и описанием личности либо ошибку.
 func (s *PsychoTestService) SubmitTestAnswers(ctx context.Context, userID int64, answers *model.TestAnswers) (*model.TestResult, error) {
 
 	if answers == nil || answers.TestID <= 0 {
@@ -87,7 +80,6 @@ func (s *PsychoTestService) SubmitTestAnswers(ctx context.Context, userID int64,
 	if err != nil {
 		return nil, err
 	}
-	// Вектор профиля - результат последнего прохождения, прошлые попытки не смешиваются
 	psychoInput := &model.ProfilePsychoInput{
 		PersonalityType:   personalityType,
 		Openness:          bigFive.Openness,
@@ -114,8 +106,6 @@ func (s *PsychoTestService) SubmitTestAnswers(ctx context.Context, userID int64,
 }
 
 // GetMyTestResult получает последний сохранённый результат и добавляет описание типа личности.
-// Принимает: контекст ctx и ID пользователя userID.
-// Возвращает: результат последнего прохождения или ошибку, включая model.ErrProfileRequired и model.ErrTestResultNotFound.
 func (s *PsychoTestService) GetMyTestResult(ctx context.Context, userID int64) (*model.TestResult, error) {
 	profile, err := s.profiles.GetByUserIDCurrentProfile(ctx, userID)
 	if err != nil {
@@ -169,8 +159,6 @@ var personalityPrototypes = [...]personalityPrototype{
 }
 
 // ClassifyPersonality выбирает ближайший прототип личности по квадрату евклидова расстояния.
-// Принимает: полный нормализованный вектор vector.
-// Возвращает: тип личности, его описание и ошибку; при некорректном векторе — model.ErrInvalidBigFive. При равенстве выбирает первый прототип.
 func (s *PsychoTestService) ClassifyPersonality(vector model.BigFive) (model.PersonalityType, string, error) {
 
 	fields := [5]*float64{vector.Openness, vector.Conscientiousness, vector.Extraversion, vector.Agreeableness, vector.Neuroticism}

@@ -21,8 +21,7 @@ type TestAnswerRequest struct {
 	Value      *int   `json:"value"`
 }
 
-// ToModel проверяет форму ответов и переводит их в модель. Полноту набора
-// и допустимость значений проверяет сервис по описанию теста
+// ToModel проверяет форму ответов; полноту и значения проверяет сервис
 func (r SubmitTestAnswersRequest) ToModel(testID int64) (*model.TestAnswers, error) {
 	if r.Answers == nil {
 		return nil, ErrAnswersRequired

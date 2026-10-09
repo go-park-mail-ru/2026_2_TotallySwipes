@@ -47,7 +47,6 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	res, err := h.svc.Register(r.Context(), req.ToModel())
 	switch {
 	case errors.Is(err, model.ErrSessionNotOpened):
-		// Аккаунт уже есть, но выдать токены не получилось - клиент пойдёт на логин
 		slog.Error("register user: session not opened", "user_id", res.UserID, "error", err)
 	case err != nil:
 		writeServiceError(w, "register user", err)
@@ -103,12 +102,10 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Logout отвечает 204, даже без действующей сессии. Cookies чистятся всегда:
-// если отозвать сессию не удалось (500), клиент всё равно должен разлогиниться
+// Logout всегда чистит cookies и отвечает 204, даже без действующей сессии
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	h.clearSessionCookies(w)
 
-	// Ошибка тут только http.ErrNoCookie - тогда отзывать нечего
 	if c, err := r.Cookie(refreshTokenCookie); err == nil {
 		if err := h.svc.Logout(r.Context(), c.Value); err != nil {
 			writeServiceError(w, "logout", err)

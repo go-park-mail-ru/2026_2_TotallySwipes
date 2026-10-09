@@ -13,16 +13,11 @@ type PsychoTestRepo struct {
 	db *sql.DB
 }
 
-// NewPsychoTestRepository создаёт репозиторий результатов теста.
-// Принимает: подключение db.
-// Возвращает: экземпляр PsychoTestRepo.
 func NewPsychoTestRepository(db *sql.DB) *PsychoTestRepo {
 	return &PsychoTestRepo{db: db}
 }
 
 // SaveTestResult атомарно сохраняет новую ревизию психопрофиля и ответы на тест.
-// Принимает: контекст ctx, ID профиля profileID, ответы answers и рассчитанный психопрофиль psycho.
-// Возвращает: метаданные результата (ID, ревизию и время) или ошибку; ID теста и Big Five в возвращаемом объекте не заполняет.
 func (r *PsychoTestRepo) SaveTestResult(ctx context.Context, profileID int64, answers *model.TestAnswers, psycho *model.ProfilePsychoInput) (*model.TestResult, error) {
 
 	if answers == nil || psycho == nil {
@@ -96,9 +91,7 @@ func (r *PsychoTestRepo) SaveTestResult(ctx context.Context, profileID int64, an
 	return &result, nil
 }
 
-// GetTestResult читает последнюю завершённую ревизию результата тестирования.
-// Принимает: контекст ctx и ID профиля profileID.
-// Возвращает: сохранённый вектор, тип личности и метаданные результата либо ошибку; при отсутствии — model.ErrNotFound.
+// GetTestResult читает последнюю ревизию результата; нет результата - model.ErrNotFound
 func (r *PsychoTestRepo) GetTestResult(ctx context.Context, profileID int64) (*model.TestResult, error) {
 	var result model.TestResult
 	var personalityType sql.NullString

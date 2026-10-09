@@ -50,9 +50,6 @@ type AuthService struct {
 	now        func() time.Time
 }
 
-// NewAuthService создаёт сервис регистрации, входа и управления сессиями.
-// Принимает: репозитории users и sessions, проверку анкеты profiles, hasher, издатель access и срок refreshTTL.
-// Возвращает: экземпляр AuthService.
 func NewAuthService(users UserRepository, profiles ProfileMissingChecker, sessions SessionRepository,
 	hasher PasswordHasher, access AccessTokenIssuer, refreshTTL time.Duration) *AuthService {
 
@@ -67,9 +64,7 @@ func NewAuthService(users UserRepository, profiles ProfileMissingChecker, sessio
 	}
 }
 
-// Register создаёт пользователя с пустой анкетой и открывает сессию.
-// Принимает: контекст ctx и предварительно проверенные почту и пароль in.
-// Возвращает: данные авторизации или ошибку; если пользователь создан, но сессия не открылась, — UserID и model.ErrSessionNotOpened.
+// Register создаёт пользователя с пустой анкетой и открывает сессию; при сбое сессии - UserID и model.ErrSessionNotOpened
 func (s *AuthService) Register(ctx context.Context, in model.RegisterInput) (model.AuthResult, error) {
 	hash, err := s.hasher.Hash(in.Password)
 	if err != nil {
@@ -92,8 +87,6 @@ func (s *AuthService) Register(ctx context.Context, in model.RegisterInput) (mod
 }
 
 // Login проверяет пароль пользователя и открывает новую сессию.
-// Принимает: контекст ctx, адрес email и пароль password.
-// Возвращает: данные авторизации или ошибку; при неверном email или пароле — model.ErrInvalidCredentials.
 func (s *AuthService) Login(ctx context.Context, email, password string) (model.AuthResult, error) {
 	user, err := s.users.GetUserByEmail(ctx, email)
 	if errors.Is(err, model.ErrNotFound) {
@@ -124,9 +117,7 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (model.
 	return model.AuthResult{UserID: user.ID, Missing: missing, Tokens: tokens}, nil
 }
 
-// Logout отзывает сессию по refresh-токену.
-// Принимает: контекст ctx и токен refreshToken.
-// Возвращает: nil при успехе, пустом токене, отсутствующей или уже отозванной сессии; иначе ошибку.
+// Logout отзывает сессию; пустой токен и уже отозванная сессия ошибкой не считаются
 func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
 	if refreshToken == "" {
 		return nil
@@ -148,8 +139,6 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
 }
 
 // Refresh отзывает действующую сессию и создаёт новую пару токенов.
-// Принимает: контекст ctx и токен refreshToken.
-// Возвращает: новые access- и refresh-токены со сроками действия либо ошибку; недействующая сессия — model.ErrInvalidSession.
 func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (model.Tokens, error) {
 	if refreshToken == "" {
 		return model.Tokens{}, fmt.Errorf("refresh: %w", model.ErrInvalidSession)
@@ -166,8 +155,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (model.T
 		return model.Tokens{}, fmt.Errorf("refresh session id=%s: %w", session.ID, model.ErrInvalidSession)
 	}
 
-	// Один refresh-токен может прийти дважды одновременно: новую пару
-	// получит только тот запрос, который сам отозвал старую сессию
+	// При гонке двух refresh новую пару получит только запрос, отозвавший старую сессию
 	revoked, err := s.sessions.Revoke(ctx, session.ID)
 	if err != nil {
 		return model.Tokens{}, fmt.Errorf("revoke session: %w", err)
@@ -184,8 +172,6 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (model.T
 }
 
 // openSession создаёт refresh-сессию и выпускает access-токен.
-// Принимает: контекст ctx и ID пользователя userID.
-// Возвращает: пару токенов со сроками действия или ошибку генерации, сохранения либо выпуска.
 func (s *AuthService) openSession(ctx context.Context, userID int64) (model.Tokens, error) {
 	sessionID, err := auth.NewSessionID()
 	if err != nil {

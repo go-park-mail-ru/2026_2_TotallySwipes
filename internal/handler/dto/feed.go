@@ -16,8 +16,7 @@ type FeedQuery struct {
 	Cursor *int64
 }
 
-// ParseFeedQuery разбирает limit и cursor. Каждый параметр необязателен,
-// но если указан - ровно один раз. Пустая map - запрос корректен
+// ParseFeedQuery разбирает необязательные limit и cursor; пустая map - запрос корректен
 func ParseFeedQuery(q url.Values) (FeedQuery, map[string]string) {
 	errs := make(map[string]string)
 	query := FeedQuery{Limit: feedDefaultLimit}

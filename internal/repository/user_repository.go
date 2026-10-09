@@ -13,9 +13,7 @@ import (
 
 const pgUniqueViolation = "23505"
 
-// isUniqueViolation проверяет ошибку PostgreSQL на нарушение уникальности.
-// Принимает: ошибку err, включая обёрнутую.
-// Возвращает: true для кода 23505, иначе false; при вставке пользователя это трактуется как занятый email.
+// isUniqueViolation - ошибка PostgreSQL 23505 (нарушение уникальности)
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation
@@ -26,17 +24,11 @@ type UserRepo struct {
 	db *sql.DB
 }
 
-// NewUserRepository создаёт репозиторий пользователей.
-// Принимает: подключение к PostgreSQL db.
-// Возвращает: экземпляр UserRepo.
 func NewUserRepository(db *sql.DB) *UserRepo {
 	return &UserRepo{db: db}
 }
 
-// CreateUser атомарно создаёт пользователя и пустой профиль. Версии анкеты
-// у профиля нет до первого изменения, но фото к нему уже можно привязать.
-// Принимает: контекст ctx и данные user.
-// Возвращает: ID пользователя или ошибку; при занятом email — model.ErrEmailAlreadyExists.
+// CreateUser атомарно создаёт пользователя и пустой профиль; занятый email - model.ErrEmailAlreadyExists
 func (r *UserRepo) CreateUser(ctx context.Context, user *model.UserInput) (int64, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -66,9 +58,7 @@ func (r *UserRepo) CreateUser(ctx context.Context, user *model.UserInput) (int64
 	return userID, nil
 }
 
-// GetUserByEmail находит пользователя по email.
-// Принимает: контекст ctx и адрес email.
-// Возвращает: пользователя или ошибку; при отсутствии — model.ErrNotFound.
+// GetUserByEmail находит пользователя по email или возвращает model.ErrNotFound
 func (r *UserRepo) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
 
 	user := model.User{}

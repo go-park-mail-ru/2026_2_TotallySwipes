@@ -71,7 +71,6 @@ func (s *resultRepositoryStub) GetTestResult(context.Context, int64) (*model.Tes
 	return &stored, nil
 }
 
-// Прошлый результат не смешивается с новым: сохраняется ровно вектор попытки
 func TestSubmissionReplacesPreviousResult(t *testing.T) {
 	repo := &resultRepositoryStub{}
 	definition := tipiTest(t)

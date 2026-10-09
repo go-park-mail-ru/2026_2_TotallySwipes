@@ -35,7 +35,7 @@ func NewProfileHandler(svc ProfileService) *ProfileHandler {
 	return &ProfileHandler{svc: svc}
 }
 
-// ShortProfile - GET /profile/me/short: имя, возраст, главное фото, missing и статус теста
+// ShortProfile - GET /profile/me/short: имя, возраст, главное фото и missing
 func (h *ProfileHandler) ShortProfile(w http.ResponseWriter, r *http.Request, userID int64) {
 	short, err := h.svc.GetShortProfile(r.Context(), userID)
 	if err != nil {
@@ -106,8 +106,7 @@ func (h *ProfileHandler) DeletePhoto(w http.ResponseWriter, r *http.Request, use
 	writeJSON(w, http.StatusOK, dto.NewPhotosResponse(photos))
 }
 
-// readPhotoUpload читает ровно один файл из части photo multipart-формы и проверяет его.
-// При ошибке сам отвечает клиенту и возвращает false
+// readPhotoUpload читает один файл из части photo; при ошибке сам отвечает клиенту
 func readPhotoUpload(w http.ResponseWriter, r *http.Request) (model.PhotoUpload, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, photoUploadMaxBody)
 	if err := r.ParseMultipartForm(photoUploadMaxMemory); err != nil {

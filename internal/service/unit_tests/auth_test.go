@@ -106,7 +106,6 @@ func (f *fakeSessions) Revoke(_ context.Context, id string) (bool, error) {
 	return false, nil
 }
 
-// fakeHasher: "hash:<пароль>"
 type fakeHasher struct{ hashErr error }
 
 func (f fakeHasher) Hash(p string) (string, error) {
@@ -134,7 +133,6 @@ func validRegisterInput() model.RegisterInput {
 
 var allMissing = []string{"name", "birth_date", "sex", "dating_goal", "search_sex", "search_age", "photos"}
 
-// checkSession проверяет, что выданный refresh-токен соответствует сохранённой сессии
 func checkSession(t *testing.T, sessions *fakeSessions, res model.AuthResult, userID int64) {
 	t.Helper()
 	s, ok := sessions.byHash[auth.HashToken(res.Tokens.Refresh)]

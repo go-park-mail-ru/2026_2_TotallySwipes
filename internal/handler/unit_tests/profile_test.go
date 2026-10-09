@@ -50,7 +50,6 @@ func (f *fakeProfiles) DeletePhoto(_ context.Context, _, photoID int64) ([]model
 	return f.photos, f.err
 }
 
-// profileRouter собирает ручки анкеты так же, как main, но без проверки токена
 func profileRouter(svc *fakeProfiles) http.Handler {
 	h := NewProfileHandler(svc)
 	withUser := func(fn UserHandlerFunc) http.Handler {

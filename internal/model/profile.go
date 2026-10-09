@@ -32,7 +32,6 @@ type Tag struct {
 	Name string
 }
 
-// MaxPhotos - сколько фотографий может быть в анкете
 const MaxPhotos = 6
 
 type PhotoUpload struct {
@@ -40,8 +39,7 @@ type PhotoUpload struct {
 	Ext  string
 }
 
-// Photo - фотография анкеты; Position начинается с 1, первая по порядку - главная.
-// URL заполняет сервис по StorageKey
+// Photo - фото анкеты; Position с 1, первая - главная, URL заполняет сервис
 type Photo struct {
 	ID         int64
 	StorageKey string
@@ -61,8 +59,7 @@ type Profile struct {
 	Photos []Photo
 }
 
-// ProfileVersion - снимок анкеты. До первого изменения анкеты версии нет
-// (ID == 0), и все поля пустые. Поля заполняются по шагам онбординга
+// ProfileVersion - снимок анкеты; до первого изменения версии нет (ID == 0)
 type ProfileVersion struct {
 	ID         int64
 	ProfileID  int64
@@ -86,9 +83,7 @@ type ProfileVersionInput struct {
 	Tags []Tag
 }
 
-// ProfilePatch - частичное изменение анкеты: nil означает «не менять».
-// AboutMeSet отличает очистку описания (AboutMe == nil) от отсутствия поля.
-// Tags, если заданы, заменяют набор тегов целиком
+// ProfilePatch - частичное изменение анкеты: nil - не менять, AboutMeSet отличает очистку about_me
 type ProfilePatch struct {
 	Name          *string
 	BirthDate     *time.Time
@@ -102,7 +97,6 @@ type ProfilePatch struct {
 	Tags          *[]string
 }
 
-// IsEmpty - в патче нет ни одного поля
 func (p ProfilePatch) IsEmpty() bool {
 	return p.Name == nil && p.BirthDate == nil && p.Sex == nil && p.DatingGoal == nil &&
 		!p.AboutMeSet && p.SearchSex == nil && p.SearchAgeFrom == nil && p.SearchAgeTo == nil && p.Tags == nil
@@ -148,9 +142,7 @@ const (
 	MissingPhotos     = "photos"
 )
 
-// Missing возвращает обязательные поля, которых не хватает анкете, в порядке
-// шагов онбординга. Пустой список - анкета заполнена и попадает в ленту.
-// about_me, теги и психотест в обязательный минимум не входят
+// Missing возвращает незаполненные обязательные поля в порядке онбординга; пусто - анкета попадает в ленту
 func (p *Profile) Missing() []string {
 	missing := missingFields(p.CurrentVersion.ProfileFields)
 	if len(p.Photos) == 0 {
@@ -220,9 +212,9 @@ type ProfilePsychoInput struct {
 }
 
 type ProfileShort struct {
-	UserID        int64
-	Name          *string
-	Age           *int
-	MainPhotoURL  *string
-	Missing       []string
+	UserID       int64
+	Name         *string
+	Age          *int
+	MainPhotoURL *string
+	Missing      []string
 }

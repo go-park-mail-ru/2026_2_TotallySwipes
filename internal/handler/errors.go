@@ -15,8 +15,7 @@ type apiError struct {
 	fields  map[string]string
 }
 
-// domainErrors - единая таблица перевода доменных ошибок в HTTP-ответы.
-// Проверяется по порядку через errors.Is, первая подходящая запись выигрывает
+// domainErrors переводит доменные ошибки в HTTP; выигрывает первая совпавшая по errors.Is
 var domainErrors = []struct {
 	err error
 	api apiError
@@ -39,8 +38,7 @@ var domainErrors = []struct {
 	{model.ErrTestResultNotFound, apiError{http.StatusNotFound, "TEST_RESULT_NOT_FOUND", "Тест ещё не пройден", nil}},
 }
 
-// writeServiceError отдаёт ответ по ошибке сервиса: известные доменные ошибки
-// берутся из domainErrors, остальные логируются с op и превращаются в 500
+// writeServiceError отвечает по domainErrors, остальные ошибки логирует и отдаёт 500
 func writeServiceError(w http.ResponseWriter, op string, err error) {
 	for _, e := range domainErrors {
 		if errors.Is(err, e.err) {

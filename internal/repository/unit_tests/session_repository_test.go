@@ -69,7 +69,6 @@ func TestSessionRepo_NotFound(t *testing.T) {
 		t.Errorf("expired: err = %v", err)
 	}
 
-	// Отзыв несуществующей сессии не должен создавать ключ без TTL
 	if ok, err := repo.Revoke(ctx, "sid"); err != nil || ok {
 		t.Fatalf("revoke missing: ok = %v, err = %v", ok, err)
 	}

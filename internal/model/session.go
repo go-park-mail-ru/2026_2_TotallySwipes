@@ -2,7 +2,6 @@ package model
 
 import "time"
 
-// Session - refresh-сессия авторизации
 type Session struct {
 	ID        string
 	UserID    int64

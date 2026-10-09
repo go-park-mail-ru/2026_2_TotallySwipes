@@ -9,11 +9,11 @@ import (
 )
 
 type ProfileShortResponse struct {
-	UserID        int64    `json:"user_id"`
-	Name          *string  `json:"name"`
-	Age           *int     `json:"age"`
-	PhotoURL      *string  `json:"photo_url"`
-	Missing       []string `json:"missing"`
+	UserID   int64    `json:"user_id"`
+	Name     *string  `json:"name"`
+	Age      *int     `json:"age"`
+	PhotoURL *string  `json:"photo_url"`
+	Missing  []string `json:"missing"`
 }
 
 func NewProfileShortResponse(p *model.ProfileShort) ProfileShortResponse {
@@ -103,9 +103,7 @@ func (o *OptionalString) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, &o.Value)
 }
 
-// UpdateProfileRequest - PATCH /profile/me: любое непустое подмножество полей.
-// Отсутствующее поле не меняется. Обязательные поля анкеты очистить нельзя,
-// about_me очищается через null, tags заменяются целиком
+// UpdateProfileRequest - PATCH /profile/me: отсутствующее поле не меняется, about_me чистится через null, tags заменяются целиком
 type UpdateProfileRequest struct {
 	Name          *string        `json:"name"`
 	BirthDate     *string        `json:"birth_date"`
@@ -148,7 +146,6 @@ func (r UpdateProfileRequest) ToPatch() (*model.ProfilePatch, map[string]string)
 	}
 	if r.AboutMe.Set {
 		patch.AboutMeSet = true
-		// Пустая строка - то же, что отсутствие описания
 		if r.AboutMe.Value != nil && *r.AboutMe.Value != "" {
 			addErr(errs, "about_me", validate.ValidateAboutMe(*r.AboutMe.Value))
 			patch.AboutMe = r.AboutMe.Value

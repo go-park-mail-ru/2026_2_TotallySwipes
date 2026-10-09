@@ -1,5 +1,4 @@
-// Package psychotest хранит единственный психологический тест приложения.
-// Тест лежит в tipi.json, встраивается в бинарник и не хранится в БД.
+// Package psychotest хранит единственный тест приложения, встроенный в бинарник из tipi.json
 package psychotest
 
 import (
@@ -35,7 +34,6 @@ type definition struct {
 }
 
 // Load разбирает встроенный тест и проверяет его структуру.
-// Возвращает: тест, у которого номер вопроса совпадает с номером пункта TIPI, либо ошибку описания.
 func Load() (model.Test, error) {
 	var def definition
 	if err := json.Unmarshal(tipiJSON, &def); err != nil {

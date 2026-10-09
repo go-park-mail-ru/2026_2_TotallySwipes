@@ -9,7 +9,6 @@ type RegisterInput struct {
 	Password string
 }
 
-// Tokens - пара токенов новой сессии
 type Tokens struct {
 	Access           string
 	AccessExpiresAt  time.Time

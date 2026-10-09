@@ -35,27 +35,11 @@ type ProfileService struct {
 	compatibilitySvc CompatibilityService
 }
 
-// NewProfileService создаёт сервис профилей и ленты.
-// Принимает: репозиторий repo, сервис совместимости svc, поставщик URL media и хранилище файлов photos.
-// Возвращает: экземпляр ProfileService.
 func NewProfileService(repo ProfileRepository, svc CompatibilityService, media URLProvider, photos PhotoStorage) *ProfileService {
 	return &ProfileService{profileRepo: repo, compatibilitySvc: svc, media: media, photos: photos}
 }
 
-// GetByUserIDCurrentProfile загружает профиль с актуальной версией, психопрофилем, тегами и фото.
-// Принимает: контекст ctx и ID пользователя.
-// Возвращает: профиль или ошибку; при отсутствии — model.ErrNotFound.
-func (s *ProfileService) GetByUserIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error) {
-	profile, err := s.profileRepo.GetByUserIDCurrentProfile(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("get user profile id=%d: %w", id, err)
-	}
-	return profile, nil
-}
-
 // GetMyProfile получает анкету пользователя целиком, с URL фотографий.
-// Принимает: контекст ctx и ID пользователя userID.
-// Возвращает: профиль или ошибку; при отсутствии профиля — model.ErrProfileRequired.
 func (s *ProfileService) GetMyProfile(ctx context.Context, userID int64) (*model.Profile, error) {
 	profile, err := s.profileRepo.GetByUserIDCurrentProfile(ctx, userID)
 	if err != nil {
@@ -68,8 +52,6 @@ func (s *ProfileService) GetMyProfile(ctx context.Context, userID int64) (*model
 }
 
 // UpdateProfile сохраняет новую версию анкеты с наложенным патчем.
-// Принимает: контекст ctx, ID пользователя userID и непустой проверенный patch.
-// Возвращает: обновлённый профиль или ошибку, включая model.ErrUnknownTag.
 func (s *ProfileService) UpdateProfile(ctx context.Context, userID int64, patch *model.ProfilePatch) (*model.Profile, error) {
 	if err := s.profileRepo.PatchProfile(ctx, userID, patch); err != nil {
 		return nil, fmt.Errorf("update profile user id=%d: %w", userID, profileRequired(err))
@@ -78,8 +60,6 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, userID int64, patch 
 }
 
 // AddPhoto сохраняет файл и добавляет фото в конец списка анкеты.
-// Принимает: контекст ctx, ID пользователя userID и проверенный upload.
-// Возвращает: актуальный список фото или ошибку, включая model.ErrPhotoLimit.
 func (s *ProfileService) AddPhoto(ctx context.Context, userID int64, upload model.PhotoUpload) ([]model.Photo, error) {
 	key, err := s.photos.Save(ctx, upload.Data, upload.Ext)
 	if err != nil {
@@ -94,8 +74,6 @@ func (s *ProfileService) AddPhoto(ctx context.Context, userID int64, upload mode
 }
 
 // DeletePhoto удаляет фото анкеты и его файл.
-// Принимает: контекст ctx, ID пользователя userID и ID фото photoID.
-// Возвращает: актуальный список фото или ошибку, включая model.ErrPhotoNotFound и model.ErrLastPhoto.
 func (s *ProfileService) DeletePhoto(ctx context.Context, userID, photoID int64) ([]model.Photo, error) {
 	key, err := s.profileRepo.DeletePhoto(ctx, userID, photoID)
 	if err != nil {
@@ -107,8 +85,6 @@ func (s *ProfileService) DeletePhoto(ctx context.Context, userID, photoID int64)
 }
 
 // Missing возвращает обязательные поля, которых не хватает анкете пользователя.
-// Принимает: контекст ctx и ID пользователя userID.
-// Возвращает: список полей (пустой - анкета заполнена) или ошибку.
 func (s *ProfileService) Missing(ctx context.Context, userID int64) ([]string, error) {
 	profile, err := s.profileRepo.GetByUserIDCurrentProfile(ctx, userID)
 	if err != nil {
@@ -143,8 +119,6 @@ func (s *ProfileService) deleteFile(ctx context.Context, key string) {
 }
 
 // GetShortProfile получает краткий профиль: имя, возраст, главное фото, missing.
-// Принимает: контекст ctx и ID пользователя userID.
-// Возвращает: краткий профиль или ошибку; при отсутствии профиля — model.ErrProfileRequired.
 func (s *ProfileService) GetShortProfile(ctx context.Context, userID int64) (*model.ProfileShort, error) {
 	profile, err := s.GetMyProfile(ctx, userID)
 	if err != nil {
@@ -153,9 +127,9 @@ func (s *ProfileService) GetShortProfile(ctx context.Context, userID int64) (*mo
 
 	fields := profile.CurrentVersion.ProfileFields
 	short := &model.ProfileShort{
-		UserID:        profile.UserID,
-		Name:          fields.Name,
-		Missing:       profile.Missing(),
+		UserID:  profile.UserID,
+		Name:    fields.Name,
+		Missing: profile.Missing(),
 	}
 	if fields.BirthDate != nil {
 		age := model.AgeAt(*fields.BirthDate, time.Now())
@@ -168,8 +142,6 @@ func (s *ProfileService) GetShortProfile(ctx context.Context, userID int64) (*mo
 }
 
 // GetNextFeed формирует страницу анкет с возрастом, URL фото и совместимостью при наличии обоих векторов.
-// Принимает: контекст ctx, ID пользователя userID, limit от 1 до 10 и необязательный cursor.
-// Возвращает: страницу ленты или ошибку, включая model.ErrInvalidFeedRequest и model.ErrProfileRequired.
 func (s *ProfileService) GetNextFeed(ctx context.Context, userID int64, limit int, cursor *int64) (*model.FeedPage, error) {
 
 	if userID <= 0 || limit < 1 || limit > 10 || (cursor != nil && *cursor <= 0) {
@@ -193,8 +165,7 @@ func (s *ProfileService) GetNextFeed(ctx context.Context, userID int64, limit in
 
 	page := &model.FeedPage{Items: make([]model.FeedItem, 0, len(profiles)), NextCursor: nextCursor}
 	for _, profile := range profiles {
-		// SQL уже отбирает заполненные анкеты; проверка страхует от расхождения
-		// SQL-фильтра с Missing, иначе ниже разыменовался бы nil
+		// Страховка от расхождения SQL-фильтра с Missing
 		if missing := profile.Missing(); len(missing) > 0 {
 			slog.Warn("feed: incomplete profile passed SQL filter", "user_id", profile.UserID, "missing", missing)
 			continue
@@ -244,8 +215,7 @@ func (s *ProfileService) GetNextFeed(ctx context.Context, userID int64, limit in
 	return page, nil
 }
 
-// profileRequired переводит отсутствие анкеты в ошибку, которую видит клиент (409 PROFILE_REQUIRED).
-// Остальные ошибки возвращает без изменений.
+// profileRequired переводит model.ErrNotFound в model.ErrProfileRequired (409 PROFILE_REQUIRED)
 func profileRequired(err error) error {
 	if errors.Is(err, model.ErrNotFound) {
 		return model.ErrProfileRequired
@@ -253,9 +223,7 @@ func profileRequired(err error) error {
 	return err
 }
 
-// feedBigFive извлекает все пять координат из психопрофиля.
-// Принимает: психопрофиль psycho, который может быть nil.
-// Возвращает: вектор и true, если все координаты заданы, иначе nil и false; диапазон значений не проверяет.
+// feedBigFive возвращает вектор, только если заданы все пять координат
 func feedBigFive(psycho *model.ProfilePsycho) (*model.BigFive, bool) {
 	if psycho == nil || psycho.Openness == nil || psycho.Conscientiousness == nil ||
 		psycho.Extraversion == nil || psycho.Agreeableness == nil || psycho.Neuroticism == nil {

@@ -42,9 +42,7 @@ type HTTPConfig struct {
 	IdleTimeout       time.Duration
 }
 
-// Load читает конфигурацию из переменных окружения. Обязательны только
-// DATABASE_URL и JWT_SECRET - у них нет разумного дефолта. Остальное - с
-// дефолтом, но если задано криво, тоже ошибка. Все ошибки отдаются разом
+// Load читает конфиг из env; обязательны только DATABASE_URL и JWT_SECRET, ошибки собираются разом
 func Load() (*Config, error) {
 	var r envReader
 
@@ -149,7 +147,6 @@ func (r *envReader) duration(key string, def time.Duration) time.Duration {
 func (r *envReader) positiveDuration(key string, def time.Duration) time.Duration {
 	before := len(r.errs)
 	d := r.duration(key, def)
-	// Если duration уже ругнулся, второй ошибки про ту же переменную не нужно
 	if len(r.errs) == before && d == 0 {
 		r.fail(key, os.Getenv(key), errors.New("must be positive"))
 	}

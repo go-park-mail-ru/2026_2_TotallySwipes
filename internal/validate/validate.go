@@ -30,10 +30,10 @@ const (
 
 	PhotoMaxSize = 5 << 20
 
-	minAge       = 18  // нижняя граница в принципе на сервисе
-	maxSearchAge = 100 // верхняя граница возраста в фильтре поиска
+	minAge       = 18
+	maxSearchAge = 100
 
-	DateLayout = "2006-01-02" // формат birth_date в запросах
+	DateLayout = "2006-01-02"
 )
 
 var (
@@ -157,8 +157,7 @@ func ValidatePassword(s string) error {
 	return nil
 }
 
-// ValidateLoginPassword - при логине только непустой и не длиннее 128,
-// правила сложности не проверяем
+// ValidateLoginPassword - при логине только непустой и не длиннее 128, без правил сложности
 func ValidateLoginPassword(s string) error {
 	if s == "" {
 		return ErrRequired
@@ -214,7 +213,7 @@ func ValidateAge(birthDate time.Time) error {
 	return ValidateAgeAt(birthDate, time.Now())
 }
 
-// ValidateAgeAt checks the minimum age using the supplied reference date.
+// ValidateAgeAt проверяет минимальный возраст на дату now
 func ValidateAgeAt(birthDate, now time.Time) error {
 	birth := time.Date(birthDate.Year(), birthDate.Month(), birthDate.Day(), 0, 0, 0, 0, time.UTC)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
@@ -224,8 +223,7 @@ func ValidateAgeAt(birthDate, now time.Time) error {
 	return nil
 }
 
-// ParseBirthDate разбирает дату YYYY-MM-DD. time.Parse сам отбрасывает
-// несуществующие даты вроде 2005-02-30
+// ParseBirthDate разбирает YYYY-MM-DD; несуществующие даты отбрасывает time.Parse
 func ParseBirthDate(s string) (time.Time, error) {
 	if s == "" {
 		return time.Time{}, ErrRequired

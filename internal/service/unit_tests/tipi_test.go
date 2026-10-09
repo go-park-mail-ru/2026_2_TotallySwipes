@@ -11,7 +11,7 @@ func TestCalculateBigFiveTIPI(t *testing.T) {
 	type testCase struct {
 		name    string
 		values  [10]int
-		want    [5]float64 // OCEAN
+		want    [5]float64
 		mutate  func(*model.Test, *model.TestAnswers)
 		wantErr bool
 	}
@@ -46,7 +46,6 @@ func TestCalculateBigFiveTIPI(t *testing.T) {
 				definition.Questions = append(definition.Questions, model.Question{ID: id, OperationID: int64(i + 1)})
 				answers.Answers = append(answers.Answers, model.Answer{QuestionID: id, Value: tc.values[i]})
 			}
-			// Neither database IDs nor answer ordering determine the scoring operation.
 			answers.Answers[0], answers.Answers[9] = answers.Answers[9], answers.Answers[0]
 			definition.Questions[2], definition.Questions[5] = definition.Questions[5], definition.Questions[2]
 			if tc.mutate != nil {

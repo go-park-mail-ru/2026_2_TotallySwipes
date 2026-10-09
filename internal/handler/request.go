@@ -11,8 +11,7 @@ import (
 
 const maxRequestBodySize = 1 << 20
 
-// decodeJSON читает тело как ровно один JSON-объект без неизвестных полей.
-// При ошибке сам отвечает клиенту и возвращает false
+// decodeJSON читает ровно один JSON-объект без неизвестных полей; при ошибке сам отвечает клиенту
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {

@@ -15,8 +15,6 @@ type URLProvider interface {
 }
 
 // GetURL формирует публичный URL фотографии с экранированием пути.
-// Принимает: контекст ctx (не используется) и относительный ключ storageKey.
-// Возвращает: URL или model.ErrInvalidPhotoStorageKey, если ключ недопустим.
 func (p *LocalPhotoURLProvider) GetURL(ctx context.Context, storageKey string) (string, error) {
 	if storageKey == "." || !fs.ValidPath(storageKey) || strings.Contains(storageKey, "\\") {
 		return "", fmt.Errorf("get photo URL key=%q: %w", storageKey, model.ErrInvalidPhotoStorageKey)
@@ -30,9 +28,6 @@ type LocalPhotoURLProvider struct {
 	mediaBaseURL string
 }
 
-// NewLocalPhotoURLProvider создаёт поставщик URL локальных фотографий.
-// Принимает: базовый публичный адрес baseURL.
-// Возвращает: экземпляр LocalPhotoURLProvider.
 func NewLocalPhotoURLProvider(baseURL string) *LocalPhotoURLProvider {
 	return &LocalPhotoURLProvider{
 		mediaBaseURL: baseURL,

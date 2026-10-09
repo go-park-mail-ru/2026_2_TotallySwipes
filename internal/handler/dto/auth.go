@@ -6,8 +6,7 @@ import (
 	"strings"
 )
 
-// AuthResponse - ответ логина и регистрации. Missing - обязательные поля анкеты,
-// которых не хватает; если список не пуст, клиент ведёт пользователя на онбординг
+// AuthResponse - ответ логина и регистрации; непустой Missing ведёт клиента на онбординг
 type AuthResponse struct {
 	UserID  int64    `json:"user_id"`
 	Missing []string `json:"missing"`
@@ -26,12 +25,11 @@ type RegisterRequest struct {
 	Password string `json:"password"`
 }
 
-// Normalize обрезает email и приводит его к нижнему регистру, пароль не трогает
 func (r *RegisterRequest) Normalize() {
 	r.Email = normalizeEmail(r.Email)
 }
 
-// Validate собирает ошибки по всем полям сразу. Вызывать после Normalize
+// Validate собирает ошибки по всем полям; вызывать после Normalize
 func (r RegisterRequest) Validate() map[string]string {
 	errs := make(map[string]string)
 	addErr(errs, "email", validate.ValidateEmail(r.Email))
@@ -59,7 +57,6 @@ func (r LoginRequest) Validate() map[string]string {
 	return errs
 }
 
-// normalizeEmail приводит строку к lower case и тримит ее
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }

@@ -56,7 +56,6 @@ var testTokens = model.Tokens{
 	RefreshExpiresAt: time.Now().Add(720 * time.Hour),
 }
 
-// do вызывает метод AuthHandler и разбирает JSON-ответ (nil, если тела нет)
 func do(t *testing.T, h http.HandlerFunc, path, body string, cookies ...*http.Cookie) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
@@ -85,7 +84,6 @@ func errCode(resp map[string]any) any {
 	return e["code"]
 }
 
-// checkSessionCookies проверяет, что выставлены обе cookie сессии
 func checkSessionCookies(t *testing.T, rec *httptest.ResponseRecorder) {
 	t.Helper()
 	got := map[string]*http.Cookie{}
@@ -305,7 +303,6 @@ func TestLogoutHandler(t *testing.T) {
 	}
 	assertSessionCleared(t, rec)
 
-	// Без cookie - всё равно 204, сервис не вызывается
 	svc = &fakeAuth{}
 	rec, _ = do(t, NewAuthHandler(svc, true).Logout, "/api/v1/auth/logout", "")
 	if rec.Code != http.StatusNoContent || svc.called {

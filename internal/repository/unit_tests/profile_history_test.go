@@ -15,8 +15,6 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-// Run against a disposable database initialized with db/migrations (000001–000002).
-// Проходит онбординг пустой анкеты по шагам и проверяет историю версий и фото.
 func TestProfileTagHistory(t *testing.T) {
 	dsn := os.Getenv("TEST_HISTORY_DATABASE_URL")
 	if dsn == "" {
@@ -45,7 +43,6 @@ func TestProfileTagHistory(t *testing.T) {
 		t.Fatalf("new profile must be empty: %+v", empty)
 	}
 
-	// Шаги онбординга: каждый PATCH - новая версия, остальные поля переносятся
 	name, birth := "History", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	sex, goal, searchSex := model.SexFemale, model.DatingGoalFriendship, model.SearchSexAll
 	from, to := 18, 100
@@ -68,7 +65,6 @@ func TestProfileTagHistory(t *testing.T) {
 		t.Fatalf("after steps: %+v missing=%v", first, first.Missing())
 	}
 
-	// Тег прошлой версии сохраняется, новая версия без patch.Tags их наследует
 	newName := "Renamed"
 	if err := repo.PatchProfile(ctx, userID, &model.ProfilePatch{Name: &newName}); err != nil {
 		t.Fatal(err)
@@ -90,7 +86,6 @@ func TestProfileTagHistory(t *testing.T) {
 		t.Fatalf("failed version not rolled back: %d %v", versions, err)
 	}
 
-	// Фото: лимит, сдвиг при удалении, запрет удалить последнее у заполненной анкеты
 	for i := 1; i <= model.MaxPhotos; i++ {
 		if err := repo.AddPhoto(ctx, userID, fmt.Sprintf("history/%d.jpg", i)); err != nil {
 			t.Fatal(err)

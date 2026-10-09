@@ -14,15 +14,11 @@ type ProfileRepo struct {
 	db *sql.DB
 }
 
-// NewProfileRepository создаёт репозиторий профилей.
-// Принимает: подключение к PostgreSQL db.
-// Возвращает: экземпляр ProfileRepo.
 func NewProfileRepository(db *sql.DB) *ProfileRepo {
 	return &ProfileRepo{db: db}
 }
 
-// profileSelect читает профиль с последней версией анкеты и последним психопрофилем.
-// Версии может не быть (анкету ещё не начинали заполнять), тогда её поля NULL.
+// profileSelect читает профиль с последней версией анкеты (её может не быть) и последним психопрофилем
 const profileSelect = `
 	SELECT p.id, p.user_id, p.created_at, p.updated_at,
 	       v.id, v.recorded_at, v.name, v.birth_date, v.sex, v.dating_goal, v.about_me,
@@ -73,9 +69,7 @@ func scanProfile(row rowScanner) (*model.Profile, error) {
 	return &p, nil
 }
 
-// GetByUserIDCurrentProfile загружает профиль с актуальной версией, психопрофилем, тегами и фото.
-// Принимает: контекст ctx и ID пользователя.
-// Возвращает: профиль или ошибку; при отсутствии — model.ErrNotFound.
+// GetByUserIDCurrentProfile загружает профиль с версией, психопрофилем, тегами и фото; нет профиля - model.ErrNotFound
 func (r *ProfileRepo) GetByUserIDCurrentProfile(ctx context.Context, userID int64) (*model.Profile, error) {
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
@@ -94,9 +88,7 @@ func (r *ProfileRepo) GetByUserIDCurrentProfile(ctx context.Context, userID int6
 	return profile, nil
 }
 
-// loadProfileByUserID читает профиль целиком в переданной транзакции.
-// Принимает: контекст ctx, транзакцию tx, ID пользователя и lock — заблокировать ли строку профиля.
-// Возвращает: профиль с тегами и фото либо ошибку; при отсутствии — model.ErrNotFound.
+// loadProfileByUserID читает профиль в транзакции; lock - заблокировать строку профиля
 func loadProfileByUserID(ctx context.Context, tx *sql.Tx, userID int64, lock bool) (*model.Profile, error) {
 	if lock {
 		var id int64
@@ -123,10 +115,7 @@ func loadProfileByUserID(ctx context.Context, tx *sql.Tx, userID int64, lock boo
 	return profile, nil
 }
 
-// PatchProfile сохраняет новую версию анкеты: текущие поля с наложенным патчем.
-// Теги переносятся из прошлой версии, если патч их не заменяет.
-// Принимает: контекст ctx, ID пользователя userID и непустой патч.
-// Возвращает: nil при успехе или ошибку, включая model.ErrNotFound и model.ErrUnknownTag.
+// PatchProfile сохраняет новую версию анкеты; теги наследуются, если патч их не заменяет
 func (r *ProfileRepo) PatchProfile(ctx context.Context, userID int64, patch *model.ProfilePatch) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -158,9 +147,7 @@ func (r *ProfileRepo) PatchProfile(ctx context.Context, userID int64, patch *mod
 	return nil
 }
 
-// AddPhoto добавляет фотографию в конец списка анкеты.
-// Принимает: контекст ctx, ID пользователя userID и ключ сохранённого файла storageKey.
-// Возвращает: nil при успехе или ошибку; если фото уже model.MaxPhotos — model.ErrPhotoLimit.
+// AddPhoto добавляет фото в конец списка; model.ErrPhotoLimit, если фото уже model.MaxPhotos
 func (r *ProfileRepo) AddPhoto(ctx context.Context, userID int64, storageKey string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -192,10 +179,7 @@ func (r *ProfileRepo) AddPhoto(ctx context.Context, userID int64, storageKey str
 	return nil
 }
 
-// DeletePhoto удаляет фотографию анкеты и сдвигает следующие за ней на одну позицию.
-// Принимает: контекст ctx, ID пользователя userID и ID фото photoID.
-// Возвращает: ключ файла удалённого фото или ошибку: model.ErrPhotoNotFound, если фото не принадлежит
-// анкете, и model.ErrLastPhoto, если это единственное фото заполненной анкеты.
+// DeletePhoto удаляет фото, сдвигает следующие и возвращает ключ файла
 func (r *ProfileRepo) DeletePhoto(ctx context.Context, userID, photoID int64) (string, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -242,12 +226,7 @@ func (r *ProfileRepo) DeletePhoto(ctx context.Context, userID, photoID int64) (s
 	return photo.StorageKey, nil
 }
 
-// GetProfilesByCursorAndLimit читает страницу заполненных анкет по возрастанию ID пользователей, исключая самого пользователя.
-// Условие «заполнена» повторяет model.Profile.Missing: фильтр нужен в SQL, чтобы страница
-// была полной. При изменении обязательного минимума править оба места; сервис дополнительно
-// отбрасывает анкеты, которые не прошли Missing, так что расхождение не приводит к панике.
-// Принимает: контекст ctx, ID пользователя userID, положительный limit и cursor — последний ID пользователя или nil.
-// Возвращает: профили с тегами и фото, курсор следующей страницы (nil в конце) и ошибку.
+// GetProfilesByCursorAndLimit - страница заполненных анкет; условие заполненности должно совпадать с model.Profile.Missing
 func (r *ProfileRepo) GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.Profile, *int64, error) {
 	afterID := int64(0)
 	if cursor != nil {
@@ -322,8 +301,6 @@ func loadRelations(ctx context.Context, tx *sql.Tx, profile *model.Profile) erro
 }
 
 // insertProfileVersion создаёт следующую ревизию профиля и сохраняет её теги.
-// Принимает: контекст ctx, транзакцию tx, ID профиля profileID и данные версии v.
-// Возвращает: ID версии или ошибку; транзакцией и блокировкой профиля управляет вызывающий код.
 func insertProfileVersion(ctx context.Context, tx *sql.Tx, profileID int64, v *model.ProfileVersionInput) (int64, error) {
 	const query = `INSERT INTO profile_version (
 	    profile_id, revision, name, birth_date, sex, dating_goal, about_me,
@@ -348,16 +325,11 @@ func insertProfileVersion(ctx context.Context, tx *sql.Tx, profileID int64, v *m
 	return versionID, nil
 }
 
-// nullIfEmpty преобразует строку в значение для nullable-столбца SQL.
-// Принимает: строку s.
-// Возвращает: sql.NullString с Valid=false для пустой строки, иначе с исходным значением.
 func nullIfEmpty(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: s != ""}
 }
 
-// findTags находит теги справочника по именам в переданной транзакции; справочник не изменяет.
-// Принимает: контекст ctx, транзакцию tx и уникальные имена names.
-// Возвращает: теги в порядке names или ошибку; если хотя бы одного имени нет в справочнике — model.ErrUnknownTag.
+// findTags возвращает теги в порядке names; model.ErrUnknownTag, если какого-то нет в справочнике
 func findTags(ctx context.Context, tx *sql.Tx, names []string) ([]model.Tag, error) {
 	tags := make([]model.Tag, 0, len(names))
 	if len(names) == 0 {
@@ -392,9 +364,6 @@ func findTags(ctx context.Context, tx *sql.Tx, names []string) ([]model.Tag, err
 	return tags, nil
 }
 
-// touchProfile обновляет время изменения профиля в переданной транзакции.
-// Принимает: контекст ctx, транзакцию tx и ID профиля profileID.
-// Возвращает: nil при успехе или ошибку запроса; транзакцию не завершает.
 func touchProfile(ctx context.Context, tx *sql.Tx, profileID int64) error {
 	_, err := tx.ExecContext(ctx, `UPDATE profile SET updated_at = CURRENT_TIMESTAMP WHERE id = $1`, profileID)
 	if err != nil {
@@ -403,9 +372,6 @@ func touchProfile(ctx context.Context, tx *sql.Tx, profileID int64) error {
 	return nil
 }
 
-// loadTags загружает теги конкретной версии профиля.
-// Принимает: контекст ctx, транзакцию tx и ID версии versionID.
-// Возвращает: срез тегов или ошибку чтения.
 func loadTags(ctx context.Context, tx *sql.Tx, versionID int64) ([]model.Tag, error) {
 	rows, err := tx.QueryContext(ctx,
 		`SELECT t.id, t.name FROM tag AS t
@@ -426,9 +392,6 @@ func loadTags(ctx context.Context, tx *sql.Tx, versionID int64) ([]model.Tag, er
 	return tags, rows.Err()
 }
 
-// loadPhotos загружает фотографии профиля в порядке отображения.
-// Принимает: контекст ctx, транзакцию tx и ID профиля profileID.
-// Возвращает: срез фотографий или ошибку чтения.
 func loadPhotos(ctx context.Context, tx *sql.Tx, profileID int64) ([]model.Photo, error) {
 	rows, err := tx.QueryContext(ctx,
 		`SELECT id, storage_key, position FROM photo WHERE profile_id = $1 ORDER BY position`, profileID)

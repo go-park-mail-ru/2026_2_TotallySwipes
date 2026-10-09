@@ -15,15 +15,11 @@ type CompatibilityService interface {
 
 type CompatibilityServiceImpl struct{}
 
-// NewCompatibilityService создаёт сервис расчёта совместимости и Big Five.
-// Возвращает: экземпляр CompatibilityServiceImpl.
 func NewCompatibilityService() *CompatibilityServiceImpl {
 	return &CompatibilityServiceImpl{}
 }
 
 // difference вычисляет среднее абсолютное различие координат.
-// Принимает: непустые срезы v1 и v2 одинаковой длины.
-// Возвращает: среднее значение модулей разностей; размеры срезов не проверяет.
 func difference(v1 []float64, v2 []float64) float64 {
 	res := float64(0.0)
 	for idx := range v1 {
@@ -33,9 +29,7 @@ func difference(v1 []float64, v2 []float64) float64 {
 	return res / float64(len(v1))
 }
 
-// CalculateDistance вычисляет совместимость как единицу минус среднее абсолютное различие координат.
-// Принимает: два полных нормализованных вектора candidate1 и candidate2.
-// Возвращает: совместимость в [0,1], где 1 означает совпадение, или model.ErrInvalidBigFive.
+// CalculateDistance - совместимость в [0,1]: единица минус среднее абсолютное различие координат
 func (s *CompatibilityServiceImpl) CalculateDistance(candidate1 model.BigFive, candidate2 model.BigFive) (float64, error) {
 
 	if candidate1.Agreeableness == nil ||
@@ -82,8 +76,6 @@ const (
 )
 
 // CalculateBigFive проверяет ответы и вычисляет Big Five по методологии теста; сейчас поддерживает TIPI.
-// Принимает: описание test и ответы answers.
-// Возвращает: нормализованный вектор или ошибку определения теста либо ответов.
 func (s *CompatibilityServiceImpl) CalculateBigFive(test *model.Test, answers *model.TestAnswers) (*model.BigFive, error) {
 	if test == nil || answers == nil {
 		return nil, fmt.Errorf("test and answers are required: %w", model.ErrInvalidTestDefinition)
@@ -101,16 +93,12 @@ func (s *CompatibilityServiceImpl) CalculateBigFive(test *model.Test, answers *m
 }
 
 // score вычисляет нормализованную координату TIPI из прямого и обратного ответов.
-// Принимает: проверенные значения values по ID операций и ID операций direct и reverse.
-// Возвращает: указатель на координату в [0,1] для допустимых ответов от 1 до 7.
 func score(values map[int64]float64, direct, reverse int64) *float64 {
 	value := ((values[direct]+8-values[reverse])/2 - 1) / 6
 	return &value
 }
 
 // validateAndCalculateTIPI проверяет структуру TIPI и ответы, затем рассчитывает пять координат.
-// Принимает: описание теста test и ответы answers.
-// Возвращает: нормализованный вектор или ошибку model.ErrInvalidTestDefinition либо model.ErrInvalidAnswers.
 func validateAndCalculateTIPI(test model.Test, answers model.TestAnswers) (*model.BigFive, error) {
 
 	if answers.TestID != test.ID {
@@ -176,9 +164,6 @@ func validateAndCalculateTIPI(test model.Test, answers model.TestAnswers) (*mode
 	}, nil
 }
 
-// isValid проверяет допустимость нормализованной координаты.
-// Принимает: число v.
-// Возвращает: true для конечного значения в [0,1], иначе false.
 func isValid(v float64) bool {
 	return !math.IsNaN(v) && v >= 0 && v <= 1
 }

@@ -11,8 +11,6 @@ import (
 )
 
 func TestProfileServiceGetNextFeed(t *testing.T) {
-	// Классы: невалидные аргументы, ошибки зависимостей, пустая/непустая
-	// лента, отсутствие/неполнота теста, граничные и промежуточные оценки.
 	type testCase struct {
 		name                                          string
 		userID                                        int64
@@ -150,7 +148,7 @@ func TestProfileServiceGetNextFeed(t *testing.T) {
 }
 
 type feedRepositoryMock struct {
-	ProfileRepository      // Unexpected unused interface methods panic rather than silently succeed.
+	ProfileRepository
 	t                      *testing.T
 	viewer                 func(context.Context, int64) (*model.Profile, error)
 	feed                   func(context.Context, int64, int, *int64) ([]model.Profile, *int64, error)
@@ -237,7 +235,6 @@ func TestProfileServiceFeedItemMapping(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// Берём дату в середине текущего года жизни, чтобы тест не зависел от полуночи дня рождения.
 			birth := time.Now().AddDate(-25, -6, 0)
 			candidate := filledProfile(model.Profile{UserID: 42, Tags: tc.tags, Photos: tc.photos}, "Anna")
 			candidate.CurrentVersion.BirthDate, candidate.CurrentVersion.AboutMe = &birth, tc.about
@@ -306,7 +303,6 @@ func TestProfileServicePropagatesURLProviderError(t *testing.T) {
 	}
 }
 
-// filledProfile заполняет обязательные поля анкеты и добавляет фото, если его нет
 func filledProfile(p model.Profile, name string) model.Profile {
 	birth := time.Now().AddDate(-25, -6, 0)
 	sex, goal, searchSex := model.SexFemale, model.DatingGoalRelationship, model.SearchSexAll

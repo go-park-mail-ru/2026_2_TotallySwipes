@@ -9,8 +9,6 @@ import (
 )
 
 func TestCompatibilityServiceCalculate(t *testing.T) {
-	// Классы: совпадение, максимальное различие, промежуточное сходство,
-	// неполные данные и нечисловые/бесконечные показатели.
 	type testCase struct {
 		name          string
 		first, second model.BigFive
@@ -26,7 +24,6 @@ func TestCompatibilityServiceCalculate(t *testing.T) {
 		{name: "constant extremes", first: bigFiveTestVector([5]float64{0, 0, 0, 0, 0}), second: bigFiveTestVector([5]float64{1, 1, 1, 1, 1}), want: 0},
 		{name: "absolute differences preserved", first: bigFiveTestVector([5]float64{0.1, 0.2, 0.3, 0.4, 0.5}), second: bigFiveTestVector([5]float64{0.5, 0.6, 0.7, 0.8, 0.9}), want: 0.6},
 	}
-	// Каждый nullable-показатель может отсутствовать у любого из участников.
 	for participant := 0; participant < 2; participant++ {
 		for field, name := range []string{"openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism"} {
 			pair := [2]model.BigFive{bigFiveTestVector([5]float64{0, 0.2, 0.4, 0.5, 1}), bigFiveTestVector([5]float64{0, 0.2, 0.4, 0.5, 1})}
@@ -71,7 +68,6 @@ func TestCompatibilityServiceCalculate(t *testing.T) {
 	}
 }
 
-// OCEAN. Values are copied into separate addresses.
 func bigFiveTestVector(values [5]float64) model.BigFive {
 	return model.BigFive{Openness: &values[0], Conscientiousness: &values[1], Extraversion: &values[2], Agreeableness: &values[3], Neuroticism: &values[4]}
 }

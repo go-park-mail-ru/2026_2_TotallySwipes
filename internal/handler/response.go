@@ -36,8 +36,7 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	}
 }
 
-// writeError отдаёт ошибку в формате: fields - ошибки по полям
-// запроса, для остальных ошибок nil
+// writeError отдаёт ошибку; fields - ошибки по полям запроса или nil
 func writeError(w http.ResponseWriter, status int, code, message string, fields map[string]string) {
 	writeJSON(w, status, dto.ErrorResponse{Error: dto.ErrorBody{Code: code, Message: message, Fields: fields}})
 }
