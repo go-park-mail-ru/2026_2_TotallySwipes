@@ -227,9 +227,9 @@ func TestProfileServiceFeedItemMapping(t *testing.T) {
 			photos:     []model.Photo{{ID: 8, StorageKey: "first.jpg", Position: 1}},
 			wantPhotos: []model.FeedPhoto{{ID: 8, URL: "https://media.example/cats/first.jpg"}}},
 		{name: "populated optional fields", about: &about,
-			tags:       []model.Tag{{ID: 4, Name: "music"}, {ID: 9, Name: "sport"}},
+			tags:       []model.Tag{{ID: 4, Name: "music"}, {ID: 9, Name: "movies"}},
 			photos:     []model.Photo{{ID: 8, StorageKey: "first.jpg", Position: 0}, {ID: 3, StorageKey: "second.jpg", Position: 1}},
-			wantTags:   []string{"music", "sport"},
+			wantTags:   []string{"music", "movies"},
 			wantPhotos: []model.FeedPhoto{{ID: 8, URL: "https://media.example/cats/first.jpg"}, {ID: 3, URL: "https://media.example/cats/second.jpg"}},
 		},
 	}

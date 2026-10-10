@@ -777,7 +777,7 @@ paths:
                           type: array
                           items:
                             $ref: '#/components/schemas/TagKey'
-                          example: [sport]
+                          example: [coffee, music]
                         photos:
                           type: array
                           minItems: 0
@@ -1095,7 +1095,7 @@ components:
         Ключ тега из фиксированного справочника (таблица tag, миграция 000002).
         Бэкенд справочник не изменяет.
       enum: [coffee, books, music, hiking, bicycle, travel, photo, board_games,
-        cooking, running, painting, movies, concerts, animals, sport]
+        cooking, running, painting, movies, concerts, animals]
       example: coffee
     TestIdentifier:
       type: string
