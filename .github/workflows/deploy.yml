@@ -2,6 +2,11 @@ name: Deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      reset_data:
+        description: 'Снести базу, Redis и фото перед деплоем'
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy
@@ -79,6 +84,10 @@ jobs:
 
           docker compose pull api
           docker logout ghcr.io
+
+          if [ "${{ inputs.reset_data }}" = "true" ]; then
+            docker compose --profile tools down -v --remove-orphans
+          fi
 
           docker compose up -d --wait postgres redis
           docker compose --profile tools run --rm -T migrate -path=/migrations -database "$DATABASE_URL" up </dev/null
