@@ -24,4 +24,6 @@ var (
 	// ErrLastPhoto - нельзя удалить единственное фото заполненной анкеты
 	ErrLastPhoto     = errors.New("last photo of completed profile")
 	ErrPhotoNotFound = errors.New("photo not found")
+	// ErrPhotoOrderMismatch - новый порядок не совпадает с текущим набором фото анкеты
+	ErrPhotoOrderMismatch = errors.New("photo order mismatch")
 )

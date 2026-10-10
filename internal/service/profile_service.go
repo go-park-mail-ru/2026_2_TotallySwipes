@@ -24,6 +24,8 @@ type ProfileRepository interface {
 	AddPhoto(ctx context.Context, userID int64, storageKey string) error
 	// DeletePhoto удаляет фото и возвращает ключ его файла; model.ErrPhotoNotFound и model.ErrLastPhoto.
 	DeletePhoto(ctx context.Context, userID, photoID int64) (string, error)
+	// ReorderPhotos задаёт порядок фото; model.ErrPhotoOrderMismatch, если набор id не совпадает с фото анкеты.
+	ReorderPhotos(ctx context.Context, userID int64, photoIDs []int64) error
 	// GetProfilesByCursorAndLimit возвращает страницу заполненных анкет и курсор следующей (nil в конце).
 	GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.Profile, *int64, error)
 }
@@ -81,6 +83,14 @@ func (s *ProfileService) DeletePhoto(ctx context.Context, userID, photoID int64)
 	}
 	// Запись уже удалена; если файл не удалился, он просто останется сиротой
 	s.deleteFile(ctx, key)
+	return s.myPhotos(ctx, userID)
+}
+
+// ReorderPhotos задаёт новый порядок фото анкеты; первое становится главным.
+func (s *ProfileService) ReorderPhotos(ctx context.Context, userID int64, photoIDs []int64) ([]model.Photo, error) {
+	if err := s.profileRepo.ReorderPhotos(ctx, userID, photoIDs); err != nil {
+		return nil, fmt.Errorf("reorder photos user id=%d: %w", userID, profileRequired(err))
+	}
 	return s.myPhotos(ctx, userID)
 }
 
@@ -188,6 +198,11 @@ func (s *ProfileService) GetNextFeed(ctx context.Context, userID int64, limit in
 			Name:          *fields.Name,
 			Age:           model.AgeAt(*fields.BirthDate, time.Now()),
 			AboutMe:       fields.AboutMe,
+			Education:     fields.Education,
+			Work:          fields.Work,
+			Smoking:       fields.Smoking,
+			Alcohol:       fields.Alcohol,
+			Height:        fields.Height,
 			DatingGoal:    *fields.DatingGoal,
 			Compatibility: compatibilityRes,
 			Tags:          make([]string, 0, len(profile.Tags)),

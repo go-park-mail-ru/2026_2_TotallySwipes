@@ -25,6 +25,7 @@ const connectTimeout = 5 * time.Second
 type handlers struct {
 	auth       *handler.AuthHandler
 	feed       *handler.FeedHandler
+	filter     *handler.FilterHandler
 	profile    *handler.ProfileHandler
 	psychoTest *handler.PsychoTestHandler
 }
@@ -64,6 +65,7 @@ func run() error {
 
 	userRepo := repository.NewUserRepository(db)
 	profileRepo := repository.NewProfileRepository(db)
+	filterRepo := repository.NewFilterRepository(db)
 	psychoTestRepo := repository.NewPsychoTestRepository(db)
 	sessionRepo := repository.NewSessionRepository(rdb)
 
@@ -75,10 +77,12 @@ func run() error {
 	profileSvc := service.NewProfileService(profileRepo, compatibilitySvc, urlProvider, photoStorage)
 	authSvc := service.NewAuthService(userRepo, profileSvc, sessionRepo, auth.BcryptHasher{}, issuer, cfg.Auth.JWTRefreshTTL)
 	psychoTestSvc := service.NewPsychoTestService(psychoTestRepo, profileRepo, compatibilitySvc, psychoTest)
+	filterSvc := service.NewFilterService(filterRepo)
 
 	h := handlers{
 		auth:       handler.NewAuthHandler(authSvc, cfg.Auth.CookieSecure),
 		feed:       handler.NewFeedHandler(profileSvc),
+		filter:     handler.NewFilterHandler(filterSvc),
 		profile:    handler.NewProfileHandler(profileSvc),
 		psychoTest: handler.NewPsychoTestHandler(psychoTestSvc),
 	}
@@ -120,10 +124,14 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 
 	api.Handle("/feed", authed(h.feed.Get)).Methods(http.MethodGet)
 
+	api.Handle("/filters/me", authed(h.filter.Get)).Methods(http.MethodGet)
+	api.Handle("/filters/me", authed(h.filter.Set)).Methods(http.MethodPut)
+
 	api.Handle("/profile/me", authed(h.profile.Get)).Methods(http.MethodGet)
 	api.Handle("/profile/me", authed(h.profile.Update)).Methods(http.MethodPatch)
 	api.Handle("/profile/me/short", authed(h.profile.ShortProfile)).Methods(http.MethodGet)
 	api.Handle("/profile/me/photos", authed(h.profile.AddPhoto)).Methods(http.MethodPost)
+	api.Handle("/profile/me/photos/order", authed(h.profile.ReorderPhotos)).Methods(http.MethodPut)
 	api.Handle("/profile/me/photos/{photo_id}", authed(h.profile.DeletePhoto)).Methods(http.MethodDelete)
 
 	api.Handle("/tests/current", authed(h.psychoTest.Current)).Methods(http.MethodGet)

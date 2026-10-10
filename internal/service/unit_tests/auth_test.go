@@ -131,7 +131,7 @@ func validRegisterInput() model.RegisterInput {
 	return model.RegisterInput{Email: "alex@example.com", Password: "qwerty123"}
 }
 
-var allMissing = []string{"name", "birth_date", "sex", "dating_goal", "search_sex", "search_age", "photos"}
+var allMissing = []string{"name", "birth_date", "sex", "dating_goal", "search_filter", "photos"}
 
 func checkSession(t *testing.T, sessions *fakeSessions, res model.AuthResult, userID int64) {
 	t.Helper()

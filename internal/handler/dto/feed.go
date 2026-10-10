@@ -60,14 +60,19 @@ type FeedResponse struct {
 }
 
 type FeedItem struct {
-	UserID        int64       `json:"user_id"`
-	Name          string      `json:"name"`
-	Age           int         `json:"age"`
-	DatingGoal    string      `json:"dating_goal"`
-	Compatibility *float64    `json:"compatibility"`
-	AboutMe       *string     `json:"about_me"`
-	Tags          []string    `json:"tags"`
-	Photos        []FeedPhoto `json:"photos"`
+	UserID        int64            `json:"user_id"`
+	Name          string           `json:"name"`
+	Age           int              `json:"age"`
+	DatingGoal    string           `json:"dating_goal"`
+	Compatibility *float64         `json:"compatibility"`
+	AboutMe       *string          `json:"about_me"`
+	Education     *model.Education `json:"education"`
+	Work          *string          `json:"work"`
+	Smoking       *model.Attitude  `json:"smoking"`
+	Alcohol       *model.Attitude  `json:"alcohol"`
+	Height        *int             `json:"height"`
+	Tags          []string         `json:"tags"`
+	Photos        []FeedPhoto      `json:"photos"`
 }
 
 type FeedPhoto struct {
@@ -92,6 +97,11 @@ func NewFeedResponse(page *model.FeedPage) FeedResponse {
 			DatingGoal:    string(item.DatingGoal),
 			Compatibility: item.Compatibility,
 			AboutMe:       item.AboutMe,
+			Education:     item.Education,
+			Work:          item.Work,
+			Smoking:       item.Smoking,
+			Alcohol:       item.Alcohol,
+			Height:        item.Height,
 			Tags:          item.Tags,
 			Photos:        photos,
 		})

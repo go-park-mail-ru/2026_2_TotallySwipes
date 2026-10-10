@@ -305,12 +305,9 @@ func TestProfileServicePropagatesURLProviderError(t *testing.T) {
 
 func filledProfile(p model.Profile, name string) model.Profile {
 	birth := time.Now().AddDate(-25, -6, 0)
-	sex, goal, searchSex := model.SexFemale, model.DatingGoalRelationship, model.SearchSexAll
-	from, to := 18, 100
-	p.CurrentVersion.ProfileFields = model.ProfileFields{
-		Name: &name, BirthDate: &birth, Sex: &sex, DatingGoal: &goal,
-		SearchSex: &searchSex, SearchAgeFrom: &from, SearchAgeTo: &to,
-	}
+	sex, goal := model.SexFemale, model.DatingGoalRelationship
+	p.CurrentVersion.ProfileFields = model.ProfileFields{Name: &name, BirthDate: &birth, Sex: &sex, DatingGoal: &goal}
+	p.HasSearchFilter = true
 	if len(p.Photos) == 0 {
 		p.Photos = []model.Photo{{ID: 1, StorageKey: "main.jpg", Position: 1}}
 	}
@@ -318,15 +315,15 @@ func filledProfile(p model.Profile, name string) model.Profile {
 }
 
 func TestProfileMissing(t *testing.T) {
-	if got := (&model.Profile{}).Missing(); !reflect.DeepEqual(got, []string{"name", "birth_date", "sex", "dating_goal", "search_sex", "search_age", "photos"}) {
+	if got := (&model.Profile{}).Missing(); !reflect.DeepEqual(got, []string{"name", "birth_date", "sex", "dating_goal", "search_filter", "photos"}) {
 		t.Fatalf("empty profile missing = %v", got)
 	}
 	p := filledProfile(model.Profile{}, "Anna")
 	if got := p.Missing(); len(got) != 0 {
 		t.Fatalf("filled profile missing = %v", got)
 	}
-	p.CurrentVersion.SearchAgeTo, p.Photos = nil, nil
-	if got := p.Missing(); !reflect.DeepEqual(got, []string{"search_age", "photos"}) {
+	p.CurrentVersion.DatingGoal, p.HasSearchFilter, p.Photos = nil, false, nil
+	if got := p.Missing(); !reflect.DeepEqual(got, []string{"dating_goal", "search_filter", "photos"}) {
 		t.Fatalf("missing = %v", got)
 	}
 }
@@ -340,10 +337,15 @@ func TestProfilePatchApply(t *testing.T) {
 	if *got.Name != "Аня" || got.AboutMe == nil || *got.Sex != model.SexFemale {
 		t.Fatalf("patch must change only name: %+v", got)
 	}
-	if got := (model.ProfilePatch{AboutMeSet: true}).Apply(p.CurrentVersion.ProfileFields); got.AboutMe != nil {
+	if got := (model.ProfilePatch{AboutMe: model.Optional[string]{Set: true}}).Apply(p.CurrentVersion.ProfileFields); got.AboutMe != nil {
 		t.Fatal("about_me must be cleared")
 	}
-	if !(model.ProfilePatch{}).IsEmpty() || (model.ProfilePatch{AboutMeSet: true}).IsEmpty() {
+	height := 175
+	got = model.ProfilePatch{Height: model.Optional[int]{Set: true, Value: &height}}.Apply(p.CurrentVersion.ProfileFields)
+	if *got.Height != 175 || got.AboutMe == nil {
+		t.Fatalf("patch must change only height: %+v", got)
+	}
+	if !(model.ProfilePatch{}).IsEmpty() || (model.ProfilePatch{Smoking: model.Optional[model.Attitude]{Set: true}}).IsEmpty() {
 		t.Fatal("IsEmpty is wrong")
 	}
 }
@@ -353,7 +355,14 @@ type photoRepositoryMock struct {
 	addErr    error
 	deleteKey string
 	deleteErr error
+	orderErr  error
 	added     []string
+	order     []int64
+}
+
+func (m *photoRepositoryMock) ReorderPhotos(_ context.Context, _ int64, photoIDs []int64) error {
+	m.order = photoIDs
+	return m.orderErr
 }
 
 func (m *photoRepositoryMock) AddPhoto(_ context.Context, _ int64, key string) error {
@@ -394,6 +403,16 @@ func TestProfileServicePhotoFiles(t *testing.T) {
 	}
 	if !reflect.DeepEqual(files.deleted, []string{"gone.jpg"}) {
 		t.Errorf("deleted = %v", files.deleted)
+	}
+
+	repo = &photoRepositoryMock{}
+	if photos, err := NewProfileService(repo, nil, urls, nil).ReorderPhotos(ctx, 7, []int64{1}); err != nil ||
+		!reflect.DeepEqual(repo.order, []int64{1}) || photos[0].URL != "https://media.example/cats/left.jpg" {
+		t.Fatalf("reorder: photos = %+v, err = %v", photos, err)
+	}
+	repo = &photoRepositoryMock{orderErr: model.ErrPhotoOrderMismatch}
+	if _, err := NewProfileService(repo, nil, urls, nil).ReorderPhotos(ctx, 7, []int64{2}); !errors.Is(err, model.ErrPhotoOrderMismatch) {
+		t.Fatalf("reorder mismatch: err = %v", err)
 	}
 
 	repo, files = &photoRepositoryMock{deleteErr: model.ErrLastPhoto}, &fakePhotos{}

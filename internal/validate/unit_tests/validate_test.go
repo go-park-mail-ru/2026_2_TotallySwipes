@@ -216,10 +216,29 @@ func TestEnums(t *testing.T) {
 		{"goal ok", ValidateDatingGoal, "relationship", nil},
 		{"goal bad", ValidateDatingGoal, "Ищу половинку", ErrDatingGoal},
 		{"goal empty", ValidateDatingGoal, "", ErrRequired},
+		{"education ok", ValidateEducation, "incomplete_higher", nil},
+		{"education bad", ValidateEducation, "Высшее", ErrEducation},
+		{"attitude ok", ValidateAttitude, "neutral", nil},
+		{"attitude empty", ValidateAttitude, "", ErrAttitude},
+		{"work ok", ValidateWork, strings.Repeat("я", 100), nil},
+		{"work long", ValidateWork, strings.Repeat("я", 101), ErrWorkTooLong},
 	}
 	for _, tt := range tests {
 		if got := tt.fn(tt.in); !errors.Is(got, tt.want) {
 			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestValidateHeight(t *testing.T) {
+	for _, tt := range []struct {
+		in   int
+		want error
+	}{
+		{100, nil}, {250, nil}, {99, ErrHeight}, {251, ErrHeight},
+	} {
+		if got := ValidateHeight(tt.in); !errors.Is(got, tt.want) {
+			t.Errorf("ValidateHeight(%d) = %v, want %v", tt.in, got, tt.want)
 		}
 	}
 }
@@ -269,5 +288,22 @@ func TestValidateSearchAge(t *testing.T) {
 	}
 	if err := ValidateSearchAgeRange(30, 20); !errors.Is(err, ErrSearchAgeRange) {
 		t.Errorf("ValidateSearchAgeRange(30, 20) = %v, want %v", err, ErrSearchAgeRange)
+	}
+}
+
+func TestValidatePhotoOrder(t *testing.T) {
+	for _, tt := range []struct {
+		ids  []int64
+		want error
+	}{
+		{[]int64{3, 1, 2}, nil},
+		{nil, ErrPhotoOrder},
+		{[]int64{1, 1}, ErrPhotoOrder},
+		{[]int64{-1}, ErrPhotoOrder},
+		{[]int64{1, 2, 3, 4, 5, 6, 7}, ErrPhotoOrder},
+	} {
+		if got := ValidatePhotoOrder(tt.ids); !errors.Is(got, tt.want) {
+			t.Errorf("ValidatePhotoOrder(%v) = %v, want %v", tt.ids, got, tt.want)
+		}
 	}
 }

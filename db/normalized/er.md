@@ -1,6 +1,6 @@
 # ER-диаграмма Totally Swipes
 
-Диаграмма отражает ограничения SQL из [начальной миграции](../migrations/000001_init.up.sql). Назначение полей и бизнес-правила описаны в [relations.md](relations.md).
+Диаграмма отражает ограничения SQL из [миграций](../migrations/). Назначение полей и бизнес-правила описаны в [relations.md](relations.md).
 
 `||` — ровно одна запись, `o|` — ноль или одна, `o{` — ноль или много. `PK` — первичный ключ, `FK` — внешний ключ, `UK` — уникальный ключ. Комментарии `U1` обозначают поля одного составного уникального ключа внутри таблицы.
 
@@ -46,9 +46,20 @@ erDiagram
         text sex "NULL"
         text dating_goal "NULL"
         text about_me
-        text search_sex
-        integer search_age_from
-        integer search_age_to
+        text education
+        text work
+        text smoking
+        text alcohol
+        smallint height
+    }
+
+    search_filter {
+        bigint user_id PK, FK
+        text sex
+        smallint age_from
+        smallint age_to
+        timestamptz created_at
+        timestamptz updated_at
     }
 
     profile_psycho {
@@ -162,6 +173,7 @@ erDiagram
     }
 
     user ||..o| profile : "user_id"
+    user ||..o| search_filter : "user_id"
     profile ||..o{ profile_version : "profile_id"
     profile ||..o{ profile_psycho : "profile_id"
     profile_psycho ||--o{ user_answer : "profile_psycho_id"

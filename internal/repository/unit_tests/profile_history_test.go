@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -39,17 +40,19 @@ func TestProfileTagHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if empty.CurrentVersion.ID != 0 || len(empty.Missing()) != 7 {
+	if empty.CurrentVersion.ID != 0 || len(empty.Missing()) != 6 {
 		t.Fatalf("new profile must be empty: %+v", empty)
 	}
 
 	name, birth := "History", time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-	sex, goal, searchSex := model.SexFemale, model.DatingGoalFriendship, model.SearchSexAll
-	from, to := 18, 100
+	sex, goal := model.SexFemale, model.DatingGoalFriendship
+	education, work, smoking, height := model.EducationHigher, "Инженер", model.AttitudeNegative, 180
 	tags := []string{"coffee", "music"}
 	steps := []model.ProfilePatch{
 		{Name: &name, BirthDate: &birth, Sex: &sex},
-		{DatingGoal: &goal, SearchSex: &searchSex, SearchAgeFrom: &from, SearchAgeTo: &to},
+		{DatingGoal: &goal, Education: model.Optional[model.Education]{Set: true, Value: &education},
+			Work: model.Optional[string]{Set: true, Value: &work}, Smoking: model.Optional[model.Attitude]{Set: true, Value: &smoking},
+			Height: model.Optional[int]{Set: true, Value: &height}},
 		{Tags: &tags},
 	}
 	for _, step := range steps {
@@ -57,12 +60,20 @@ func TestProfileTagHistory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := repository.NewFilterRepository(db).Upsert(ctx, userID, &model.DefaultSearchFilter); err != nil {
+		t.Fatal(err)
+	}
 	first, err := repo.GetByUserIDCurrentProfile(ctx, userID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if *first.CurrentVersion.Name != name || len(first.Tags) != 2 || !reflect.DeepEqual(first.Missing(), []string{"photos"}) {
 		t.Fatalf("after steps: %+v missing=%v", first, first.Missing())
+	}
+
+	details := first.CurrentVersion.ProfileFields
+	if *details.Education != education || *details.Work != work || *details.Smoking != smoking || details.Alcohol != nil || *details.Height != height {
+		t.Fatalf("details: %+v", details)
 	}
 
 	newName := "Renamed"
@@ -73,7 +84,8 @@ func TestProfileTagHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.CurrentVersion.ID == first.CurrentVersion.ID || len(second.Tags) != 2 || *second.CurrentVersion.Sex != sex {
+	if second.CurrentVersion.ID == first.CurrentVersion.ID || len(second.Tags) != 2 || *second.CurrentVersion.Sex != sex ||
+		*second.CurrentVersion.Height != height {
 		t.Fatalf("new snapshot: %+v", second)
 	}
 
@@ -98,6 +110,34 @@ func TestProfileTagHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ids := make([]int64, 0, len(withPhotos.Photos))
+	for _, photo := range withPhotos.Photos {
+		ids = append(ids, photo.ID)
+	}
+	reversed := slices.Clone(ids)
+	slices.Reverse(reversed)
+	if err := repo.ReorderPhotos(ctx, userID, reversed); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.ReorderPhotos(ctx, userID, reversed[1:]); !errors.Is(err, model.ErrPhotoOrderMismatch) {
+		t.Fatalf("partial order: %v", err)
+	}
+	if err := repo.ReorderPhotos(ctx, userID, append(slices.Clone(reversed[1:]), 999999)); !errors.Is(err, model.ErrPhotoOrderMismatch) {
+		t.Fatalf("foreign photo: %v", err)
+	}
+	reordered, err := repo.GetByUserIDCurrentProfile(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, photo := range reordered.Photos {
+		if photo.ID != reversed[i] || photo.Position != i+1 {
+			t.Fatalf("photos not reordered: %+v", reordered.Photos)
+		}
+	}
+	if err := repo.ReorderPhotos(ctx, userID, ids); err != nil {
+		t.Fatal(err)
+	}
+
 	if key, err := repo.DeletePhoto(ctx, userID, withPhotos.Photos[0].ID); err != nil || key != "history/1.jpg" {
 		t.Fatalf("delete main photo: %q %v", key, err)
 	}

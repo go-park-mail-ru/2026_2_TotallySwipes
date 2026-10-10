@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"dating-app/internal/model"
@@ -18,11 +19,12 @@ func NewProfileRepository(db *sql.DB) *ProfileRepo {
 	return &ProfileRepo{db: db}
 }
 
-// profileSelect читает профиль с последней версией анкеты (её может не быть) и последним психопрофилем
+// profileSelect читает профиль с признаком фильтра, последней версией анкеты (её может не быть) и последним психопрофилем
 const profileSelect = `
 	SELECT p.id, p.user_id, p.created_at, p.updated_at,
+	       EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id),
 	       v.id, v.recorded_at, v.name, v.birth_date, v.sex, v.dating_goal, v.about_me,
-	       v.search_sex, v.search_age_from, v.search_age_to,
+	       v.education, v.work, v.smoking, v.alcohol, v.height,
 	       ps.id, ps.recorded_at,
 	       ps.openness, ps.conscientiousness, ps.extraversion, ps.agreeableness, ps.neuroticism
 	FROM profile AS p
@@ -45,9 +47,9 @@ func scanProfile(row rowScanner) (*model.Profile, error) {
 	var psycho model.ProfilePsycho
 	f := &p.CurrentVersion.ProfileFields
 
-	err := row.Scan(&p.ID, &p.UserID, &p.CreatedAt, &p.UpdatedAt,
+	err := row.Scan(&p.ID, &p.UserID, &p.CreatedAt, &p.UpdatedAt, &p.HasSearchFilter,
 		&versionID, &versionRecordedAt, &f.Name, &f.BirthDate, &f.Sex, &f.DatingGoal, &f.AboutMe,
-		&f.SearchSex, &f.SearchAgeFrom, &f.SearchAgeTo,
+		&f.Education, &f.Work, &f.Smoking, &f.Alcohol, &f.Height,
 		&psychoID, &psychoRecordedAt,
 		&psycho.Openness, &psycho.Conscientiousness, &psycho.Extraversion, &psycho.Agreeableness, &psycho.Neuroticism,
 	)
@@ -226,7 +228,46 @@ func (r *ProfileRepo) DeletePhoto(ctx context.Context, userID, photoID int64) (s
 	return photo.StorageKey, nil
 }
 
-// GetProfilesByCursorAndLimit - страница заполненных анкет; условие заполненности должно совпадать с model.Profile.Missing
+// ReorderPhotos переставляет фото в порядке photoIDs; model.ErrPhotoOrderMismatch, если набор id не совпадает
+func (r *ProfileRepo) ReorderPhotos(ctx context.Context, userID int64, photoIDs []int64) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("reorder photos: begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	profile, err := loadProfileByUserID(ctx, tx, userID, true)
+	if err != nil {
+		return err
+	}
+	if len(photoIDs) != len(profile.Photos) {
+		return model.ErrPhotoOrderMismatch
+	}
+	for _, photo := range profile.Photos {
+		if !slices.Contains(photoIDs, photo.ID) {
+			return model.ErrPhotoOrderMismatch
+		}
+	}
+
+	_, err = tx.ExecContext(ctx,
+		`UPDATE photo SET position = o.position, updated_at = CURRENT_TIMESTAMP
+		 FROM unnest($2::bigint[]) WITH ORDINALITY AS o(id, position)
+		 WHERE photo.id = o.id AND photo.profile_id = $1 AND photo.position <> o.position`,
+		profile.ID, photoIDs)
+	if err != nil {
+		return fmt.Errorf("reorder photos profile_id=%d: %w", profile.ID, err)
+	}
+
+	if err := touchProfile(ctx, tx, profile.ID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("reorder photos: commit transaction: %w", err)
+	}
+	return nil
+}
+
+// GetProfilesByCursorAndLimit - страница заполненных анкет под фильтр пользователя; условие заполненности должно совпадать с model.Profile.Missing
 func (r *ProfileRepo) GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.Profile, *int64, error) {
 	afterID := int64(0)
 	if cursor != nil {
@@ -242,10 +283,14 @@ func (r *ProfileRepo) GetProfilesByCursorAndLimit(ctx context.Context, userID in
 	rows, err := tx.QueryContext(ctx, profileSelect+`
 		WHERE p.user_id > $1 AND p.user_id <> $2
 		  AND v.name IS NOT NULL AND v.birth_date IS NOT NULL AND v.sex IS NOT NULL
-		  AND v.dating_goal IS NOT NULL AND v.search_sex IS NOT NULL
-		  AND v.search_age_from IS NOT NULL AND v.search_age_to IS NOT NULL
+		  AND v.dating_goal IS NOT NULL
 		  AND EXISTS (SELECT 1 FROM photo WHERE profile_id = p.id)
-		ORDER BY p.user_id ASC LIMIT $3`, afterID, userID, limit+1)
+		  AND EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id)
+		  AND NOT EXISTS (
+		      SELECT 1 FROM search_filter AS f WHERE f.user_id = $2
+		        AND ((f.sex <> 'all' AND f.sex <> v.sex)
+		          OR date_part('year', age($4::date, v.birth_date)) NOT BETWEEN f.age_from AND f.age_to))
+		ORDER BY p.user_id ASC LIMIT $3`, afterID, userID, limit+1, time.Now().Format(time.DateOnly))
 	if err != nil {
 		return nil, nil, fmt.Errorf("feed: select profiles: %w", err)
 	}
@@ -304,13 +349,13 @@ func loadRelations(ctx context.Context, tx *sql.Tx, profile *model.Profile) erro
 func insertProfileVersion(ctx context.Context, tx *sql.Tx, profileID int64, v *model.ProfileVersionInput) (int64, error) {
 	const query = `INSERT INTO profile_version (
 	    profile_id, revision, name, birth_date, sex, dating_goal, about_me,
-	    search_sex, search_age_from, search_age_to)
-	    SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6, $7, $8, $9
+	    education, work, smoking, alcohol, height)
+	    SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 	    FROM profile_version WHERE profile_id = $1 RETURNING id`
 
 	var versionID int64
 	err := tx.QueryRowContext(ctx, query, profileID, v.Name, v.BirthDate, v.Sex, v.DatingGoal, v.AboutMe,
-		v.SearchSex, v.SearchAgeFrom, v.SearchAgeTo).Scan(&versionID)
+		v.Education, v.Work, v.Smoking, v.Alcohol, v.Height).Scan(&versionID)
 	if err != nil {
 		return 0, fmt.Errorf("insert profile version profile_id=%d: %w", profileID, err)
 	}

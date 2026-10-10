@@ -22,6 +22,7 @@ type fakeProfiles struct {
 	patch    *model.ProfilePatch
 	upload   *model.PhotoUpload
 	deleted  int64
+	order    []int64
 	profile  model.Profile
 	photos   []model.Photo
 	err      error
@@ -50,6 +51,11 @@ func (f *fakeProfiles) DeletePhoto(_ context.Context, _, photoID int64) ([]model
 	return f.photos, f.err
 }
 
+func (f *fakeProfiles) ReorderPhotos(_ context.Context, _ int64, photoIDs []int64) ([]model.Photo, error) {
+	f.order = photoIDs
+	return f.photos, f.err
+}
+
 func profileRouter(svc *fakeProfiles) http.Handler {
 	h := NewProfileHandler(svc)
 	withUser := func(fn UserHandlerFunc) http.Handler {
@@ -60,6 +66,7 @@ func profileRouter(svc *fakeProfiles) http.Handler {
 	r.Handle("/profile/me", withUser(h.Update)).Methods(http.MethodPatch)
 	r.Handle("/profile/me/short", withUser(h.ShortProfile)).Methods(http.MethodGet)
 	r.Handle("/profile/me/photos", withUser(h.AddPhoto)).Methods(http.MethodPost)
+	r.Handle("/profile/me/photos/order", withUser(h.ReorderPhotos)).Methods(http.MethodPut)
 	r.Handle("/profile/me/photos/{photo_id}", withUser(h.DeletePhoto)).Methods(http.MethodDelete)
 	return r
 }
@@ -85,7 +92,7 @@ func patchProfile(t *testing.T, svc *fakeProfiles, body string) (*httptest.Respo
 func TestProfileHandler_GetEmpty(t *testing.T) {
 	svc := &fakeProfiles{profile: model.Profile{UserID: 7}}
 	rec, resp := serve(t, profileRouter(svc), httptest.NewRequest(http.MethodGet, "/profile/me", nil))
-	if rec.Code != http.StatusOK || resp["name"] != nil || len(resp["missing"].([]any)) != 7 {
+	if rec.Code != http.StatusOK || resp["name"] != nil || len(resp["missing"].([]any)) != 6 {
 		t.Fatalf("status = %d, body = %v", rec.Code, resp)
 	}
 	if !reflect.DeepEqual(resp["photos"], []any{}) || !reflect.DeepEqual(resp["tags"], []any{}) {
@@ -108,13 +115,32 @@ func TestProfileHandler_Patch(t *testing.T) {
 	}
 	p := svc.patch
 	if *p.Name != "Анна" || p.BirthDate.Year() != 2000 || *p.DatingGoal != model.DatingGoalCasual ||
-		!p.AboutMeSet || p.AboutMe != nil || !reflect.DeepEqual(*p.Tags, []string{"coffee"}) || p.Sex != nil {
+		!p.AboutMe.Set || p.AboutMe.Value != nil || !reflect.DeepEqual(*p.Tags, []string{"coffee"}) || p.Sex != nil {
 		t.Errorf("patch = %+v", p)
 	}
 
 	svc = &fakeProfiles{profile: model.Profile{UserID: 7}}
-	if rec, _ := patchProfile(t, svc, `{"sex": "female"}`); rec.Code != http.StatusOK || svc.patch.AboutMeSet {
+	if rec, _ := patchProfile(t, svc, `{"sex": "female"}`); rec.Code != http.StatusOK || svc.patch.AboutMe.Set || svc.patch.Height.Set {
 		t.Errorf("absent about_me must not be touched: %d %+v", rec.Code, svc.patch)
+	}
+}
+
+func TestProfileHandler_PatchDetails(t *testing.T) {
+	svc := &fakeProfiles{profile: model.Profile{UserID: 7}}
+	rec, _ := patchProfile(t, svc, `{"education": "higher", "work": "  Инженер  ", "smoking": "negative", "alcohol": null, "height": 180}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
+	}
+	p := svc.patch
+	if *p.Education.Value != model.EducationHigher || *p.Work.Value != "Инженер" || *p.Smoking.Value != model.AttitudeNegative ||
+		!p.Alcohol.Set || p.Alcohol.Value != nil || *p.Height.Value != 180 {
+		t.Errorf("patch = %+v", p)
+	}
+
+	svc = &fakeProfiles{profile: model.Profile{UserID: 7}}
+	if rec, _ := patchProfile(t, svc, `{"work": "   ", "height": null}`); rec.Code != http.StatusOK ||
+		!svc.patch.Work.Set || svc.patch.Work.Value != nil || !svc.patch.Height.Set || svc.patch.Height.Value != nil {
+		t.Errorf("blank work and null height must clear: %d %+v", rec.Code, svc.patch)
 	}
 }
 
@@ -125,9 +151,12 @@ func TestProfileHandler_PatchValidation(t *testing.T) {
 	}{
 		{"пустой патч", `{}`, []string{"profile"}},
 		{"цель знакомства подписью", `{"dating_goal": "Ищу половинку"}`, []string{"dating_goal"}},
-		{"только одна граница возраста", `{"search_age_from": 20}`, []string{"search_age_to"}},
 		{"несовершеннолетний", `{"birth_date": "2099-01-01"}`, []string{"birth_date"}},
-		{"несколько ошибок", `{"sex": "x", "search_sex": "y", "tags": ["a", "a"]}`, []string{"search_sex", "sex", "tags"}},
+		{"образование подписью", `{"education": "Высшее"}`, []string{"education"}},
+		{"неизвестное отношение", `{"smoking": "sometimes", "alcohol": ""}`, []string{"alcohol", "smoking"}},
+		{"рост вне диапазона", `{"height": 99}`, []string{"height"}},
+		{"длинная работа", `{"work": "` + strings.Repeat("я", 101) + `"}`, []string{"work"}},
+		{"несколько ошибок", `{"sex": "x", "dating_goal": "y", "tags": ["a", "a"]}`, []string{"dating_goal", "sex", "tags"}},
 	} {
 		svc := &fakeProfiles{}
 		rec, resp := patchProfile(t, svc, tc.body)
@@ -220,5 +249,33 @@ func TestProfileHandler_DeletePhoto(t *testing.T) {
 		if rec.Code != tc.status || errCode(resp) != tc.code {
 			t.Errorf("%s %v: status = %d, body = %v", tc.path, tc.err, rec.Code, resp)
 		}
+	}
+}
+
+func TestProfileHandler_ReorderPhotos(t *testing.T) {
+	put := func(svc *fakeProfiles, body string) (*httptest.ResponseRecorder, map[string]any) {
+		req := httptest.NewRequest(http.MethodPut, "/profile/me/photos/order", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		return serve(t, profileRouter(svc), req)
+	}
+
+	svc := &fakeProfiles{photos: []model.Photo{{ID: 9, URL: "u9"}, {ID: 7, URL: "u7"}}}
+	rec, resp := put(svc, `{"photo_ids": [9, 7]}`)
+	want := []any{map[string]any{"id": float64(9), "url": "u9"}, map[string]any{"id": float64(7), "url": "u7"}}
+	if rec.Code != http.StatusOK || !reflect.DeepEqual(svc.order, []int64{9, 7}) || !reflect.DeepEqual(resp["photos"], want) {
+		t.Fatalf("status = %d, order = %v, body = %v", rec.Code, svc.order, resp)
+	}
+
+	for _, body := range []string{`{}`, `{"photo_ids": []}`, `{"photo_ids": [1, 1]}`, `{"photo_ids": [0]}`, `{"photo_ids": [1, 2, 3, 4, 5, 6, 7]}`} {
+		svc := &fakeProfiles{}
+		rec, resp := put(svc, body)
+		if rec.Code != http.StatusBadRequest || svc.order != nil || errFields(resp)["photo_ids"] == nil {
+			t.Errorf("%s: status = %d, called = %v, body = %v", body, rec.Code, svc.order != nil, resp)
+		}
+	}
+
+	rec, resp = put(&fakeProfiles{err: model.ErrPhotoOrderMismatch}, `{"photo_ids": [1, 2]}`)
+	if rec.Code != http.StatusBadRequest || errCode(resp) != "VALIDATION_ERROR" || errFields(resp)["photo_ids"] == nil {
+		t.Errorf("mismatch: status = %d, body = %v", rec.Code, resp)
 	}
 }

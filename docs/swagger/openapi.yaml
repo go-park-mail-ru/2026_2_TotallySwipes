@@ -427,8 +427,9 @@ paths:
         Любое непустое подмножество полей; отсутствующие поля не меняются.
         Каждый шаг онбординга - один такой запрос, «пропустить» - ничего не отправлять.
         Каждый успешный вызов создаёт новую версию анкеты. Обязательные поля очистить
-        нельзя; about_me очищается через null или пустую строку; tags заменяются целиком.
-        search_age_from и search_age_to передаются только вместе.
+        нельзя; необязательные поля (about_me, education, work, smoking, alcohol, height)
+        очищаются через null, текстовые - также пустой строкой; tags заменяются целиком.
+        Кого показывать в ленте, задаётся отдельно через PUT /api/v1/filters/me.
       requestBody:
         required: true
         content:
@@ -501,6 +502,52 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/profile/me/photos/order:
+    put:
+      security:
+        - cookieAuth: []
+      summary: Изменить порядок фото
+      description: >-
+        Принимает id всех фото анкеты в новом порядке, каждый ровно один раз;
+        первое становится главным. Если набор id не совпадает с текущими фото
+        (например, фото удалили в другой вкладке), порядок не меняется и
+        возвращается 400 с полем photo_ids.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [photo_ids]
+              properties:
+                photo_ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 6
+                  uniqueItems: true
+                  items:
+                    type: integer
+                    format: int64
+                    minimum: 1
+            example:
+              photo_ids: [12, 7, 9]
+      responses:
+        '200':
+          description: Актуальный список фото в новом порядке
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Photos'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/v1/profile/me/photos/{photo_id}:
     delete:
       security:
@@ -551,6 +598,58 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/filters/me:
+    get:
+      security:
+        - cookieAuth: []
+      summary: Фильтр ленты
+      description: >-
+        Кого пользователь хочет видеть в ленте. Пока фильтр не задан,
+        возвращаются значения по умолчанию: sex=all, age_from=18, age_to=100.
+      responses:
+        '200':
+          description: Фильтр
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchFilter'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      security:
+        - cookieAuth: []
+      summary: Установить фильтр ленты
+      description: >-
+        Заменяет фильтр целиком, все поля обязательны. Пока фильтр не задан,
+        в missing есть search_filter и анкета не попадает в ленту.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchFilter'
+            example:
+              sex: female
+              age_from: 20
+              age_to: 30
+      responses:
+        '200':
+          description: Сохранённый фильтр
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchFilter'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/v1/feed:
     get:
       security:
@@ -558,9 +657,11 @@ paths:
       summary: Получить ленту анкет
       description: >-
         Текущий пользователь определяется middleware авторизации; его ID не передаётся
-        в параметрах запроса. Backend находит анкету текущего пользователя и передаёт
-        её показатели Big Five вместе с показателями каждого кандидата в сервис
-        совместимости. Рассчитанное значение возвращается в compatibility каждой карточки.
+        в параметрах запроса. В ленту попадают только анкеты, подходящие под фильтр
+        пользователя (GET /api/v1/filters/me) по полу и возрасту. Backend находит анкету
+        текущего пользователя и передаёт её показатели Big Five вместе с показателями
+        каждого кандидата в сервис совместимости. Рассчитанное значение возвращается
+        в compatibility каждой карточки.
       parameters:
         - name: limit
           in: query
@@ -602,6 +703,11 @@ paths:
                         - name
                         - age
                         - about_me
+                        - education
+                        - work
+                        - smoking
+                        - alcohol
+                        - height
                         - dating_goal
                         - compatibility
                         - tags
@@ -624,6 +730,28 @@ paths:
                           nullable: true
                           description: Описание пользователя в анкете. null, если описание не задано.
                           example: Люблю путешествия и настольные игры.
+                        education:
+                          allOf:
+                            - $ref: '#/components/schemas/Education'
+                          nullable: true
+                        work:
+                          type: string
+                          nullable: true
+                          maxLength: 100
+                        smoking:
+                          allOf:
+                            - $ref: '#/components/schemas/Attitude'
+                          nullable: true
+                        alcohol:
+                          allOf:
+                            - $ref: '#/components/schemas/Attitude'
+                          nullable: true
+                        height:
+                          type: integer
+                          minimum: 100
+                          maximum: 250
+                          nullable: true
+                          description: Рост в сантиметрах.
                         dating_goal:
                           $ref: '#/components/schemas/DatingGoal'
                         compatibility:
@@ -783,8 +911,8 @@ components:
         Пустой массив - анкета заполнена и показывается в ленте. Тест сюда не входит.
       items:
         type: string
-        enum: [name, birth_date, sex, dating_goal, search_sex, search_age, photos]
-      example: [search_sex, search_age, photos]
+        enum: [name, birth_date, sex, dating_goal, search_filter, photos]
+      example: [search_filter, photos]
     AuthResponse:
       type: object
       required: [user_id, missing]
@@ -818,8 +946,8 @@ components:
             $ref: '#/components/schemas/Photo'
     Profile:
       type: object
-      required: [user_id, name, birth_date, age, sex, dating_goal, about_me, search_sex,
-        search_age_from, search_age_to, tags, photos, missing]
+      required: [user_id, name, birth_date, age, sex, dating_goal, about_me, education, work,
+        smoking, alcohol, height, tags, photos, missing]
       properties:
         user_id:
           type: integer
@@ -845,16 +973,28 @@ components:
         about_me:
           type: string
           nullable: true
-        search_sex:
+        education:
+          allOf:
+            - $ref: '#/components/schemas/Education'
+          nullable: true
+        work:
           type: string
-          enum: [male, female, all]
           nullable: true
-        search_age_from:
+          maxLength: 100
+        smoking:
+          allOf:
+            - $ref: '#/components/schemas/Attitude'
+          nullable: true
+        alcohol:
+          allOf:
+            - $ref: '#/components/schemas/Attitude'
+          nullable: true
+        height:
           type: integer
+          minimum: 100
+          maximum: 250
           nullable: true
-        search_age_to:
-          type: integer
-          nullable: true
+          description: Рост в сантиметрах.
         tags:
           type: array
           items:
@@ -888,18 +1028,29 @@ components:
           nullable: true
           maxLength: 1000
           description: null или пустая строка очищают описание.
-        search_sex:
+        education:
+          allOf:
+            - $ref: '#/components/schemas/Education'
+          nullable: true
+        work:
           type: string
-          enum: [male, female, all]
-        search_age_from:
+          nullable: true
+          maxLength: 100
+          description: Пробелы по краям обрезаются; null или пустая строка очищают.
+        smoking:
+          allOf:
+            - $ref: '#/components/schemas/Attitude'
+          nullable: true
+        alcohol:
+          allOf:
+            - $ref: '#/components/schemas/Attitude'
+          nullable: true
+        height:
           type: integer
-          minimum: 18
-          maximum: 100
-        search_age_to:
-          type: integer
-          minimum: 18
-          maximum: 100
-          description: Не меньше search_age_from.
+          minimum: 100
+          maximum: 250
+          nullable: true
+          description: Рост в сантиметрах; null очищает.
         tags:
           type: array
           maxItems: 10
@@ -907,6 +1058,37 @@ components:
           description: Заменяет набор тегов целиком.
           items:
             $ref: '#/components/schemas/TagKey'
+    Education:
+      type: string
+      description: Ключ уровня образования; подписи хранит клиент.
+      enum: [secondary, vocational, incomplete_higher, higher, degree]
+      example: higher
+    Attitude:
+      type: string
+      description: Отношение к курению или алкоголю; подписи хранит клиент.
+      enum: [negative, neutral, positive]
+      example: neutral
+    SearchFilter:
+      type: object
+      additionalProperties: false
+      required: [sex, age_from, age_to]
+      properties:
+        sex:
+          type: string
+          enum: [male, female, all]
+          description: Кого показывать в ленте.
+          example: female
+        age_from:
+          type: integer
+          minimum: 18
+          maximum: 100
+          example: 20
+        age_to:
+          type: integer
+          minimum: 18
+          maximum: 100
+          description: Включительно, не меньше age_from.
+          example: 30
     TagKey:
       type: string
       description: >-
@@ -1155,5 +1337,5 @@ components:
                       type: string
                     example:
                       email: некорректный email
-                      search_age_to: верхняя граница возраста не может быть меньше нижней
+                      age_to: верхняя граница возраста не может быть меньше нижней
 

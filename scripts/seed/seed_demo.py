@@ -121,21 +121,29 @@ def main():
 
         # Онбординг одним PATCH: обязательные поля, описание и интересы.
         # Чётным аккаунтам даём 5 интересов, нечётным — 6; внутри анкеты повторов нет.
-        if any(field != "photos" for field in missing):
+        if any(field not in ("photos", "search_filter") for field in missing):
             profile = {
                 "name": NAMES[(i - 1) % len(NAMES)],
                 "birth_date": birth_date(i),
                 "sex": "female",
                 "dating_goal": GOALS[i % 3],
                 "about_me": DESCRIPTIONS[(i - 1) % len(DESCRIPTIONS)],
-                "search_sex": "all",
-                "search_age_from": 18,
-                "search_age_to": 100,
+                "education": ["secondary", "vocational", "incomplete_higher", "higher", "degree"][i % 5],
+                "smoking": ["negative", "neutral", "positive"][i % 3],
+                "alcohol": ["negative", "neutral", "positive"][(i + 1) % 3],
+                "height": 155 + i % 30,
                 "tags": [TAGS[(i - 1 + j) % len(TAGS)] for j in range(5 + i % 2)],
             }
             status, _, resp = request(f"{api}/profile/me", json.dumps(profile).encode(), "application/json", token, "PATCH")
             if status != 200:
                 sys.exit(f"{email}: анкета {status} {resp.decode()}")
+
+        # Фильтр ленты обязателен: показываем всех от 18 до 100.
+        if "search_filter" in missing:
+            search = json.dumps({"sex": "all", "age_from": 18, "age_to": 100}).encode()
+            status, _, resp = request(f"{api}/filters/me", search, "application/json", token, "PUT")
+            if status != 200:
+                sys.exit(f"{email}: фильтр {status} {resp.decode()}")
 
         # Загружаем одну фотографию; если их меньше аккаунтов, используем повторно.
         if "photos" in missing:

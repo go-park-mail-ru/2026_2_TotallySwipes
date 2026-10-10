@@ -34,6 +34,8 @@ var domainErrors = []struct {
 	{model.ErrPhotoLimit, apiError{http.StatusConflict, "PHOTO_LIMIT", "Можно загрузить не больше 6 фотографий", nil}},
 	{model.ErrLastPhoto, apiError{http.StatusConflict, "LAST_PHOTO", "Нельзя удалить единственное фото заполненной анкеты", nil}},
 	{model.ErrPhotoNotFound, apiError{http.StatusNotFound, "PHOTO_NOT_FOUND", "Фото не найдено", nil}},
+	{model.ErrPhotoOrderMismatch, apiError{http.StatusBadRequest, codeValidationError, msgInvalidData,
+		map[string]string{"photo_ids": validate.ErrPhotoOrder.Error()}}},
 	{model.ErrTestNotFound, apiError{http.StatusNotFound, "TEST_NOT_FOUND", "Тест не найден", nil}},
 	{model.ErrTestResultNotFound, apiError{http.StatusNotFound, "TEST_RESULT_NOT_FOUND", "Тест ещё не пройден", nil}},
 }

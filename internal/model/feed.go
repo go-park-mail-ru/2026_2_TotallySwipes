@@ -12,6 +12,11 @@ type FeedItem struct {
 	DatingGoal    DatingGoal
 	Compatibility *float64
 	AboutMe       *string
+	Education     *Education
+	Work          *string
+	Smoking       *Attitude
+	Alcohol       *Attitude
+	Height        *int
 	Tags          []string
 	Photos        []FeedPhoto
 }

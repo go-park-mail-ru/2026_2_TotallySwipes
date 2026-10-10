@@ -25,6 +25,7 @@ type ProfileService interface {
 	UpdateProfile(ctx context.Context, userID int64, patch *model.ProfilePatch) (*model.Profile, error)
 	AddPhoto(ctx context.Context, userID int64, upload model.PhotoUpload) ([]model.Photo, error)
 	DeletePhoto(ctx context.Context, userID, photoID int64) ([]model.Photo, error)
+	ReorderPhotos(ctx context.Context, userID int64, photoIDs []int64) ([]model.Photo, error)
 }
 
 type ProfileHandler struct {
@@ -101,6 +102,25 @@ func (h *ProfileHandler) DeletePhoto(w http.ResponseWriter, r *http.Request, use
 	photos, err := h.svc.DeletePhoto(r.Context(), userID, photoID)
 	if err != nil {
 		writeServiceError(w, "delete photo", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, dto.NewPhotosResponse(photos))
+}
+
+// ReorderPhotos - PUT /profile/me/photos/order: задаёт порядок всех фото, первое становится главным
+func (h *ProfileHandler) ReorderPhotos(w http.ResponseWriter, r *http.Request, userID int64) {
+	var req dto.ReorderPhotosRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if errs := req.Validate(); len(errs) > 0 {
+		writeError(w, http.StatusBadRequest, codeValidationError, msgInvalidData, errs)
+		return
+	}
+
+	photos, err := h.svc.ReorderPhotos(r.Context(), userID, req.PhotoIDs)
+	if err != nil {
+		writeServiceError(w, "reorder photos", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, dto.NewPhotosResponse(photos))

@@ -5,6 +5,7 @@ import (
 	"dating-app/internal/model"
 	"dating-app/internal/validate"
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -45,37 +46,52 @@ func newPhotoResponses(photos []model.Photo) []PhotoResponse {
 	return resp
 }
 
+// ReorderPhotosRequest - PUT /profile/me/photos/order: id всех фото в новом порядке, первое - главное
+type ReorderPhotosRequest struct {
+	PhotoIDs []int64 `json:"photo_ids"`
+}
+
+func (r ReorderPhotosRequest) Validate() map[string]string {
+	errs := make(map[string]string)
+	addErr(errs, "photo_ids", validate.ValidatePhotoOrder(r.PhotoIDs))
+	return errs
+}
+
 // ProfileResponse - анкета текущего пользователя. Незаполненные поля - null
 type ProfileResponse struct {
-	UserID        int64             `json:"user_id"`
-	Name          *string           `json:"name"`
-	BirthDate     *string           `json:"birth_date"`
-	Age           *int              `json:"age"`
-	Sex           *model.Sex        `json:"sex"`
-	DatingGoal    *model.DatingGoal `json:"dating_goal"`
-	AboutMe       *string           `json:"about_me"`
-	SearchSex     *model.SearchSex  `json:"search_sex"`
-	SearchAgeFrom *int              `json:"search_age_from"`
-	SearchAgeTo   *int              `json:"search_age_to"`
-	Tags          []string          `json:"tags"`
-	Photos        []PhotoResponse   `json:"photos"`
-	Missing       []string          `json:"missing"`
+	UserID     int64             `json:"user_id"`
+	Name       *string           `json:"name"`
+	BirthDate  *string           `json:"birth_date"`
+	Age        *int              `json:"age"`
+	Sex        *model.Sex        `json:"sex"`
+	DatingGoal *model.DatingGoal `json:"dating_goal"`
+	AboutMe    *string           `json:"about_me"`
+	Education  *model.Education  `json:"education"`
+	Work       *string           `json:"work"`
+	Smoking    *model.Attitude   `json:"smoking"`
+	Alcohol    *model.Attitude   `json:"alcohol"`
+	Height     *int              `json:"height"`
+	Tags       []string          `json:"tags"`
+	Photos     []PhotoResponse   `json:"photos"`
+	Missing    []string          `json:"missing"`
 }
 
 func NewProfileResponse(p *model.Profile, now time.Time) ProfileResponse {
 	f := p.CurrentVersion.ProfileFields
 	resp := ProfileResponse{
-		UserID:        p.UserID,
-		Name:          f.Name,
-		Sex:           f.Sex,
-		DatingGoal:    f.DatingGoal,
-		AboutMe:       f.AboutMe,
-		SearchSex:     f.SearchSex,
-		SearchAgeFrom: f.SearchAgeFrom,
-		SearchAgeTo:   f.SearchAgeTo,
-		Tags:          make([]string, 0, len(p.Tags)),
-		Photos:        newPhotoResponses(p.Photos),
-		Missing:       p.Missing(),
+		UserID:     p.UserID,
+		Name:       f.Name,
+		Sex:        f.Sex,
+		DatingGoal: f.DatingGoal,
+		AboutMe:    f.AboutMe,
+		Education:  f.Education,
+		Work:       f.Work,
+		Smoking:    f.Smoking,
+		Alcohol:    f.Alcohol,
+		Height:     f.Height,
+		Tags:       make([]string, 0, len(p.Tags)),
+		Photos:     newPhotoResponses(p.Photos),
+		Missing:    p.Missing(),
 	}
 	if f.BirthDate != nil {
 		date := f.BirthDate.Format(validate.DateLayout)
@@ -88,13 +104,13 @@ func NewProfileResponse(p *model.Profile, now time.Time) ProfileResponse {
 	return resp
 }
 
-// OptionalString отличает отсутствующее в JSON поле от явного null
-type OptionalString struct {
+// Optional отличает отсутствующее в JSON поле от явного null
+type Optional[T any] struct {
 	Set   bool
-	Value *string
+	Value *T
 }
 
-func (o *OptionalString) UnmarshalJSON(data []byte) error {
+func (o *Optional[T]) UnmarshalJSON(data []byte) error {
 	o.Set = true
 	if bytes.Equal(data, []byte("null")) {
 		o.Value = nil
@@ -103,17 +119,19 @@ func (o *OptionalString) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, &o.Value)
 }
 
-// UpdateProfileRequest - PATCH /profile/me: отсутствующее поле не меняется, about_me чистится через null, tags заменяются целиком
+// UpdateProfileRequest - PATCH /profile/me: отсутствующее поле не меняется, необязательные чистятся через null, tags заменяются целиком
 type UpdateProfileRequest struct {
-	Name          *string        `json:"name"`
-	BirthDate     *string        `json:"birth_date"`
-	Sex           *string        `json:"sex"`
-	DatingGoal    *string        `json:"dating_goal"`
-	AboutMe       OptionalString `json:"about_me"`
-	SearchSex     *string        `json:"search_sex"`
-	SearchAgeFrom *int           `json:"search_age_from"`
-	SearchAgeTo   *int           `json:"search_age_to"`
-	Tags          *[]string      `json:"tags"`
+	Name       *string          `json:"name"`
+	BirthDate  *string          `json:"birth_date"`
+	Sex        *string          `json:"sex"`
+	DatingGoal *string          `json:"dating_goal"`
+	AboutMe    Optional[string] `json:"about_me"`
+	Education  Optional[string] `json:"education"`
+	Work       Optional[string] `json:"work"`
+	Smoking    Optional[string] `json:"smoking"`
+	Alcohol    Optional[string] `json:"alcohol"`
+	Height     Optional[int]    `json:"height"`
+	Tags       *[]string        `json:"tags"`
 }
 
 // ToPatch нормализует и проверяет присланные поля. Пустая map - запрос корректен
@@ -144,29 +162,14 @@ func (r UpdateProfileRequest) ToPatch() (*model.ProfilePatch, map[string]string)
 		goal := model.DatingGoal(*r.DatingGoal)
 		patch.DatingGoal = &goal
 	}
-	if r.AboutMe.Set {
-		patch.AboutMeSet = true
-		if r.AboutMe.Value != nil && *r.AboutMe.Value != "" {
-			addErr(errs, "about_me", validate.ValidateAboutMe(*r.AboutMe.Value))
-			patch.AboutMe = r.AboutMe.Value
-		}
-	}
-	if r.SearchSex != nil {
-		addErr(errs, "search_sex", validate.ValidateSearchSex(*r.SearchSex))
-		searchSex := model.SearchSex(*r.SearchSex)
-		patch.SearchSex = &searchSex
-	}
-	if (r.SearchAgeFrom == nil) != (r.SearchAgeTo == nil) {
-		errs["search_age_to"] = validate.ErrSearchAgePair.Error()
-	} else if r.SearchAgeFrom != nil {
-		fromErr := validate.ValidateSearchAge(*r.SearchAgeFrom)
-		addErr(errs, "search_age_from", fromErr)
-		if err := validate.ValidateSearchAge(*r.SearchAgeTo); err != nil {
-			addErr(errs, "search_age_to", err)
-		} else if fromErr == nil {
-			addErr(errs, "search_age_to", validate.ValidateSearchAgeRange(*r.SearchAgeFrom, *r.SearchAgeTo))
-		}
-		patch.SearchAgeFrom, patch.SearchAgeTo = r.SearchAgeFrom, r.SearchAgeTo
+	patch.AboutMe = optionalText(errs, "about_me", r.AboutMe, validate.ValidateAboutMe)
+	patch.Work = optionalText(errs, "work", trimmed(r.Work), validate.ValidateWork)
+	patch.Education = optionalEnum[model.Education](errs, "education", r.Education, validate.ValidateEducation)
+	patch.Smoking = optionalEnum[model.Attitude](errs, "smoking", r.Smoking, validate.ValidateAttitude)
+	patch.Alcohol = optionalEnum[model.Attitude](errs, "alcohol", r.Alcohol, validate.ValidateAttitude)
+	patch.Height = model.Optional[int](r.Height)
+	if r.Height.Value != nil {
+		addErr(errs, "height", validate.ValidateHeight(*r.Height.Value))
 	}
 	if r.Tags != nil {
 		addErr(errs, "tags", validate.ValidateTags(*r.Tags))
@@ -176,4 +179,30 @@ func (r UpdateProfileRequest) ToPatch() (*model.ProfilePatch, map[string]string)
 		errs["profile"] = "нужно передать хотя бы одно поле"
 	}
 	return patch, errs
+}
+
+func trimmed(o Optional[string]) Optional[string] {
+	if o.Value != nil {
+		v := strings.TrimSpace(*o.Value)
+		o.Value = &v
+	}
+	return o
+}
+
+// optionalText проверяет текст; пустая строка, как и null, очищает поле
+func optionalText(errs map[string]string, field string, o Optional[string], check func(string) error) model.Optional[string] {
+	if o.Value == nil || *o.Value == "" {
+		return model.Optional[string]{Set: o.Set}
+	}
+	addErr(errs, field, check(*o.Value))
+	return model.Optional[string](o)
+}
+
+func optionalEnum[T ~string](errs map[string]string, field string, o Optional[string], check func(string) error) model.Optional[T] {
+	if o.Value == nil {
+		return model.Optional[T]{Set: o.Set}
+	}
+	addErr(errs, field, check(*o.Value))
+	v := T(*o.Value)
+	return model.Optional[T]{Set: true, Value: &v}
 }

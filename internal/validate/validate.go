@@ -28,10 +28,11 @@ const (
 
 	aboutMeMaxLen = 1000
 
+	workMaxLen = 100
+
 	PhotoMaxSize = 5 << 20
 
-	minAge       = 18
-	maxSearchAge = 100
+	minAge = 18
 
 	DateLayout = "2006-01-02"
 )
@@ -55,11 +56,12 @@ var (
 	ErrSex        = errors.New("допустимые значения: male, female")
 	ErrSearchSex  = errors.New("допустимые значения: male, female, all")
 	ErrDatingGoal = errors.New("допустимые значения: relationship, friendship, casual")
+	ErrEducation  = errors.New("допустимые значения: secondary, vocational, incomplete_higher, higher, degree")
+	ErrAttitude   = errors.New("допустимые значения: negative, neutral, positive")
 
 	ErrSearchAgeTooLow  = errors.New("возраст для поиска должен быть не меньше 18")
 	ErrSearchAgeTooHigh = errors.New("возраст для поиска должен быть не больше 100")
 	ErrSearchAgeRange   = errors.New("верхняя граница возраста не может быть меньше нижней")
-	ErrSearchAgePair    = errors.New("search_age_from и search_age_to передаются вместе")
 
 	ErrTagsTooMany = errors.New("не больше 10 тегов")
 	ErrTagsNotUniq = errors.New("теги не должны повторяться")
@@ -69,8 +71,11 @@ var (
 	ErrNotInteger = errors.New("должно быть целым числом")
 
 	ErrAboutMeTooLong = errors.New("описание должно быть не длиннее 1000 символов")
+	ErrWorkTooLong    = errors.New("работа должна быть не длиннее 100 символов")
+	ErrHeight         = errors.New("рост должен быть от 100 до 250 см")
 	ErrPhotoTooLarge  = errors.New("фото должно быть не больше 5 МБ")
 	ErrPhotoFormat    = errors.New("фото должно быть в формате JPEG, PNG или WebP")
+	ErrPhotoOrder     = errors.New("нужно передать id всех фото анкеты, каждый один раз")
 )
 
 // emailRe совпадает с регуляркой фронта: буквы любого алфавита в локальной части и домене
@@ -261,12 +266,43 @@ func ValidateAboutMe(s string) error {
 	return nil
 }
 
+func ValidateEducation(s string) error {
+	if !slices.Contains(model.Educations, model.Education(s)) {
+		return ErrEducation
+	}
+	return nil
+}
+
+// ValidateAttitude - отношение к курению или алкоголю
+func ValidateAttitude(s string) error {
+	if !slices.Contains(model.Attitudes, model.Attitude(s)) {
+		return ErrAttitude
+	}
+	return nil
+}
+
+// ValidateWork ожидает строку после strings.TrimSpace; пустая строка - очистка поля
+func ValidateWork(s string) error {
+	if utf8.RuneCountInString(s) > workMaxLen {
+		return ErrWorkTooLong
+	}
+	return nil
+}
+
+// ValidateHeight - рост в сантиметрах
+func ValidateHeight(h int) error {
+	if h < model.MinHeight || h > model.MaxHeight {
+		return ErrHeight
+	}
+	return nil
+}
+
 // ValidateSearchAge - граница возраста для поиска анкет
 func ValidateSearchAge(age int) error {
-	if age < minAge {
+	if age < model.MinSearchAge {
 		return ErrSearchAgeTooLow
 	}
-	if age > maxSearchAge {
+	if age > model.MaxSearchAge {
 		return ErrSearchAgeTooHigh
 	}
 	return nil
@@ -303,6 +339,21 @@ func ValidatePhoto(p model.PhotoUpload) error {
 	}
 	if p.Ext == "" {
 		return ErrPhotoFormat
+	}
+	return nil
+}
+
+// ValidatePhotoOrder - непустой список положительных id без повторов, не длиннее model.MaxPhotos
+func ValidatePhotoOrder(ids []int64) error {
+	if len(ids) == 0 || len(ids) > model.MaxPhotos {
+		return ErrPhotoOrder
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok || id <= 0 {
+			return ErrPhotoOrder
+		}
+		seen[id] = struct{}{}
 	}
 	return nil
 }
