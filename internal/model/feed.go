@@ -19,6 +19,12 @@ type FeedItem struct {
 	Height        *int
 	Tags          []string
 	Photos        []FeedPhoto
+	LikedMe       bool
+}
+
+type FeedCandidate struct {
+	Profile Profile
+	LikedMe bool
 }
 
 type FeedPhoto struct {

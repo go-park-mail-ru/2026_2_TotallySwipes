@@ -69,12 +69,12 @@ func TestProfileServiceGetNextFeed(t *testing.T) {
 				}
 				return tc.viewer, tc.viewerErr
 			}
-			repo.feed = func(gotCtx context.Context, id int64, limit int, cursor *int64) ([]model.Profile, *int64, error) {
+			repo.feed = func(gotCtx context.Context, id int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error) {
 				calls = append(calls, "feed")
 				if gotCtx != ctx || id != tc.userID || limit != tc.limit || !reflect.DeepEqual(cursor, tc.cursor) {
 					t.Fatal("unexpected feed arguments")
 				}
-				return tc.profiles, tc.nextCursor, tc.feedErr
+				return feedCandidates(tc.profiles...), tc.nextCursor, tc.feedErr
 			}
 			calc := &feedCompatibilityMock{t: t}
 			calc.calculate = func(a, b model.BigFive) (float64, error) {
@@ -151,7 +151,7 @@ type feedRepositoryMock struct {
 	ProfileRepository
 	t                      *testing.T
 	viewer                 func(context.Context, int64) (*model.Profile, error)
-	feed                   func(context.Context, int64, int, *int64) ([]model.Profile, *int64, error)
+	feed                   func(context.Context, int64, int, *int64) ([]model.FeedCandidate, *int64, error)
 	viewerCalls, feedCalls int
 }
 
@@ -163,7 +163,7 @@ func (m *feedRepositoryMock) GetByUserIDCurrentProfile(ctx context.Context, id i
 	}
 	return m.viewer(ctx, id)
 }
-func (m *feedRepositoryMock) GetProfilesByCursorAndLimit(ctx context.Context, id int64, limit int, cursor *int64) ([]model.Profile, *int64, error) {
+func (m *feedRepositoryMock) GetProfilesByCursorAndLimit(ctx context.Context, id int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error) {
 	m.t.Helper()
 	m.feedCalls++
 	if m.feed == nil {
@@ -215,6 +215,7 @@ func TestAgeAt(t *testing.T) {
 func TestProfileServiceFeedItemMapping(t *testing.T) {
 	type testCase struct {
 		name       string
+		likedMe    bool
 		about      *string
 		tags       []model.Tag
 		photos     []model.Photo
@@ -226,7 +227,7 @@ func TestProfileServiceFeedItemMapping(t *testing.T) {
 		{name: "empty optional fields", wantTags: []string{},
 			photos:     []model.Photo{{ID: 8, StorageKey: "first.jpg", Position: 1}},
 			wantPhotos: []model.FeedPhoto{{ID: 8, URL: "https://media.example/cats/first.jpg"}}},
-		{name: "populated optional fields", about: &about,
+		{name: "populated optional fields", likedMe: true, about: &about,
 			tags:       []model.Tag{{ID: 4, Name: "music"}, {ID: 9, Name: "movies"}},
 			photos:     []model.Photo{{ID: 8, StorageKey: "first.jpg", Position: 0}, {ID: 3, StorageKey: "second.jpg", Position: 1}},
 			wantTags:   []string{"music", "movies"},
@@ -241,8 +242,8 @@ func TestProfileServiceFeedItemMapping(t *testing.T) {
 			viewer := filledProfile(model.Profile{UserID: 7}, "Viewer")
 			repo := &feedRepositoryMock{t: t,
 				viewer: func(context.Context, int64) (*model.Profile, error) { return &viewer, nil },
-				feed: func(context.Context, int64, int, *int64) ([]model.Profile, *int64, error) {
-					return []model.Profile{candidate}, nil, nil
+				feed: func(context.Context, int64, int, *int64) ([]model.FeedCandidate, *int64, error) {
+					return []model.FeedCandidate{{Profile: candidate, LikedMe: tc.likedMe}}, nil, nil
 				},
 			}
 			calc := &feedCompatibilityMock{t: t}
@@ -251,7 +252,7 @@ func TestProfileServiceFeedItemMapping(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := model.FeedItem{UserID: 42, Name: "Anna", Age: 25, DatingGoal: model.DatingGoalRelationship, AboutMe: tc.about, Tags: tc.wantTags, Photos: tc.wantPhotos}
+			want := model.FeedItem{LikedMe: tc.likedMe, UserID: 42, Name: "Anna", Age: 25, DatingGoal: model.DatingGoalRelationship, AboutMe: tc.about, Tags: tc.wantTags, Photos: tc.wantPhotos}
 			if page == nil || len(page.Items) != 1 || !reflect.DeepEqual(page.Items[0], want) {
 				t.Fatalf("page=%+v, want item=%+v", page, want)
 			}
@@ -292,8 +293,8 @@ func TestProfileServicePropagatesURLProviderError(t *testing.T) {
 	viewer := filledProfile(model.Profile{UserID: 7}, "Viewer")
 	repo := &feedRepositoryMock{t: t,
 		viewer: func(context.Context, int64) (*model.Profile, error) { return &viewer, nil },
-		feed: func(context.Context, int64, int, *int64) ([]model.Profile, *int64, error) {
-			return []model.Profile{filledProfile(model.Profile{}, "Anna")}, nil, nil
+		feed: func(context.Context, int64, int, *int64) ([]model.FeedCandidate, *int64, error) {
+			return feedCandidates(filledProfile(model.Profile{}, "Anna")), nil, nil
 		},
 	}
 	svc := NewProfileService(repo, &feedCompatibilityMock{t: t}, failingURLProvider{err: failure}, nil)
@@ -427,8 +428,8 @@ func TestProfileServiceFeedSkipsIncompleteProfiles(t *testing.T) {
 	incomplete.CurrentVersion.Name = nil
 	repo := &feedRepositoryMock{t: t,
 		viewer: func(context.Context, int64) (*model.Profile, error) { return &viewer, nil },
-		feed: func(context.Context, int64, int, *int64) ([]model.Profile, *int64, error) {
-			return []model.Profile{incomplete, filledProfile(model.Profile{UserID: 31}, "Anna")}, nil, nil
+		feed: func(context.Context, int64, int, *int64) ([]model.FeedCandidate, *int64, error) {
+			return feedCandidates(incomplete, filledProfile(model.Profile{UserID: 31}, "Anna")), nil, nil
 		},
 	}
 	svc := NewProfileService(repo, &feedCompatibilityMock{t: t}, NewLocalPhotoURLProvider("https://media.example"), nil)
@@ -439,4 +440,12 @@ func TestProfileServiceFeedSkipsIncompleteProfiles(t *testing.T) {
 	if len(page.Items) != 1 || page.Items[0].UserID != 31 {
 		t.Fatalf("items = %+v", page.Items)
 	}
+}
+
+func feedCandidates(profiles ...model.Profile) []model.FeedCandidate {
+	candidates := make([]model.FeedCandidate, len(profiles))
+	for i, profile := range profiles {
+		candidates[i] = model.FeedCandidate{Profile: profile}
+	}
+	return candidates
 }

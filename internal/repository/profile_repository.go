@@ -19,14 +19,15 @@ func NewProfileRepository(db *sql.DB) *ProfileRepo {
 	return &ProfileRepo{db: db}
 }
 
-// profileSelect читает профиль с признаком фильтра, последней версией анкеты (её может не быть) и последним психопрофилем
-const profileSelect = `
-	SELECT p.id, p.user_id, p.created_at, p.updated_at,
+const profileColumns = `
+	p.id, p.user_id, p.created_at, p.updated_at,
 	       EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id),
 	       v.id, v.recorded_at, v.name, v.birth_date, v.sex, v.dating_goal, v.about_me,
 	       v.education, v.work, v.smoking, v.alcohol, v.height,
 	       ps.id, ps.recorded_at,
-	       ps.openness, ps.conscientiousness, ps.extraversion, ps.agreeableness, ps.neuroticism
+	       ps.openness, ps.conscientiousness, ps.extraversion, ps.agreeableness, ps.neuroticism`
+
+const profileFrom = `
 	FROM profile AS p
 	LEFT JOIN LATERAL (
 	    SELECT * FROM profile_version WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
@@ -35,11 +36,60 @@ const profileSelect = `
 	    SELECT * FROM profile_psycho WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
 	) AS ps ON true`
 
+// profileSelect читает профиль с признаком фильтра, последней версией анкеты и последним психопрофилем.
+const profileSelect = "SELECT " + profileColumns + profileFrom
+
+const likedMeSelect = `
+	EXISTS (
+		SELECT 1
+		FROM swipe s
+		JOIN profile viewer ON viewer.id = s.target_profile_id
+		WHERE s.author_id = p.user_id
+		AND viewer.user_id = $2
+		AND s.action IN ('like', 'super_like')
+	) AS liked_me`
+
+const feedSelect = "SELECT " + profileColumns + ", " + likedMeSelect + profileFrom
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
 
 // scanProfile разбирает строку profileSelect; теги и фото не загружает.
+func scanCandidate(row rowScanner) (*model.FeedCandidate, error) {
+	var c model.FeedCandidate
+	var p model.Profile
+	var versionID, psychoID *int64
+	var versionRecordedAt, psychoRecordedAt *time.Time
+	var psycho model.ProfilePsycho
+	f := &p.CurrentVersion.ProfileFields
+
+	err := row.Scan(&p.ID, &p.UserID, &p.CreatedAt, &p.UpdatedAt, &p.HasSearchFilter,
+		&versionID, &versionRecordedAt, &f.Name, &f.BirthDate, &f.Sex, &f.DatingGoal, &f.AboutMe,
+		&f.Education, &f.Work, &f.Smoking, &f.Alcohol, &f.Height,
+		&psychoID, &psychoRecordedAt,
+		&psycho.Openness, &psycho.Conscientiousness, &psycho.Extraversion, &psycho.Agreeableness, &psycho.Neuroticism, &c.LikedMe,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if versionID != nil {
+		p.CurrentVersion.ID = *versionID
+		p.CurrentVersion.ProfileID = p.ID
+		p.CurrentVersion.RecordedAt = *versionRecordedAt
+	}
+	if psychoID != nil {
+		psycho.ID, psycho.ProfileID, psycho.RecordedAt = *psychoID, p.ID, *psychoRecordedAt
+		p.CurrentPsycho = &psycho
+	}
+
+	p.Tags = make([]model.Tag, 0)
+	p.Photos = make([]model.Photo, 0)
+	c.Profile = p
+	return &c, nil
+}
+
 func scanProfile(row rowScanner) (*model.Profile, error) {
 	var p model.Profile
 	var versionID, psychoID *int64
@@ -268,7 +318,7 @@ func (r *ProfileRepo) ReorderPhotos(ctx context.Context, userID int64, photoIDs 
 }
 
 // GetProfilesByCursorAndLimit - страница заполненных анкет под фильтр пользователя; условие заполненности должно совпадать с model.Profile.Missing
-func (r *ProfileRepo) GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.Profile, *int64, error) {
+func (r *ProfileRepo) GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error) {
 	afterID := int64(0)
 	if cursor != nil {
 		afterID = *cursor
@@ -280,7 +330,7 @@ func (r *ProfileRepo) GetProfilesByCursorAndLimit(ctx context.Context, userID in
 	}
 	defer tx.Rollback()
 
-	rows, err := tx.QueryContext(ctx, profileSelect+`
+	rows, err := tx.QueryContext(ctx, feedSelect+`
 		WHERE p.user_id > $1 AND p.user_id <> $2
 		  AND v.name IS NOT NULL AND v.birth_date IS NOT NULL AND v.sex IS NOT NULL
 		  AND v.dating_goal IS NOT NULL
@@ -296,27 +346,29 @@ func (r *ProfileRepo) GetProfilesByCursorAndLimit(ctx context.Context, userID in
 	}
 	defer rows.Close()
 
-	profiles := make([]model.Profile, 0)
+	candidates := make([]model.FeedCandidate, 0)
 	for rows.Next() {
-		p, err := scanProfile(rows)
+		candidate, err := scanCandidate(rows)
+
 		if err != nil {
 			return nil, nil, fmt.Errorf("feed: scan profile: %w", err)
 		}
-		profiles = append(profiles, *p)
+
+		candidates = append(candidates, *candidate)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, nil, fmt.Errorf("feed: read profiles: %w", err)
 	}
 
 	var nextCursor *int64
-	if len(profiles) > limit {
-		profiles = profiles[:limit]
-		id := profiles[len(profiles)-1].UserID
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+		id := candidates[len(candidates)-1].Profile.UserID
 		nextCursor = &id
 	}
 
-	for i := range profiles {
-		if err := loadRelations(ctx, tx, &profiles[i]); err != nil {
+	for i := range candidates {
+		if err := loadRelations(ctx, tx, &candidates[i].Profile); err != nil {
 			return nil, nil, fmt.Errorf("feed: %w", err)
 		}
 	}
@@ -324,7 +376,7 @@ func (r *ProfileRepo) GetProfilesByCursorAndLimit(ctx context.Context, userID in
 	if err := tx.Commit(); err != nil {
 		return nil, nil, fmt.Errorf("feed: commit read: %w", err)
 	}
-	return profiles, nextCursor, nil
+	return candidates, nextCursor, nil
 }
 
 // loadRelations дополняет профиль тегами актуальной версии и фотографиями.

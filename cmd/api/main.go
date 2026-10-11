@@ -28,6 +28,7 @@ type handlers struct {
 	filter     *handler.FilterHandler
 	profile    *handler.ProfileHandler
 	psychoTest *handler.PsychoTestHandler
+	swipe      *handler.SwipeHandler
 }
 
 func main() {
@@ -66,6 +67,7 @@ func run() error {
 	userRepo := repository.NewUserRepository(db)
 	profileRepo := repository.NewProfileRepository(db)
 	filterRepo := repository.NewFilterRepository(db)
+	swipeRepo := repository.NewSwipeRepository(db)
 	psychoTestRepo := repository.NewPsychoTestRepository(db)
 	sessionRepo := repository.NewSessionRepository(rdb)
 
@@ -78,6 +80,7 @@ func run() error {
 	authSvc := service.NewAuthService(userRepo, profileSvc, sessionRepo, auth.BcryptHasher{}, issuer, cfg.Auth.JWTRefreshTTL)
 	psychoTestSvc := service.NewPsychoTestService(psychoTestRepo, profileRepo, compatibilitySvc, psychoTest)
 	filterSvc := service.NewFilterService(filterRepo)
+	swipeSvc := service.NewSwipeService(swipeRepo, profileRepo)
 
 	h := handlers{
 		auth:       handler.NewAuthHandler(authSvc, cfg.Auth.CookieSecure),
@@ -85,6 +88,7 @@ func run() error {
 		filter:     handler.NewFilterHandler(filterSvc),
 		profile:    handler.NewProfileHandler(profileSvc),
 		psychoTest: handler.NewPsychoTestHandler(psychoTestSvc),
+		swipe:      handler.NewSwipeHandler(swipeSvc),
 	}
 
 	var root http.Handler = newRouter(cfg, issuer, h)
@@ -123,6 +127,7 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 	authRouter.HandleFunc("/refresh", h.auth.Refresh).Methods(http.MethodPost)
 
 	api.Handle("/feed", authed(h.feed.Get)).Methods(http.MethodGet)
+	api.Handle("/feed/swipe", authed(h.swipe.Swipe)).Methods(http.MethodPost)
 
 	api.Handle("/filters/me", authed(h.filter.Get)).Methods(http.MethodGet)
 	api.Handle("/filters/me", authed(h.filter.Set)).Methods(http.MethodPut)
