@@ -74,8 +74,8 @@ func TestSearchFilterFeed(t *testing.T) {
 		}
 		var ids []int64
 		for _, p := range page {
-			if slices.Contains(candidates, p.UserID) {
-				ids = append(ids, p.UserID)
+			if slices.Contains(candidates, p.Profile.UserID) {
+				ids = append(ids, p.Profile.UserID)
 			}
 		}
 		return ids
@@ -83,6 +83,48 @@ func TestSearchFilterFeed(t *testing.T) {
 
 	if got, want := feedIDs(), candidates[:3]; !slices.Equal(got, want) {
 		t.Fatalf("feed with default filter = %v, want %v", got, want)
+	}
+
+	setSwipe := func(author, target int64, action string) {
+		t.Helper()
+		_, err := db.ExecContext(ctx, `
+			INSERT INTO swipe (author_id, target_profile_id, action)
+			SELECT $1, id, $3 FROM profile WHERE user_id = $2
+			ON CONFLICT (author_id, target_profile_id)
+			DO UPDATE SET action = EXCLUDED.action, updated_at = CURRENT_TIMESTAMP`, author, target, action)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Исходящий лайк и лайк кандидата другому пользователю не означают liked_me.
+	setSwipe(viewer, female25, "like")
+	setSwipe(female25, male25, "like")
+	for _, tc := range []struct {
+		name, action string
+		want         bool
+	}{
+		{"no incoming swipe", "", false},
+		{"incoming like", "like", true},
+		{"incoming dislike replaces like", "dislike", false},
+		{"incoming super like", "super_like", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.action != "" {
+				setSwipe(female25, viewer, tc.action)
+			}
+			cursor := female25 - 1
+			page, next, err := profiles.GetProfilesByCursorAndLimit(ctx, viewer, 1, &cursor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(page) != 1 || page[0].Profile.UserID != female25 || page[0].LikedMe != tc.want {
+				t.Fatalf("page = %+v, want user %d with liked_me=%v", page, female25, tc.want)
+			}
+			if next == nil || *next != female25 {
+				t.Fatalf("next cursor = %v, want %d", next, female25)
+			}
+		})
 	}
 
 	for _, tc := range []struct {

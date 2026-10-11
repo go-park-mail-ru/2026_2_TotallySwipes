@@ -27,7 +27,7 @@ type ProfileRepository interface {
 	// ReorderPhotos задаёт порядок фото; model.ErrPhotoOrderMismatch, если набор id не совпадает с фото анкеты.
 	ReorderPhotos(ctx context.Context, userID int64, photoIDs []int64) error
 	// GetProfilesByCursorAndLimit возвращает страницу заполненных анкет и курсор следующей (nil в конце).
-	GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.Profile, *int64, error)
+	GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error)
 }
 
 type ProfileService struct {
@@ -167,14 +167,15 @@ func (s *ProfileService) GetNextFeed(ctx context.Context, userID int64, limit in
 		return nil, fmt.Errorf("get feed user id=%d: profile incomplete: %w", userID, model.ErrProfileRequired)
 	}
 	userVector, userHasTest := feedBigFive(userProfile.CurrentPsycho)
-	profiles, nextCursor, err := s.profileRepo.GetProfilesByCursorAndLimit(ctx, userID, limit, cursor)
+	candidates, nextCursor, err := s.profileRepo.GetProfilesByCursorAndLimit(ctx, userID, limit, cursor)
 
 	if err != nil {
 		return nil, fmt.Errorf("get feed profiles: %w", err)
 	}
 
-	page := &model.FeedPage{Items: make([]model.FeedItem, 0, len(profiles)), NextCursor: nextCursor}
-	for _, profile := range profiles {
+	page := &model.FeedPage{Items: make([]model.FeedItem, 0, len(candidates)), NextCursor: nextCursor}
+	for _, candidate := range candidates {
+		profile := candidate.Profile
 		// Страховка от расхождения SQL-фильтра с Missing
 		if missing := profile.Missing(); len(missing) > 0 {
 			slog.Warn("feed: incomplete profile passed SQL filter", "user_id", profile.UserID, "missing", missing)
@@ -205,6 +206,7 @@ func (s *ProfileService) GetNextFeed(ctx context.Context, userID int64, limit in
 			Height:        fields.Height,
 			DatingGoal:    *fields.DatingGoal,
 			Compatibility: compatibilityRes,
+			LikedMe:       candidate.LikedMe,
 			Tags:          make([]string, 0, len(profile.Tags)),
 			Photos:        make([]model.FeedPhoto, 0, len(profile.Photos)),
 		}

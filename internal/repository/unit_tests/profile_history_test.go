@@ -165,7 +165,7 @@ func TestProfileTagHistory(t *testing.T) {
 	}
 	found := false
 	for _, p := range feed {
-		found = found || p.ID == first.ID
+		found = found || p.Profile.ID == first.ID
 	}
 	if !found {
 		t.Fatal("filled profile missing from feed")

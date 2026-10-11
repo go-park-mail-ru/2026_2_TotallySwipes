@@ -31,6 +31,7 @@ var domainErrors = []struct {
 	{model.ErrInvalidTestRequest, apiError{http.StatusBadRequest, codeValidationError, "Некорректный запрос", nil}},
 	{model.ErrInvalidAnswers, apiError{http.StatusUnprocessableEntity, "INVALID_ANSWERS", "Проверьте полноту и допустимость ответов", nil}},
 	{model.ErrProfileRequired, apiError{http.StatusConflict, "PROFILE_REQUIRED", "Сначала необходимо заполнить анкету", nil}},
+	{model.ErrProfileIncomplete, apiError{http.StatusForbidden, "PROFILE_REQUIRED", "Сначала необходимо заполнить анкету", nil}},
 	{model.ErrPhotoLimit, apiError{http.StatusConflict, "PHOTO_LIMIT", "Можно загрузить не больше 6 фотографий", nil}},
 	{model.ErrLastPhoto, apiError{http.StatusConflict, "LAST_PHOTO", "Нельзя удалить единственное фото заполненной анкеты", nil}},
 	{model.ErrPhotoNotFound, apiError{http.StatusNotFound, "PHOTO_NOT_FOUND", "Фото не найдено", nil}},
@@ -38,6 +39,9 @@ var domainErrors = []struct {
 		map[string]string{"photo_ids": validate.ErrPhotoOrder.Error()}}},
 	{model.ErrTestNotFound, apiError{http.StatusNotFound, "TEST_NOT_FOUND", "Тест не найден", nil}},
 	{model.ErrTestResultNotFound, apiError{http.StatusNotFound, "TEST_RESULT_NOT_FOUND", "Тест ещё не пройден", nil}},
+	{model.ErrInvalidSwipe, apiError{http.StatusBadRequest, codeValidationError, msgInvalidData,
+		map[string]string{"target_user_id": "Нельзя свайпать собственную анкету"}}},
+	{model.ErrProfileNotFound, apiError{http.StatusNotFound, "PROFILE_NOT_FOUND", "Целевая анкета не найдена или недоступна", nil}},
 }
 
 // writeServiceError отвечает по domainErrors, остальные ошибки логирует и отдаёт 500

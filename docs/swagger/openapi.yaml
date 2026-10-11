@@ -712,6 +712,7 @@ paths:
                         - compatibility
                         - tags
                         - photos
+                        - liked_me
                       properties:
                         user_id:
                           minimum: 1
@@ -797,6 +798,12 @@ paths:
                                 minLength: 1
                                 type: string
                                 example: /media/photo-7.jpg
+                        liked_me:
+                          type: boolean
+                          description: >-
+                            true, если последнее действие кандидата по отношению
+                            к текущему пользователю — like или super_like.
+                          example: false
                   next_cursor:
                     minimum: 1
                     type: integer
@@ -833,6 +840,11 @@ paths:
   /api/v1/feed/swipe:
     post:
       summary: Выполнить свайп пользователя
+      description: >-
+        Свайп доступен только пользователю с заполненной анкетой.
+        Если в его анкете не заполнены обязательные поля, возвращается
+        403 PROFILE_REQUIRED. Отсутствие обязательных полей запроса
+        target_user_id или action возвращает 400 VALIDATION_ERROR.
       requestBody:
         required: true
         content:
@@ -854,11 +866,28 @@ paths:
                   enum:
                     - like
                     - dislike
+                    - super_like
       responses:
         '400':
           $ref: '#/components/responses/ValidationError'
         '204':
           description: Свайп сохранён
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: В анкете текущего пользователя не заполнены обязательные поля
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: PROFILE_REQUIRED
+                  message: Сначала необходимо заполнить анкету
+        '413':
+          description: Слишком большой запрос
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '404':
           description: Целевая анкета не найдена или недоступна
           content:
