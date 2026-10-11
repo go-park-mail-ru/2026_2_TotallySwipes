@@ -62,7 +62,7 @@ func Load() (*Config, error) {
 		},
 		HTTP: HTTPConfig{
 			Port:              r.str("PORT", "8080"),
-			CORSOrigins:       r.list("CORS_ORIGINS", "http://localhost:5173"),
+			CORSOrigins:       r.list("CORS_ORIGINS", "http://localhost:5173,http://totally-swipes.ru,https://totally-swipes.ru"),
 			ReadHeaderTimeout: r.duration("HTTP_READ_HEADER_TIMEOUT", 5*time.Second),
 			ReadTimeout:       r.duration("HTTP_READ_TIMEOUT", 10*time.Second),
 			WriteTimeout:      r.duration("HTTP_WRITE_TIMEOUT", 10*time.Second),
