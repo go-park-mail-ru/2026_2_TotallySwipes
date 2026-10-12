@@ -94,16 +94,22 @@ func TestLoadCORSOrigins(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if !reflect.DeepEqual(cfg.HTTP.CORSOrigins, []string{"http://localhost:5173"}) {
+	if !reflect.DeepEqual(cfg.HTTP.CORSOrigins, []string{
+		"http://localhost:5173",
+		"http://totally-swipes.ru",
+		"https://totally-swipes.ru"}) {
 		t.Errorf("default = %q", cfg.HTTP.CORSOrigins)
 	}
 
-	t.Setenv("CORS_ORIGINS", "http://localhost:5173, http://front.example.com ,")
+	t.Setenv("CORS_ORIGINS", "http://localhost:5173, http://totally-swipes.ru, https://totally-swipes.ru")
 	cfg, err = Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if !reflect.DeepEqual(cfg.HTTP.CORSOrigins, []string{"http://localhost:5173", "http://front.example.com"}) {
+	if !reflect.DeepEqual(cfg.HTTP.CORSOrigins, []string{
+		"http://localhost:5173",
+		"http://totally-swipes.ru",
+		"https://totally-swipes.ru"}) {
 		t.Errorf("origins = %q", cfg.HTTP.CORSOrigins)
 	}
 }
