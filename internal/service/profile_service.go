@@ -9,12 +9,6 @@ import (
 	"time"
 )
 
-type PhotoStorage interface {
-	// Save сохраняет файл и возвращает его ключ в хранилище.
-	Save(ctx context.Context, data []byte, ext string) (key string, err error)
-	Delete(ctx context.Context, key string) error
-}
-
 type ProfileRepository interface {
 	// GetByUserIDCurrentProfile возвращает анкету с тегами и фото или model.ErrNotFound.
 	GetByUserIDCurrentProfile(ctx context.Context, userID int64) (*model.Profile, error)
@@ -32,13 +26,13 @@ type ProfileRepository interface {
 
 type ProfileService struct {
 	profileRepo      ProfileRepository
-	media            URLProvider
+	photoURLs        PhotoURLProvider
 	photos           PhotoStorage
 	compatibilitySvc CompatibilityService
 }
 
-func NewProfileService(repo ProfileRepository, svc CompatibilityService, media URLProvider, photos PhotoStorage) *ProfileService {
-	return &ProfileService{profileRepo: repo, compatibilitySvc: svc, media: media, photos: photos}
+func NewProfileService(repo ProfileRepository, svc CompatibilityService, photoURLs PhotoURLProvider, photos PhotoStorage) *ProfileService {
+	return &ProfileService{profileRepo: repo, compatibilitySvc: svc, photoURLs: photoURLs, photos: photos}
 }
 
 // GetMyProfile получает анкету пользователя целиком, с URL фотографий.
@@ -113,7 +107,7 @@ func (s *ProfileService) myPhotos(ctx context.Context, userID int64) ([]model.Ph
 
 func (s *ProfileService) fillPhotoURLs(ctx context.Context, photos []model.Photo) error {
 	for i := range photos {
-		url, err := s.media.GetURL(ctx, photos[i].StorageKey)
+		url, err := s.photoURLs.GetPhotoURL(ctx, photos[i].StorageKey)
 		if err != nil {
 			return fmt.Errorf("photo id=%d url: %w", photos[i].ID, err)
 		}
@@ -217,7 +211,7 @@ func (s *ProfileService) GetNextFeed(ctx context.Context, userID int64, limit in
 
 		for _, photo := range profile.Photos {
 
-			url, err := s.media.GetURL(ctx, photo.StorageKey)
+			url, err := s.photoURLs.GetPhotoURL(ctx, photo.StorageKey)
 
 			if err != nil {
 				return nil, fmt.Errorf("get feed photo id=%d: %w", photo.ID, err)
