@@ -159,6 +159,8 @@ erDiagram
         bigint first_user_id FK, UK "U1"
         bigint second_user_id FK, UK "U1"
         boolean access_to_message
+        timestamptz first_user_seen_at
+        timestamptz second_user_seen_at
         timestamptz created_at
         timestamptz updated_at
     }

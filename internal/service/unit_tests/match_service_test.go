@@ -26,6 +26,11 @@ func (f *fakeMatches) GetMatches(_ context.Context, _ int64, limit int, cursor *
 	return f.matches, f.total, f.nextCursor, f.err
 }
 
+func (f *fakeMatches) MarkSeen(context.Context, int64, int64) error {
+	f.calls++
+	return f.err
+}
+
 type fakeMatchViewer struct {
 	profile *model.Profile
 	err     error
@@ -112,6 +117,32 @@ func TestMatchServiceGetMatches(t *testing.T) {
 				if *page.Items[0].Age != 25 || *page.Items[0].MainPhotoURL != "https://media.example/cats/profiles/anna.jpg" || !page.Items[0].IsNew {
 					t.Fatalf("unexpected first item: %+v", page.Items[0])
 				}
+			}
+		})
+	}
+}
+
+func TestMatchServiceMarkSeen(t *testing.T) {
+	failure := errors.New("dependency failure")
+	for _, tc := range []struct {
+		name            string
+		userID, matchID int64
+		repoErr         error
+		wantErr         error
+		wantCalls       int
+	}{
+		{name: "invalid user", matchID: 1, wantErr: model.ErrInvalidMatchesRequest},
+		{name: "invalid match", userID: 7, wantErr: model.ErrInvalidMatchesRequest},
+		{name: "not a participant", userID: 7, matchID: 1, repoErr: model.ErrNotFound, wantErr: model.ErrMatchNotFound, wantCalls: 1},
+		{name: "repository failure", userID: 7, matchID: 1, repoErr: failure, wantErr: failure, wantCalls: 1},
+		{name: "ok", userID: 7, matchID: 1, wantCalls: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &fakeMatches{err: tc.repoErr}
+			svc := NewMatchService(repo, fakeMatchViewer{}, NewCompatibilityService(), NewLocalPhotoURLProvider("https://media.example"))
+			err := svc.MarkSeen(context.Background(), tc.userID, tc.matchID)
+			if repo.calls != tc.wantCalls || !errors.Is(err, tc.wantErr) || (tc.wantErr == nil) != (err == nil) {
+				t.Fatalf("calls = %d, error = %v; want %d, %v", repo.calls, err, tc.wantCalls, tc.wantErr)
 			}
 		})
 	}

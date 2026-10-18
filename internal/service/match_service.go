@@ -10,6 +10,7 @@ import (
 
 type MatchRepository interface {
 	GetMatches(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.Match, int, *int64, error)
+	MarkSeen(ctx context.Context, userID, matchID int64) error
 }
 
 type MatchViewerRepository interface {
@@ -71,6 +72,20 @@ func (s *MatchService) GetMatches(ctx context.Context, userID int64, limit int, 
 	}
 
 	return &model.MatchPage{Items: matches, Total: total, NextCursor: nextCursor}, nil
+}
+
+// MarkSeen снимает с мэтча признак новизны для пользователя; model.ErrMatchNotFound, если он не участник пары
+func (s *MatchService) MarkSeen(ctx context.Context, userID, matchID int64) error {
+	if userID <= 0 || matchID <= 0 {
+		return fmt.Errorf("%w: invalid user ID or match ID", model.ErrInvalidMatchesRequest)
+	}
+	if err := s.repo.MarkSeen(ctx, userID, matchID); err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			return fmt.Errorf("mark match id=%d seen: %w", matchID, model.ErrMatchNotFound)
+		}
+		return fmt.Errorf("mark match id=%d seen: %w", matchID, err)
+	}
+	return nil
 }
 
 func isCompleteBigFive(v model.BigFive) bool {

@@ -991,7 +991,7 @@ paths:
                           example: 0.87
                         is_new:
                           type: boolean
-                          description: В паре ещё нет сообщений.
+                          description: Текущий пользователь ещё не открывал этот мэтч (POST /api/v1/matches/{match_id}/seen).
                           example: true
                         created_at:
                           type: string
@@ -1007,6 +1007,42 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/matches/{match_id}/seen:
+    post:
+      security:
+        - cookieAuth: []
+      summary: Отметить мэтч просмотренным
+      description: >-
+        Снимает с мэтча признак is_new для текущего пользователя; у собеседника признак не меняется.
+        Клиент вызывает ручку при открытии карточки мэтча. Повторный вызов безопасен.
+      parameters:
+        - name: match_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        '204':
+          description: Мэтч отмечен просмотренным
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Мэтч не найден или пользователь не участник пары
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: MATCH_NOT_FOUND
+                  message: Мэтч не найден
         '500':
           $ref: '#/components/responses/InternalServerError'
 

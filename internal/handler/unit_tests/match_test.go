@@ -11,14 +11,22 @@ import (
 
 	. "dating-app/internal/handler"
 	"dating-app/internal/model"
+
+	"github.com/gorilla/mux"
 )
 
 type fakeMatchService struct {
-	page   *model.MatchPage
-	err    error
-	userID int64
-	limit  int
-	cursor *int64
+	page    *model.MatchPage
+	err     error
+	userID  int64
+	limit   int
+	cursor  *int64
+	matchID int64
+}
+
+func (f *fakeMatchService) MarkSeen(_ context.Context, userID, matchID int64) error {
+	f.userID, f.matchID = userID, matchID
+	return f.err
 }
 
 func (f *fakeMatchService) GetMatches(_ context.Context, userID int64, limit int, cursor *int64) (*model.MatchPage, error) {
@@ -96,6 +104,33 @@ func TestMatchHandlerList(t *testing.T) {
 			NewMatchHandler(&fakeMatchService{err: tc.err}).List(rec, httptest.NewRequest(http.MethodGet, tc.target, nil), 7)
 			if rec.Code != tc.status {
 				t.Fatalf("status = %d, want %d, body = %s", rec.Code, tc.status, rec.Body)
+			}
+		})
+	}
+}
+
+func TestMatchHandlerMarkSeen(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		target      string
+		err         error
+		status      int
+		wantMatchID int64
+	}{
+		{"ok", "/api/v1/matches/15/seen", nil, http.StatusNoContent, 15},
+		{"bad id", "/api/v1/matches/abc/seen", nil, http.StatusBadRequest, 0},
+		{"zero id", "/api/v1/matches/0/seen", nil, http.StatusBadRequest, 0},
+		{"not found", "/api/v1/matches/15/seen", model.ErrMatchNotFound, http.StatusNotFound, 15},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &fakeMatchService{err: tc.err}
+			h := NewMatchHandler(svc)
+			r := mux.NewRouter()
+			r.HandleFunc("/api/v1/matches/{match_id}/seen", func(w http.ResponseWriter, req *http.Request) { h.MarkSeen(w, req, 7) })
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, tc.target, nil))
+			if rec.Code != tc.status || svc.matchID != tc.wantMatchID {
+				t.Fatalf("status = %d, match id = %d; want %d, %d; body = %s", rec.Code, svc.matchID, tc.status, tc.wantMatchID, rec.Body)
 			}
 		})
 	}

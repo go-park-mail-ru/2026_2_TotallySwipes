@@ -3,6 +3,7 @@ package repository_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -91,8 +92,17 @@ func TestMatchRepositoryGetMatches(t *testing.T) {
 	swipe(stranger, first, model.SwipeLike)
 	swipe(first, stranger, model.SwipeLike)
 	firstMatch, secondMatch := matchID(viewer, first), matchID(viewer, second)
-	if _, err := db.ExecContext(ctx, `INSERT INTO message (match_id, sender_id, body) VALUES ($1, $2, 'Привет')`, firstMatch, viewer); err != nil {
+	if err := matches.MarkSeen(ctx, viewer, firstMatch); err != nil {
 		t.Fatal(err)
+	}
+	if err := matches.MarkSeen(ctx, viewer, firstMatch); err != nil {
+		t.Fatalf("repeated mark seen: %v", err)
+	}
+	if err := matches.MarkSeen(ctx, oneSided, firstMatch); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("mark seen by outsider: %v, want ErrNotFound", err)
+	}
+	if partner, _, _, err := matches.GetMatches(ctx, first, 10, nil); err != nil || len(partner) != 2 || !partner[1].IsNew {
+		t.Fatalf("partner matches = %+v, err = %v; viewer's view must not affect partner", partner, err)
 	}
 
 	all, total, next, err := matches.GetMatches(ctx, viewer, 10, nil)
