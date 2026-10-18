@@ -13,6 +13,7 @@ var (
 	// ErrSessionNotOpened означает, что аккаунт создан, но сессия не открыта.
 	ErrSessionNotOpened       = errors.New("account created, session not opened")
 	ErrInvalidFeedRequest     = errors.New("invalid feed request")
+	ErrInvalidMatchesRequest  = errors.New("invalid matches request")
 	ErrInvalidTestRequest     = errors.New("invalid test request")
 	ErrInvalidAnswers         = errors.New("invalid test answers")
 	ErrTestNotFound           = errors.New("test not found")

@@ -28,6 +28,7 @@ var domainErrors = []struct {
 	{model.ErrUnknownTag, apiError{http.StatusBadRequest, codeValidationError, msgInvalidData,
 		map[string]string{"tags": validate.ErrTagUnknown.Error()}}},
 	{model.ErrInvalidFeedRequest, apiError{http.StatusBadRequest, codeValidationError, "Некорректные параметры ленты", nil}},
+	{model.ErrInvalidMatchesRequest, apiError{http.StatusBadRequest, codeValidationError, msgInvalidMatchesQuery, nil}},
 	{model.ErrInvalidTestRequest, apiError{http.StatusBadRequest, codeValidationError, "Некорректный запрос", nil}},
 	{model.ErrInvalidAnswers, apiError{http.StatusUnprocessableEntity, "INVALID_ANSWERS", "Проверьте полноту и допустимость ответов", nil}},
 	{model.ErrProfileRequired, apiError{http.StatusConflict, "PROFILE_REQUIRED", "Сначала необходимо заполнить анкету", nil}},
