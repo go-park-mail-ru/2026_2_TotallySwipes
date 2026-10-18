@@ -39,7 +39,7 @@ func (r *MatchRepository) GetMatches(ctx context.Context, userID int64, limit in
 	rows, err := tx.QueryContext(ctx, `
 		SELECT m.id, m.created_at, partner.user_id, v.name, v.birth_date, ph.storage_key,
 		       ps.openness, ps.conscientiousness, ps.extraversion, ps.agreeableness, ps.neuroticism,
-		       NOT EXISTS (SELECT 1 FROM message WHERE match_id = m.id)
+		       CASE WHEN m.first_user_id = $1 THEN m.first_user_seen_at ELSE m.second_user_seen_at END IS NULL
 		FROM match AS m
 		CROSS JOIN LATERAL (
 		    SELECT CASE WHEN m.first_user_id = $1 THEN m.second_user_id ELSE m.first_user_id END AS user_id
@@ -86,4 +86,25 @@ func (r *MatchRepository) GetMatches(ctx context.Context, userID int64, limit in
 		nextCursor = &id
 	}
 	return matches, total, nextCursor, nil
+}
+
+// MarkSeen отмечает мэтч просмотренным участником; повторная отметка не меняет время; model.ErrNotFound, если пользователь не в паре
+func (r *MatchRepository) MarkSeen(ctx context.Context, userID, matchID int64) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE match SET
+		    first_user_seen_at = CASE WHEN first_user_id = $1 THEN COALESCE(first_user_seen_at, CURRENT_TIMESTAMP) ELSE first_user_seen_at END,
+		    second_user_seen_at = CASE WHEN second_user_id = $1 THEN COALESCE(second_user_seen_at, CURRENT_TIMESTAMP) ELSE second_user_seen_at END,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = $2 AND (first_user_id = $1 OR second_user_id = $1)`, userID, matchID)
+	if err != nil {
+		return fmt.Errorf("mark match id=%d seen: %w", matchID, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("mark match id=%d seen: rows affected: %w", matchID, err)
+	}
+	if n == 0 {
+		return model.ErrNotFound
+	}
+	return nil
 }

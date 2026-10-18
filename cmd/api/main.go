@@ -134,6 +134,7 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 	api.Handle("/feed/swipe", authed(h.swipe.Swipe)).Methods(http.MethodPost)
 
 	api.Handle("/matches", authed(h.match.List)).Methods(http.MethodGet)
+	api.Handle("/matches/{match_id}/seen", authed(h.match.MarkSeen)).Methods(http.MethodPost)
 
 	api.Handle("/filters/me", authed(h.filter.Get)).Methods(http.MethodGet)
 	api.Handle("/filters/me", authed(h.filter.Set)).Methods(http.MethodPut)
