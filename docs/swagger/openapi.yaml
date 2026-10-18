@@ -912,6 +912,104 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/matches:
+    get:
+      security:
+        - cookieAuth: []
+      summary: Получить список мэтчей
+      description: >-
+        Мэтч возникает, когда оба пользователя поставили друг другу like или super_like
+        (POST /api/v1/feed/swipe). Возвращаются мэтчи текущего пользователя от новых к старым
+        с краткими данными собеседника для страницы «Симпатии».
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 48
+            default: 12
+
+        - name: cursor
+          description: Курсор из next_cursor предыдущего ответа. В первом запросе не передаётся.
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            format: int64
+
+      responses:
+        '200':
+          description: Мэтчи загружены. Если мэтчей нет, items пустой, next_cursor равен null.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, next_cursor]
+                properties:
+                  total:
+                    type: integer
+                    description: Общее число мэтчей пользователя, не зависит от cursor.
+                    example: 12
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [match_id, user_id, name, age, photo_url, compatibility, is_new, created_at]
+                      properties:
+                        match_id:
+                          type: integer
+                          format: int64
+                          example: 15
+                        user_id:
+                          description: Идентификатор собеседника.
+                          type: integer
+                          format: int64
+                          example: 42
+                        name:
+                          type: string
+                          nullable: true
+                          example: Аня
+                        age:
+                          type: integer
+                          nullable: true
+                          example: 22
+                        photo_url:
+                          type: string
+                          nullable: true
+                          description: URL главного фото собеседника. null, если фото нет.
+                          example: http://localhost:8080/cats/cat-1.jpg
+                        compatibility:
+                          type: number
+                          format: double
+                          minimum: 0
+                          maximum: 1
+                          nullable: true
+                          description: Совместимость по Big Five. null, если кто-то из пары не прошёл тест.
+                          example: 0.87
+                        is_new:
+                          type: boolean
+                          description: В паре ещё нет сообщений.
+                          example: true
+                        created_at:
+                          type: string
+                          format: date-time
+                          example: '2026-10-18T12:00:00Z'
+                  next_cursor:
+                    type: integer
+                    format: int64
+                    nullable: true
+                    description: match_id последнего элемента, если есть следующая страница.
+                    example: 15
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
 components:
   securitySchemes:
     cookieAuth:
