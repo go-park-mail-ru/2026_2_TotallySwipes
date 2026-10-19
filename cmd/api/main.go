@@ -18,6 +18,7 @@ import (
 	"dating-app/internal/repository"
 	"dating-app/internal/service"
 	"dating-app/internal/storage"
+	"dating-app/internal/storage/s3"
 )
 
 const connectTimeout = 5 * time.Second
@@ -64,6 +65,11 @@ func run() error {
 	}
 	defer rdb.Close()
 
+	minioStorage, err := s3.OpenMinIOStorage(cfg.MinIO)
+	if err != nil {
+		return err
+	}
+
 	userRepo := repository.NewUserRepository(db)
 	profileRepo := repository.NewProfileRepository(db)
 	filterRepo := repository.NewFilterRepository(db)
@@ -72,11 +78,12 @@ func run() error {
 	sessionRepo := repository.NewSessionRepository(rdb)
 
 	issuer := auth.NewJWTIssuer(cfg.Auth.JWTSecret, cfg.Auth.JWTAccessTTL)
-	photoStorage := storage.NewLocalPhotoStorage(cfg.PhotoDir)
-	urlProvider := service.NewLocalPhotoURLProvider(cfg.HTTP.PublicURL)
+	// photoStorage := storage.NewLocalPhotoStorage(cfg.PhotoDir)
+	// urlProvider := service.NewLocalPhotoURLProvider(cfg.HTTP.PublicURL)
+	minioURLProvider := s3.NewMinIOURLProvider(minioStorage, cfg.MinIO.PhotoURLTTL)
 
 	compatibilitySvc := service.NewCompatibilityService()
-	profileSvc := service.NewProfileService(profileRepo, compatibilitySvc, urlProvider, photoStorage)
+	profileSvc := service.NewProfileService(profileRepo, compatibilitySvc, minioURLProvider, minioStorage)
 	authSvc := service.NewAuthService(userRepo, profileSvc, sessionRepo, auth.BcryptHasher{}, issuer, cfg.Auth.JWTRefreshTTL)
 	psychoTestSvc := service.NewPsychoTestService(psychoTestRepo, profileRepo, compatibilitySvc, psychoTest)
 	filterSvc := service.NewFilterService(filterRepo)

@@ -5,6 +5,7 @@ import (
 	"dating-app/internal/model"
 	. "dating-app/internal/service"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -91,7 +92,7 @@ func TestProfileServiceGetNextFeed(t *testing.T) {
 				}
 				return tc.scores[calc.calls-1], nil
 			}
-			svc := NewProfileService(repo, calc, NewLocalPhotoURLProvider("https://media.example"), nil)
+			svc := NewProfileService(repo, calc, photoURLProviderFunc(func(_ context.Context, key string) (string, error) { return "https://media.example/cats/" + key, nil }), nil)
 			page, err := svc.GetNextFeed(ctx, tc.userID, tc.limit, tc.cursor)
 			if repo.viewerCalls != tc.wantViewerCalls || repo.feedCalls != tc.wantFeedCalls || calc.calls != tc.wantCalcCalls {
 				t.Fatalf("calls: viewer=%d feed=%d calc=%d", repo.viewerCalls, repo.feedCalls, calc.calls)
@@ -247,7 +248,7 @@ func TestProfileServiceFeedItemMapping(t *testing.T) {
 				},
 			}
 			calc := &feedCompatibilityMock{t: t}
-			svc := NewProfileService(repo, calc, NewLocalPhotoURLProvider("https://media.example"), nil)
+			svc := NewProfileService(repo, calc, photoURLProviderFunc(func(_ context.Context, key string) (string, error) { return "https://media.example/cats/" + key, nil }), nil)
 			page, err := svc.GetNextFeed(context.Background(), 7, 10, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -286,7 +287,7 @@ func TestLocalPhotoURLProvider(t *testing.T) {
 
 type failingURLProvider struct{ err error }
 
-func (p failingURLProvider) GetURL(context.Context, string) (string, error) { return "", p.err }
+func (p failingURLProvider) GetPhotoURL(context.Context, string) (string, error) { return "", p.err }
 
 func TestProfileServicePropagatesURLProviderError(t *testing.T) {
 	failure := errors.New("URL provider failed")
@@ -379,7 +380,7 @@ func (m *photoRepositoryMock) GetByUserIDCurrentProfile(context.Context, int64) 
 
 func TestProfileServicePhotoFiles(t *testing.T) {
 	ctx := context.Background()
-	urls := NewLocalPhotoURLProvider("https://media.example")
+	urls := photoURLProviderFunc(func(_ context.Context, key string) (string, error) { return "https://media.example/cats/" + key, nil })
 
 	repo, files := &photoRepositoryMock{}, &fakePhotos{}
 	photos, err := NewProfileService(repo, nil, urls, files).AddPhoto(ctx, 7, model.PhotoUpload{Data: []byte("a"), Ext: ".jpg"})
@@ -432,7 +433,7 @@ func TestProfileServiceFeedSkipsIncompleteProfiles(t *testing.T) {
 			return feedCandidates(incomplete, filledProfile(model.Profile{UserID: 31}, "Anna")), nil, nil
 		},
 	}
-	svc := NewProfileService(repo, &feedCompatibilityMock{t: t}, NewLocalPhotoURLProvider("https://media.example"), nil)
+	svc := NewProfileService(repo, &feedCompatibilityMock{t: t}, photoURLProviderFunc(func(_ context.Context, key string) (string, error) { return "https://media.example/cats/" + key, nil }), nil)
 	page, err := svc.GetNextFeed(context.Background(), 7, 10, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -448,4 +449,47 @@ func feedCandidates(profiles ...model.Profile) []model.FeedCandidate {
 		candidates[i] = model.FeedCandidate{Profile: profile}
 	}
 	return candidates
+}
+
+// photoURLProviderFunc isolates service tests from concrete URL providers.
+type photoURLProviderFunc func(context.Context, string) (string, error)
+
+func (f photoURLProviderFunc) GetPhotoURL(ctx context.Context, key string) (string, error) {
+	return f(ctx, key)
+}
+
+func TestProfileServiceGetMyProfilePhotoURLs(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprint("provider error=", fail), func(t *testing.T) {
+			ctx := context.Background()
+			failure := errors.New("signing failed")
+			calls := 0
+			provider := photoURLProviderFunc(func(got context.Context, key string) (string, error) {
+				calls++
+				if got != ctx || key != "left.jpg" {
+					t.Fatalf("unexpected arguments: %v, %q", got, key)
+				}
+				if fail {
+					return "", failure
+				}
+				return "https://storage.example/photos/left.jpg?signature=test", nil
+			})
+			profile, err := NewProfileService(&photoRepositoryMock{}, nil, provider, nil).GetMyProfile(ctx, 7)
+			if calls != 1 {
+				t.Fatalf("provider calls = %d", calls)
+			}
+			if fail {
+				if profile != nil || !errors.Is(err, failure) {
+					t.Fatalf("profile=%v error=%v", profile, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if profile.Photos[0].URL != "https://storage.example/photos/left.jpg?signature=test" || profile.Photos[0].StorageKey != "left.jpg" {
+				t.Fatalf("unexpected photo: %+v", profile.Photos[0])
+			}
+		})
+	}
 }

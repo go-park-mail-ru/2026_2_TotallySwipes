@@ -15,6 +15,7 @@ type Config struct {
 	Redis    RedisConfig
 	Auth     AuthConfig
 	HTTP     HTTPConfig
+	MinIO    MinIOConfig
 }
 
 type DatabaseConfig struct {
@@ -42,6 +43,15 @@ type HTTPConfig struct {
 	IdleTimeout       time.Duration
 }
 
+type MinIOConfig struct {
+	Endpoint    string
+	AccessKey   string
+	SecretKey   string
+	Bucket      string
+	UseTLS      bool
+	PhotoURLTTL time.Duration
+}
+
 // Load читает конфиг из env; обязательны только DATABASE_URL и JWT_SECRET, ошибки собираются разом
 func Load() (*Config, error) {
 	var r envReader
@@ -67,6 +77,14 @@ func Load() (*Config, error) {
 			ReadTimeout:       r.duration("HTTP_READ_TIMEOUT", 10*time.Second),
 			WriteTimeout:      r.duration("HTTP_WRITE_TIMEOUT", 10*time.Second),
 			IdleTimeout:       r.duration("HTTP_IDLE_TIMEOUT", 60*time.Second),
+		},
+		MinIO: MinIOConfig{
+			Endpoint:    r.str("MINIO_ENDPOINT", "minio:9000"),
+			AccessKey:   r.str("MINIO_ACCESS_KEY", "minioadmin"),
+			SecretKey:   r.str("MINIO_SECRET_KEY", "minioadmin"),
+			Bucket:      r.str("MINIO_BUCKET", "photos"),
+			UseTLS:      r.boolean("MINIO_USE_TLS", false),
+			PhotoURLTTL: r.positiveDuration("MINIO_PHOTO_URL_TTL", 15*time.Minute),
 		},
 	}
 
