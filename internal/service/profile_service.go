@@ -118,7 +118,7 @@ func (s *ProfileService) fillPhotoURLs(ctx context.Context, photos []model.Photo
 
 func (s *ProfileService) deleteFile(ctx context.Context, key string) {
 	if err := s.photos.Delete(context.WithoutCancel(ctx), key); err != nil {
-		slog.Error("delete photo file", "key", key, "error", err)
+		slog.ErrorContext(ctx, "delete photo file", "key", key, "error", err)
 	}
 }
 

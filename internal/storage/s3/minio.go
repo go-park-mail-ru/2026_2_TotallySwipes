@@ -18,11 +18,12 @@ type MinIOStorage struct {
 }
 
 type MinIOURLProvider struct {
-	storage *MinIOStorage
-	ttl     time.Duration
+	client *minio.Client
+	bucket string
+	ttl    time.Duration
 }
 
-func OpenMinIOStorage(cfg config.MinIOConfig) (*MinIOStorage, error) {
+func OpenMinIOStorage(ctx context.Context, cfg config.MinIOConfig) (*MinIOStorage, error) {
 
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
@@ -33,6 +34,20 @@ func OpenMinIOStorage(cfg config.MinIOConfig) (*MinIOStorage, error) {
 		return nil, fmt.Errorf("create minio client: %w", err)
 	}
 
+	exists, err := client.BucketExists(ctx, cfg.Bucket)
+	if err != nil {
+		return nil, fmt.Errorf("check bucket %q: %w", cfg.Bucket, err)
+	}
+
+	if !exists {
+		err := client.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{})
+		if err != nil {
+			if minio.ToErrorResponse(err).Code != "BucketAlreadyOwnedByYou" {
+				return nil, fmt.Errorf("create bucket %q: %w", cfg.Bucket, err)
+			}
+		}
+	}
+
 	return &MinIOStorage{
 		Client: client,
 		Bucket: cfg.Bucket,
@@ -40,16 +55,26 @@ func OpenMinIOStorage(cfg config.MinIOConfig) (*MinIOStorage, error) {
 
 }
 
-func NewMinIOURLProvider(storage *MinIOStorage, ttl time.Duration) *MinIOURLProvider {
-	return &MinIOURLProvider{
-		storage: storage,
-		ttl:     ttl,
+func NewMinIOURLProvider(cfg config.MinIOConfig) (*MinIOURLProvider, error) {
+	client, err := minio.New(cfg.PublicEndpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
+		Secure: cfg.UseTLS,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("create photo URL client: %w", err)
 	}
+
+	return &MinIOURLProvider{
+		client: client,
+		bucket: cfg.Bucket,
+		ttl:    cfg.PhotoURLTTL,
+	}, nil
 }
 
 func (p *MinIOURLProvider) GetPhotoURL(ctx context.Context, key string) (string, error) {
 
-	u, err := p.storage.Client.PresignedGetObject(ctx, p.storage.Bucket, key, p.ttl, nil)
+	u, err := p.client.PresignedGetObject(ctx, p.bucket, key, p.ttl, nil)
 	if err != nil {
 		return "", fmt.Errorf("presigned get object: %w", err)
 	}

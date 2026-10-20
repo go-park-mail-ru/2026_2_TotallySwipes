@@ -13,7 +13,7 @@ type statusRecorder struct {
 }
 
 func (r *statusRecorder) WriteHeader(status int) {
-if r.written {
+	if r.written {
 		return
 	}
 	r.status = status
@@ -36,11 +36,11 @@ func Logging(next http.Handler) http.Handler {
 
 		next.ServeHTTP(rec, r)
 
-		slog.Info("request",
+		slog.InfoContext(r.Context(), "http request",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", rec.status,
-			"duration", time.Since(start).String(),
+			"duration_ms", float64(time.Since(start))/float64(time.Millisecond),
 		)
 	})
 }

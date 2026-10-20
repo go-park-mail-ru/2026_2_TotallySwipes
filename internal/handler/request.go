@@ -15,7 +15,7 @@ const maxRequestBodySize = 1 << 20
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
-		writeError(w, http.StatusUnsupportedMediaType, codeUnsupportedMediaType, "Требуется Content-Type application/json", nil)
+		writeError(r.Context(), w, http.StatusUnsupportedMediaType, codeUnsupportedMediaType, "Требуется Content-Type application/json", nil)
 		return false
 	}
 
@@ -28,11 +28,11 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 		err = errors.New("more than one JSON value")
 	}
 	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-		writeError(w, http.StatusRequestEntityTooLarge, codePayloadTooLarge, "Слишком большой запрос", nil)
+		writeError(r.Context(), w, http.StatusRequestEntityTooLarge, codePayloadTooLarge, "Слишком большой запрос", nil)
 		return false
 	}
 	if err != nil {
-		writeError(w, http.StatusBadRequest, codeValidationError, "Некорректный JSON", nil)
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, "Некорректный JSON", nil)
 		return false
 	}
 	return true
@@ -46,7 +46,7 @@ func WithUser(fn UserHandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, ok := middleware.UserIDFromContext(r.Context())
 		if !ok {
-			writeError(w, http.StatusUnauthorized, codeUnauthorized, "Необходима авторизация", nil)
+			writeError(r.Context(), w, http.StatusUnauthorized, codeUnauthorized, "Необходима авторизация", nil)
 			return
 		}
 		fn(w, r, userID)

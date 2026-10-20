@@ -113,3 +113,25 @@ func TestLoadCORSOrigins(t *testing.T) {
 		t.Errorf("origins = %q", cfg.HTTP.CORSOrigins)
 	}
 }
+
+func TestLoadMinIOPublicEndpoint(t *testing.T) {
+	setRequired(t)
+	t.Setenv("MINIO_ENDPOINT", "minio:9000")
+	t.Setenv("MINIO_PUBLIC_ENDPOINT", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MinIO.PublicEndpoint != "localhost:9000" {
+		t.Fatalf("default public endpoint=%q", cfg.MinIO.PublicEndpoint)
+	}
+	t.Setenv("MINIO_PUBLIC_ENDPOINT", "192.0.2.10:9000")
+	t.Setenv("MINIO_PHOTO_URL_TTL", "10m")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MinIO.Endpoint != "minio:9000" || cfg.MinIO.PublicEndpoint != "192.0.2.10:9000" || cfg.MinIO.PhotoURLTTL != 10*time.Minute {
+		t.Fatal("internal/public endpoints or photo TTL loaded incorrectly")
+	}
+}

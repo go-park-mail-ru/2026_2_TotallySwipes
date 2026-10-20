@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,6 +12,7 @@ import (
 	"dating-app/internal/auth"
 	"dating-app/internal/config"
 	"dating-app/internal/handler"
+	"dating-app/internal/logging"
 	"dating-app/internal/middleware"
 	"dating-app/internal/psychotest"
 	"dating-app/internal/repository"
@@ -33,17 +33,35 @@ type handlers struct {
 }
 
 func main() {
-	if err := run(); err != nil {
-		slog.Error("server stopped", "error", err)
+	if err := start(); err != nil {
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func start() error {
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("invalid configuration: %w", err)
+		slog.Error("load config", "error", err)
+		return err
 	}
+
+	logger, logFile, err := logging.New(cfg.LogDir)
+	if err != nil {
+		slog.Error("init logger", "error", err)
+		return err
+	}
+	defer logFile.Close()
+
+	slog.SetDefault(logger)
+
+	if err := run(cfg, logger); err != nil {
+		logger.Error("server stopped", "error", err)
+		return err
+	}
+	return nil
+}
+
+func run(cfg *config.Config, logger *slog.Logger) error {
 
 	psychoTest, err := psychotest.Load()
 	if err != nil {
@@ -53,7 +71,8 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
 	defer cancel()
 
-	db, err := storage.OpenPostgres(ctx, cfg.Database.URL)
+	tracer := storage.NewTracer(logger)
+	db, err := storage.OpenPostgres(ctx, cfg.Database.URL, tracer)
 	if err != nil {
 		return err
 	}
@@ -65,7 +84,9 @@ func run() error {
 	}
 	defer rdb.Close()
 
-	minioStorage, err := s3.OpenMinIOStorage(cfg.MinIO)
+	minioCtx, cancelMinIO := context.WithTimeout(context.Background(), connectTimeout)
+	minioStorage, err := s3.OpenMinIOStorage(minioCtx, cfg.MinIO)
+	cancelMinIO()
 	if err != nil {
 		return err
 	}
@@ -80,7 +101,10 @@ func run() error {
 	issuer := auth.NewJWTIssuer(cfg.Auth.JWTSecret, cfg.Auth.JWTAccessTTL)
 	// photoStorage := storage.NewLocalPhotoStorage(cfg.PhotoDir)
 	// urlProvider := service.NewLocalPhotoURLProvider(cfg.HTTP.PublicURL)
-	minioURLProvider := s3.NewMinIOURLProvider(minioStorage, cfg.MinIO.PhotoURLTTL)
+	minioURLProvider, err := s3.NewMinIOURLProvider(cfg.MinIO)
+	if err != nil {
+		return err
+	}
 
 	compatibilitySvc := service.NewCompatibilityService()
 	profileSvc := service.NewProfileService(profileRepo, compatibilitySvc, minioURLProvider, minioStorage)
@@ -102,6 +126,7 @@ func run() error {
 	root = middleware.Recovery(root)
 	root = middleware.CORS(cfg.HTTP.CORSOrigins)(root)
 	root = middleware.Logging(root)
+	root = middleware.RequestID(root)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.HTTP.Port,
