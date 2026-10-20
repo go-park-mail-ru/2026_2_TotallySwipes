@@ -2,53 +2,77 @@ package service
 
 import (
 	"context"
-	"errors"
-	"testing"
-
 	"dating-app/internal/model"
 	. "dating-app/internal/service"
+	"errors"
+	"go.uber.org/mock/gomock"
+	"reflect"
+	"testing"
 )
-
-type filterRepositoryMock struct {
-	filter *model.SearchFilter
-	err    error
-}
-
-func (m *filterRepositoryMock) Get(context.Context, int64) (*model.SearchFilter, error) {
-	return m.filter, m.err
-}
-func (m *filterRepositoryMock) Upsert(_ context.Context, _ int64, f *model.SearchFilter) error {
-	m.filter = f
-	return m.err
-}
 
 func TestFilterServiceGet(t *testing.T) {
 	saved := model.SearchFilter{Sex: model.SearchSexMale, AgeFrom: 25, AgeTo: 35}
 	failure := errors.New("db down")
 	for _, tc := range []struct {
 		name    string
-		repo    *filterRepositoryMock
+		stored  *model.SearchFilter
+		repoErr error
 		want    *model.SearchFilter
 		wantErr error
 	}{
-		{"не задан", &filterRepositoryMock{err: model.ErrNotFound}, &model.DefaultSearchFilter, nil},
-		{"задан", &filterRepositoryMock{filter: &saved}, &saved, nil},
-		{"ошибка хранилища", &filterRepositoryMock{err: failure}, nil, failure},
+		{"not set", nil, model.ErrNotFound, &model.DefaultSearchFilter, nil},
+		{"stored", &saved, nil, &saved, nil},
+		{"database error", nil, failure, nil, failure},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := NewFilterService(tc.repo).Get(context.Background(), 7)
-			if !errors.Is(err, tc.wantErr) || (tc.want == nil) != (got == nil) || (got != nil && *got != *tc.want) {
-				t.Fatalf("Get() = %+v, %v; want %+v, %v", got, err, tc.want, tc.wantErr)
+			// Arrange
+			ctrl := gomock.NewController(t)
+			repo := NewMockFilterRepository(ctrl)
+			ctx := context.Background()
+			repo.EXPECT().Get(ctx, int64(7)).Return(tc.stored, tc.repoErr).Times(1)
+			svc := NewFilterService(repo)
+			// Act
+			got, err := svc.Get(ctx, 7)
+			// Assert
+			if !errors.Is(err, tc.wantErr) || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("Get()=%+v,%v; want %+v,%v", got, err, tc.want, tc.wantErr)
 			}
 		})
 	}
 }
 
 func TestFilterServiceSet(t *testing.T) {
-	repo := &filterRepositoryMock{}
-	f := model.SearchFilter{Sex: model.SearchSexFemale, AgeFrom: 20, AgeTo: 30}
-	got, err := NewFilterService(repo).Set(context.Background(), 7, f)
-	if err != nil || *got != f || *repo.filter != f {
-		t.Fatalf("Set() = %+v, %v; saved %+v", got, err, repo.filter)
+	for _, wantErr := range []error{nil, errors.New("db down")} {
+		t.Run(fmtError(wantErr), func(t *testing.T) {
+			// Arrange
+			ctrl := gomock.NewController(t)
+			repo := NewMockFilterRepository(ctrl)
+			ctx := context.Background()
+			filter := model.SearchFilter{Sex: model.SearchSexFemale, AgeFrom: 20, AgeTo: 30}
+			repo.EXPECT().Upsert(ctx, int64(7), &filter).Return(wantErr).Times(1)
+			svc := NewFilterService(repo)
+			// Act
+			got, err := svc.Set(ctx, 7, filter)
+			// Assert
+			if !errors.Is(err, wantErr) {
+				t.Fatalf("error=%v, want %v", err, wantErr)
+			}
+			if wantErr != nil {
+				if got != nil {
+					t.Fatal("expected nil filter")
+				}
+				return
+			}
+			if got == nil || *got != filter {
+				t.Fatalf("filter=%+v", got)
+			}
+		})
 	}
+}
+
+func fmtError(err error) string {
+	if err == nil {
+		return "success"
+	}
+	return err.Error()
 }

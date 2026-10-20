@@ -46,8 +46,11 @@ func TestCompatibilityServiceCalculate(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			// Arrange
 			svc := &CompatibilityServiceImpl{}
+			// Act
 			got, err := svc.CalculateDistance(tc.first, tc.second)
+			// Assert
 			if tc.wantErr {
 				if !errors.Is(err, model.ErrInvalidBigFive) {
 					t.Fatalf("expected ErrInvalidBigFive, got %v", err)
