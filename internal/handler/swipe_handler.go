@@ -27,7 +27,7 @@ func (h *SwipeHandler) Swipe(w http.ResponseWriter, r *http.Request, userID int6
 	}
 
 	if errs := req.Validate(); len(errs) > 0 {
-		writeError(w, http.StatusBadRequest, codeValidationError, msgInvalidData, errs)
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, msgInvalidData, errs)
 		return
 	}
 
@@ -36,7 +36,7 @@ func (h *SwipeHandler) Swipe(w http.ResponseWriter, r *http.Request, userID int6
 	err := h.svc.Swipe(r.Context(), swipe)
 
 	if err != nil {
-		writeServiceError(w, "swipe", err)
+		writeServiceError(r.Context(), w, "swipe", err)
 		return
 	}
 

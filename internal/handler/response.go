@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"dating-app/internal/handler/dto"
 	"encoding/json"
 	"log/slog"
@@ -21,10 +22,10 @@ const (
 	msgInvalidData   = "Некорректные данные"
 )
 
-func writeJSON(w http.ResponseWriter, status int, payload any) {
+func writeJSON(ctx context.Context, w http.ResponseWriter, status int, payload any) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		slog.Error("marshal response", "error", err)
+		slog.ErrorContext(ctx, "marshal response", "error", err)
 		status = http.StatusInternalServerError
 		body, _ = json.Marshal(dto.ErrorResponse{Error: dto.ErrorBody{Code: codeInternalError, Message: msgInternalError}})
 	}
@@ -32,11 +33,11 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if _, err := w.Write(body); err != nil {
-		slog.Error("write response", "error", err)
+		slog.ErrorContext(ctx, "write response", "error", err)
 	}
 }
 
 // writeError отдаёт ошибку; fields - ошибки по полям запроса или nil
-func writeError(w http.ResponseWriter, status int, code, message string, fields map[string]string) {
-	writeJSON(w, status, dto.ErrorResponse{Error: dto.ErrorBody{Code: code, Message: message, Fields: fields}})
+func writeError(ctx context.Context, w http.ResponseWriter, status int, code, message string, fields map[string]string) {
+	writeJSON(ctx, w, status, dto.ErrorResponse{Error: dto.ErrorBody{Code: code, Message: message, Fields: fields}})
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"dating-app/internal/model"
 	"dating-app/internal/validate"
 	"errors"
@@ -45,13 +46,13 @@ var domainErrors = []struct {
 }
 
 // writeServiceError отвечает по domainErrors, остальные ошибки логирует и отдаёт 500
-func writeServiceError(w http.ResponseWriter, op string, err error) {
+func writeServiceError(ctx context.Context, w http.ResponseWriter, op string, err error) {
 	for _, e := range domainErrors {
 		if errors.Is(err, e.err) {
-			writeError(w, e.api.status, e.api.code, e.api.message, e.api.fields)
+			writeError(ctx, w, e.api.status, e.api.code, e.api.message, e.api.fields)
 			return
 		}
 	}
-	slog.Error(op, "error", err)
-	writeError(w, http.StatusInternalServerError, codeInternalError, msgInternalError, nil)
+	slog.ErrorContext(ctx, op, "error", err)
+	writeError(ctx, w, http.StatusInternalServerError, codeInternalError, msgInternalError, nil)
 }

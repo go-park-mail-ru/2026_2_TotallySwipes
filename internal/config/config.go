@@ -11,6 +11,7 @@ import (
 
 type Config struct {
 	PhotoDir string
+	LogDir   string
 	Database DatabaseConfig
 	Redis    RedisConfig
 	Auth     AuthConfig
@@ -44,12 +45,13 @@ type HTTPConfig struct {
 }
 
 type MinIOConfig struct {
-	Endpoint    string
-	AccessKey   string
-	SecretKey   string
-	Bucket      string
-	UseTLS      bool
-	PhotoURLTTL time.Duration
+	Endpoint       string
+	PublicEndpoint string
+	AccessKey      string
+	SecretKey      string
+	Bucket         string
+	UseTLS         bool
+	PhotoURLTTL    time.Duration
 }
 
 // Load читает конфиг из env; обязательны только DATABASE_URL и JWT_SECRET, ошибки собираются разом
@@ -58,6 +60,7 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		PhotoDir: r.str("PHOTO_DIR", "./db/data/cats"),
+		LogDir:   r.str("LOG_DIR", "./logs"),
 		Database: DatabaseConfig{
 			URL: r.required("DATABASE_URL"),
 		},
@@ -79,12 +82,13 @@ func Load() (*Config, error) {
 			IdleTimeout:       r.duration("HTTP_IDLE_TIMEOUT", 60*time.Second),
 		},
 		MinIO: MinIOConfig{
-			Endpoint:    r.str("MINIO_ENDPOINT", "minio:9000"),
-			AccessKey:   r.str("MINIO_ACCESS_KEY", "minioadmin"),
-			SecretKey:   r.str("MINIO_SECRET_KEY", "minioadmin"),
-			Bucket:      r.str("MINIO_BUCKET", "photos"),
-			UseTLS:      r.boolean("MINIO_USE_TLS", false),
-			PhotoURLTTL: r.positiveDuration("MINIO_PHOTO_URL_TTL", 15*time.Minute),
+			Endpoint:       r.str("MINIO_ENDPOINT", "minio:9000"),
+			PublicEndpoint: r.str("MINIO_PUBLIC_ENDPOINT", "localhost:9000"),
+			AccessKey:      r.str("MINIO_ACCESS_KEY", "minioadmin"),
+			SecretKey:      r.str("MINIO_SECRET_KEY", "minioadmin"),
+			Bucket:         r.str("MINIO_BUCKET", "photos"),
+			UseTLS:         r.boolean("MINIO_USE_TLS", false),
+			PhotoURLTTL:    r.positiveDuration("MINIO_PHOTO_URL_TTL", 15*time.Minute),
 		},
 	}
 

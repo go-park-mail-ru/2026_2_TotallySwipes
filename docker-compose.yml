@@ -29,7 +29,7 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio
+    image: dhi.io/minio:latest
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
@@ -38,12 +38,8 @@ services:
     volumes:
       - miniodata:/data
     command: ["server", "/data", "--address", ":9000"]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 2s
-      timeout: 2s
-      retries: 10
 
+  # Removed minio-init for now - use web UI to create buckets manually or script later
   api:
     image: ${API_IMAGE:-totallyswipes-api}
     build: .
@@ -53,12 +49,14 @@ services:
       redis:
         condition: service_healthy
       minio:
-        condition: service_healthy
+        condition: service_started
     env_file:
       - docker.env
     environment:
       PHOTO_DIR: /photos
+      LOG_DIR: /logs
     volumes:
+      - logs:/logs
       - photos:/photos
     ports:
       - "${API_BIND:-127.0.0.1}:${PORT:-8080}:${PORT:-8080}"
@@ -73,6 +71,7 @@ services:
         condition: service_healthy
 
 volumes:
+  logs:
   pgdata:
   redisdata:
   photos:

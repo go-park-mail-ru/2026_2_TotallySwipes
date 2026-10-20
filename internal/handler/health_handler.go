@@ -6,5 +6,5 @@ import (
 )
 
 func GetHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, dto.HealthResponse{Status: "ok"})
+	writeJSON(r.Context(), w, http.StatusOK, dto.HealthResponse{Status: "ok"})
 }

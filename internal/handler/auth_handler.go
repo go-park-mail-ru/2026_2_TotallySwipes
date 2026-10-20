@@ -40,22 +40,22 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Normalize()
 	if errs := req.Validate(); len(errs) > 0 {
-		writeError(w, http.StatusBadRequest, codeValidationError, msgInvalidData, errs)
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, msgInvalidData, errs)
 		return
 	}
 
 	res, err := h.svc.Register(r.Context(), req.ToModel())
 	switch {
 	case errors.Is(err, model.ErrSessionNotOpened):
-		slog.Error("register user: session not opened", "user_id", res.UserID, "error", err)
+		slog.ErrorContext(r.Context(), "register user: session not opened", "user_id", res.UserID, "error", err)
 	case err != nil:
-		writeServiceError(w, "register user", err)
+		writeServiceError(r.Context(), w, "register user", err)
 		return
 	default:
 		h.setSessionCookies(w, res.Tokens)
 	}
 
-	writeJSON(w, http.StatusCreated, dto.NewAuthResponse(res))
+	writeJSON(r.Context(), w, http.StatusCreated, dto.NewAuthResponse(res))
 }
 
 // Login - POST /auth/login: открывает сессию и сообщает, чего не хватает анкете
@@ -66,18 +66,18 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Normalize()
 	if errs := req.Validate(); len(errs) > 0 {
-		writeError(w, http.StatusBadRequest, codeValidationError, msgInvalidData, errs)
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, msgInvalidData, errs)
 		return
 	}
 
 	res, err := h.svc.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
-		writeServiceError(w, "login", err)
+		writeServiceError(r.Context(), w, "login", err)
 		return
 	}
 
 	h.setSessionCookies(w, res.Tokens)
-	writeJSON(w, http.StatusOK, dto.NewAuthResponse(res))
+	writeJSON(r.Context(), w, http.StatusOK, dto.NewAuthResponse(res))
 }
 
 // Refresh отвечает 204 с новыми cookies, при недействительной сессии - 401
@@ -85,7 +85,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	c, err := r.Cookie(refreshTokenCookie)
 	if err != nil {
 		h.clearSessionCookies(w)
-		writeError(w, http.StatusUnauthorized, codeUnauthorized, msgUnauthorized, nil)
+		writeError(r.Context(), w, http.StatusUnauthorized, codeUnauthorized, msgUnauthorized, nil)
 		return
 	}
 
@@ -94,7 +94,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		h.clearSessionCookies(w)
 	}
 	if err != nil {
-		writeServiceError(w, "refresh", err)
+		writeServiceError(r.Context(), w, "refresh", err)
 		return
 	}
 
@@ -108,7 +108,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 	if c, err := r.Cookie(refreshTokenCookie); err == nil {
 		if err := h.svc.Logout(r.Context(), c.Value); err != nil {
-			writeServiceError(w, "logout", err)
+			writeServiceError(r.Context(), w, "logout", err)
 			return
 		}
 	}
