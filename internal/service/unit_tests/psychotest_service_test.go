@@ -6,6 +6,7 @@ import (
 	"dating-app/internal/psychotest"
 	. "dating-app/internal/service"
 	"errors"
+	"go.uber.org/mock/gomock"
 	"math"
 	"reflect"
 	"testing"
@@ -45,34 +46,14 @@ func TestClassifyPersonality(t *testing.T) {
 	}
 }
 
-type resultProfileStub struct {
-	ProfileService
-	profile *model.Profile
-}
-
-func (s resultProfileStub) GetByUserIDCurrentProfile(context.Context, int64) (*model.Profile, error) {
-	return s.profile, nil
-}
-
-type resultRepositoryStub struct {
-	saved  *model.ProfilePsychoInput
-	stored *model.TestResult
-}
-
-func (s *resultRepositoryStub) SaveTestResult(_ context.Context, _ int64, _ *model.TestAnswers, psycho *model.ProfilePsychoInput) (*model.TestResult, error) {
-	s.saved = psycho
-	return &model.TestResult{ID: 9, TestID: 42, Revision: 2}, nil
-}
-func (s *resultRepositoryStub) GetTestResult(context.Context, int64) (*model.TestResult, error) {
-	if s.stored == nil {
-		return nil, model.ErrNotFound
-	}
-	stored := *s.stored
-	return &stored, nil
-}
-
 func TestSubmissionReplacesPreviousResult(t *testing.T) {
-	repo := &resultRepositoryStub{}
+	// Arrange
+	ctrl := gomock.NewController(t)
+	repo := NewMockPsychoTestRepository(ctrl)
+	profiles := NewMockProfileReader(ctrl)
+	calc := NewMockCompatibilityService(ctrl)
+	ctx := context.Background()
+	var savedInput *model.ProfilePsychoInput
 	definition := tipiTest(t)
 	answers := &model.TestAnswers{TestID: definition.ID}
 	values := [10]int{5, 2, 3, 4, 7, 2, 6, 7, 6, 1}
@@ -80,58 +61,78 @@ func TestSubmissionReplacesPreviousResult(t *testing.T) {
 		answers.Answers = append(answers.Answers, model.Answer{QuestionID: int64(i + 1), Value: value})
 	}
 	zero := 0.0
-	profiles := resultProfileStub{profile: &model.Profile{ID: 7, CurrentPsycho: &model.ProfilePsycho{
+	profiles.EXPECT().GetByUserIDCurrentProfile(ctx, int64(1)).Return(&model.Profile{ID: 7, CurrentPsycho: &model.ProfilePsycho{
 		Openness: &zero, Conscientiousness: &zero, Extraversion: &zero, Agreeableness: &zero, Neuroticism: &zero,
-	}}}
-	calc := NewCompatibilityService()
-	want, err := calc.CalculateBigFive(&definition, answers)
+	}}, nil).Times(1)
+	want := personalityTestVector([5]float64{.5, .25, .75, .5, .25})
+	calc.EXPECT().CalculateBigFive(&definition, answers).Return(&want, nil).Times(1)
+	repo.EXPECT().SaveTestResult(ctx, int64(7), answers, gomock.Any()).DoAndReturn(func(_ context.Context, _ int64, _ *model.TestAnswers, psycho *model.ProfilePsychoInput) (*model.TestResult, error) {
+		savedInput = psycho
+		return &model.TestResult{ID: 9, Revision: 2}, nil
+	}).Times(1)
+	kind, about, err := (&PsychoTestService{}).ClassifyPersonality(want)
 	if err != nil {
 		t.Fatal(err)
 	}
-	kind, about, err := (&PsychoTestService{}).ClassifyPersonality(*want)
+	// Act
+	got, err := NewPsychoTestService(repo, profiles, calc, definition).SubmitTestAnswers(ctx, 1, answers)
+	// Assert
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := NewPsychoTestService(repo, profiles, calc, definition).SubmitTestAnswers(context.Background(), 1, answers)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(got.BigFive, *want) || got.PersonalityType != kind || got.AboutPersonalityType != about {
+	if !reflect.DeepEqual(got.BigFive, want) || got.PersonalityType != kind || got.AboutPersonalityType != about {
 		t.Fatalf("response does not describe the current attempt: %+v", got)
 	}
-	saved := model.BigFive{Openness: repo.saved.Openness, Conscientiousness: repo.saved.Conscientiousness,
-		Extraversion: repo.saved.Extraversion, Agreeableness: repo.saved.Agreeableness, Neuroticism: repo.saved.Neuroticism}
-	if !reflect.DeepEqual(saved, *want) {
+	saved := model.BigFive{Openness: savedInput.Openness, Conscientiousness: savedInput.Conscientiousness,
+		Extraversion: savedInput.Extraversion, Agreeableness: savedInput.Agreeableness, Neuroticism: savedInput.Neuroticism}
+	if !reflect.DeepEqual(saved, want) {
 		t.Fatalf("saved profile must equal the attempt, got %+v", saved)
 	}
 	if got.TestID != definition.ID {
 		t.Fatalf("test_id = %d, want %d", got.TestID, definition.ID)
 	}
-	if repo.saved.PersonalityType != kind {
-		t.Fatalf("saved personality type = %q, want %q", repo.saved.PersonalityType, kind)
+	if savedInput.PersonalityType != kind {
+		t.Fatalf("saved personality type = %q, want %q", savedInput.PersonalityType, kind)
 	}
 }
 
 func TestGetMyTestResultReturnsStoredResult(t *testing.T) {
 	scores := personalityTestVector([5]float64{.2, .8, .2, .8, .8})
-	repo := &resultRepositoryStub{stored: &model.TestResult{ID: 9, Revision: 3, BigFive: scores, PersonalityType: model.PersonalityKeeper}}
-	profiles := resultProfileStub{profile: &model.Profile{ID: 7}}
-
-	got, err := NewPsychoTestService(repo, profiles, nil, tipiTest(t)).GetMyTestResult(context.Background(), 1)
+	// Arrange
+	ctrl := gomock.NewController(t)
+	repo := NewMockPsychoTestRepository(ctrl)
+	profiles := NewMockProfileReader(ctrl)
+	ctx := context.Background()
+	stored := &model.TestResult{ID: 9, Revision: 3, BigFive: scores, PersonalityType: model.PersonalityKeeper}
+	want := *stored
+	want.TestID = 1
+	want.AboutPersonalityType = model.PersonalityKeeper.Description()
+	profiles.EXPECT().GetByUserIDCurrentProfile(ctx, int64(1)).Return(&model.Profile{ID: 7}, nil).Times(1)
+	repo.EXPECT().GetTestResult(ctx, int64(7)).Return(stored, nil).Times(1)
+	svc := NewPsychoTestService(repo, profiles, nil, tipiTest(t))
+	// Act
+	got, err := svc.GetMyTestResult(ctx, 1)
+	// Assert
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := *repo.stored
-	want.TestID = 1
-	want.AboutPersonalityType = model.PersonalityKeeper.Description()
 	if !reflect.DeepEqual(*got, want) {
 		t.Fatalf("got %+v, want %+v", *got, want)
 	}
 }
 
 func TestGetMyTestResultNotFound(t *testing.T) {
-	profiles := resultProfileStub{profile: &model.Profile{ID: 7}}
-	_, err := NewPsychoTestService(&resultRepositoryStub{}, profiles, nil, tipiTest(t)).GetMyTestResult(context.Background(), 1)
+	// Arrange
+	ctrl := gomock.NewController(t)
+	profiles := NewMockProfileReader(ctrl)
+	repo := NewMockPsychoTestRepository(ctrl)
+	ctx := context.Background()
+	profiles.EXPECT().GetByUserIDCurrentProfile(ctx, int64(1)).Return(&model.Profile{ID: 7}, nil).Times(1)
+	repo.EXPECT().GetTestResult(ctx, int64(7)).Return(nil, model.ErrNotFound).Times(1)
+	svc := NewPsychoTestService(repo, profiles, nil, tipiTest(t))
+	// Act
+	_, err := svc.GetMyTestResult(ctx, 1)
+	// Assert
 	if !errors.Is(err, model.ErrTestResultNotFound) {
 		t.Fatalf("err = %v, want ErrTestResultNotFound", err)
 	}

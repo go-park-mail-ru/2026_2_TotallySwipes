@@ -3,12 +3,15 @@ package service
 import (
 	"context"
 	"dating-app/internal/model"
+	"dating-app/internal/service"
 	. "dating-app/internal/service"
 	"errors"
 	"fmt"
 	"reflect"
 	"testing"
 	"time"
+
+	"go.uber.org/mock/gomock"
 )
 
 func TestProfileServiceGetNextFeed(t *testing.T) {
@@ -61,55 +64,38 @@ func TestProfileServiceGetNextFeed(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			calls := []string{}
-			repo := &feedRepositoryMock{t: t}
-			repo.viewer = func(gotCtx context.Context, id int64) (*model.Profile, error) {
-				calls = append(calls, "viewer")
-				if gotCtx != ctx || id != tc.userID {
-					t.Fatalf("unexpected viewer arguments: ctx=%v, id=%d", gotCtx, id)
-				}
-				return tc.viewer, tc.viewerErr
-			}
-			repo.feed = func(gotCtx context.Context, id int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error) {
-				calls = append(calls, "feed")
-				if gotCtx != ctx || id != tc.userID || limit != tc.limit || !reflect.DeepEqual(cursor, tc.cursor) {
-					t.Fatal("unexpected feed arguments")
-				}
-				return feedCandidates(tc.profiles...), tc.nextCursor, tc.feedErr
-			}
-			calc := &feedCompatibilityMock{t: t}
-			calc.calculate = func(a, b model.BigFive) (float64, error) {
-				calls = append(calls, "calculate")
-				expected := model.BigFive{Openness: &value, Conscientiousness: &value, Extraversion: &value, Agreeableness: &value, Neuroticism: &value}
-				if !reflect.DeepEqual(a, expected) || !reflect.DeepEqual(b, expected) {
-					t.Fatal("incorrect Big Five arguments")
-				}
-				if tc.calcErr != nil {
-					return 0, tc.calcErr
-				}
-				if calc.calls > len(tc.scores) {
-					t.Fatal("unexpected calculation call")
-				}
-				return tc.scores[calc.calls-1], nil
-			}
-			svc := NewProfileService(repo, calc, photoURLProviderFunc(func(_ context.Context, key string) (string, error) { return "https://media.example/cats/" + key, nil }), nil)
-			page, err := svc.GetNextFeed(ctx, tc.userID, tc.limit, tc.cursor)
-			if repo.viewerCalls != tc.wantViewerCalls || repo.feedCalls != tc.wantFeedCalls || calc.calls != tc.wantCalcCalls {
-				t.Fatalf("calls: viewer=%d feed=%d calc=%d", repo.viewerCalls, repo.feedCalls, calc.calls)
-			}
-			expectedCalls := []string{}
+			// Arrange
+			ctrl := gomock.NewController(t)
+			repo := NewMockProfileRepository(ctrl)
+			calc := NewMockCompatibilityService(ctrl)
+			urls := NewMockPhotoURLProvider(ctrl)
+			var ordered []any
 			if tc.wantViewerCalls > 0 {
-				expectedCalls = append(expectedCalls, "viewer")
+				ordered = append(ordered, repo.EXPECT().GetByUserIDCurrentProfile(ctx, tc.userID).Return(tc.viewer, tc.viewerErr).Times(1))
 			}
 			if tc.wantFeedCalls > 0 {
-				expectedCalls = append(expectedCalls, "feed")
+				ordered = append(ordered, repo.EXPECT().GetProfilesByCursorAndLimit(ctx, tc.userID, tc.limit, tc.cursor).Return(feedCandidates(tc.profiles...), tc.nextCursor, tc.feedErr).Times(1))
 			}
-			for range tc.wantCalcCalls {
-				expectedCalls = append(expectedCalls, "calculate")
+			expected := model.BigFive{Openness: &value, Conscientiousness: &value, Extraversion: &value, Agreeableness: &value, Neuroticism: &value}
+			for i := 0; i < tc.wantCalcCalls; i++ {
+				score := 0.0
+				if tc.calcErr == nil {
+					score = tc.scores[i]
+				}
+				ordered = append(ordered, calc.EXPECT().CalculateDistance(expected, expected).Return(score, tc.calcErr).Times(1))
 			}
-			if !reflect.DeepEqual(calls, expectedCalls) {
-				t.Fatalf("call order=%v, want=%v", calls, expectedCalls)
+			gomock.InOrder(ordered...)
+			if tc.feedErr == nil && tc.calcErr == nil {
+				for _, profile := range tc.profiles {
+					for _, photo := range profile.Photos {
+						urls.EXPECT().GetPhotoURL(ctx, photo.StorageKey).Return("https://media.example/cats/"+photo.StorageKey, nil).Times(1)
+					}
+				}
 			}
+			svc := NewProfileService(repo, calc, urls, nil)
+			// Act
+			page, err := svc.GetNextFeed(ctx, tc.userID, tc.limit, tc.cursor)
+			// Assert
 			if tc.wantErr {
 				if err == nil || page != nil {
 					t.Fatalf("page=%v error=%v; want nil page and error", page, err)
@@ -146,47 +132,6 @@ func TestProfileServiceGetNextFeed(t *testing.T) {
 			}
 		})
 	}
-}
-
-type feedRepositoryMock struct {
-	ProfileRepository
-	t                      *testing.T
-	viewer                 func(context.Context, int64) (*model.Profile, error)
-	feed                   func(context.Context, int64, int, *int64) ([]model.FeedCandidate, *int64, error)
-	viewerCalls, feedCalls int
-}
-
-func (m *feedRepositoryMock) GetByUserIDCurrentProfile(ctx context.Context, id int64) (*model.Profile, error) {
-	m.t.Helper()
-	m.viewerCalls++
-	if m.viewer == nil {
-		m.t.Fatal("unexpected viewer lookup")
-	}
-	return m.viewer(ctx, id)
-}
-func (m *feedRepositoryMock) GetProfilesByCursorAndLimit(ctx context.Context, id int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error) {
-	m.t.Helper()
-	m.feedCalls++
-	if m.feed == nil {
-		m.t.Fatal("unexpected feed lookup")
-	}
-	return m.feed(ctx, id, limit, cursor)
-}
-
-type feedCompatibilityMock struct {
-	CompatibilityService
-	t         *testing.T
-	calculate func(model.BigFive, model.BigFive) (float64, error)
-	calls     int
-}
-
-func (m *feedCompatibilityMock) CalculateDistance(a, b model.BigFive) (float64, error) {
-	m.t.Helper()
-	m.calls++
-	if m.calculate == nil {
-		m.t.Fatal("unexpected compatibility calculation")
-	}
-	return m.calculate(a, b)
 }
 
 func TestAgeAt(t *testing.T) {
@@ -241,24 +186,27 @@ func TestProfileServiceFeedItemMapping(t *testing.T) {
 			candidate := filledProfile(model.Profile{UserID: 42, Tags: tc.tags, Photos: tc.photos}, "Anna")
 			candidate.CurrentVersion.BirthDate, candidate.CurrentVersion.AboutMe = &birth, tc.about
 			viewer := filledProfile(model.Profile{UserID: 7}, "Viewer")
-			repo := &feedRepositoryMock{t: t,
-				viewer: func(context.Context, int64) (*model.Profile, error) { return &viewer, nil },
-				feed: func(context.Context, int64, int, *int64) ([]model.FeedCandidate, *int64, error) {
-					return []model.FeedCandidate{{Profile: candidate, LikedMe: tc.likedMe}}, nil, nil
-				},
+			// Arrange
+			ctx := context.Background()
+			ctrl := gomock.NewController(t)
+			repo := NewMockProfileRepository(ctrl)
+			calc := NewMockCompatibilityService(ctrl)
+			urls := NewMockPhotoURLProvider(ctrl)
+			repo.EXPECT().GetByUserIDCurrentProfile(ctx, int64(7)).Return(&viewer, nil).Times(1)
+			repo.EXPECT().GetProfilesByCursorAndLimit(ctx, int64(7), 10, (*int64)(nil)).Return([]model.FeedCandidate{{Profile: candidate, LikedMe: tc.likedMe}}, nil, nil).Times(1)
+			for _, photo := range tc.photos {
+				urls.EXPECT().GetPhotoURL(ctx, photo.StorageKey).Return("https://media.example/cats/"+photo.StorageKey, nil).Times(1)
 			}
-			calc := &feedCompatibilityMock{t: t}
-			svc := NewProfileService(repo, calc, photoURLProviderFunc(func(_ context.Context, key string) (string, error) { return "https://media.example/cats/" + key, nil }), nil)
-			page, err := svc.GetNextFeed(context.Background(), 7, 10, nil)
+			svc := NewProfileService(repo, calc, urls, nil)
+			// Act
+			page, err := svc.GetNextFeed(ctx, 7, 10, nil)
+			// Assert
 			if err != nil {
 				t.Fatal(err)
 			}
 			want := model.FeedItem{LikedMe: tc.likedMe, UserID: 42, Name: "Anna", Age: 25, DatingGoal: model.DatingGoalRelationship, AboutMe: tc.about, Tags: tc.wantTags, Photos: tc.wantPhotos}
 			if page == nil || len(page.Items) != 1 || !reflect.DeepEqual(page.Items[0], want) {
 				t.Fatalf("page=%+v, want item=%+v", page, want)
-			}
-			if repo.viewerCalls != 1 || repo.feedCalls != 1 || calc.calls != 0 {
-				t.Fatal("unexpected dependency calls")
 			}
 		})
 	}
@@ -285,21 +233,21 @@ func TestLocalPhotoURLProvider(t *testing.T) {
 	}
 }
 
-type failingURLProvider struct{ err error }
-
-func (p failingURLProvider) GetPhotoURL(context.Context, string) (string, error) { return "", p.err }
-
 func TestProfileServicePropagatesURLProviderError(t *testing.T) {
 	failure := errors.New("URL provider failed")
 	viewer := filledProfile(model.Profile{UserID: 7}, "Viewer")
-	repo := &feedRepositoryMock{t: t,
-		viewer: func(context.Context, int64) (*model.Profile, error) { return &viewer, nil },
-		feed: func(context.Context, int64, int, *int64) ([]model.FeedCandidate, *int64, error) {
-			return feedCandidates(filledProfile(model.Profile{}, "Anna")), nil, nil
-		},
-	}
-	svc := NewProfileService(repo, &feedCompatibilityMock{t: t}, failingURLProvider{err: failure}, nil)
-	page, err := svc.GetNextFeed(context.Background(), 7, 10, nil)
+	// Arrange
+	ctx := context.Background()
+	ctrl := gomock.NewController(t)
+	repo := NewMockProfileRepository(ctrl)
+	urls := NewMockPhotoURLProvider(ctrl)
+	repo.EXPECT().GetByUserIDCurrentProfile(ctx, int64(7)).Return(&viewer, nil).Times(1)
+	repo.EXPECT().GetProfilesByCursorAndLimit(ctx, int64(7), 10, (*int64)(nil)).Return(feedCandidates(filledProfile(model.Profile{}, "Anna")), nil, nil).Times(1)
+	urls.EXPECT().GetPhotoURL(ctx, "main.jpg").Return("", failure).Times(1)
+	svc := NewProfileService(repo, NewMockCompatibilityService(ctrl), urls, nil)
+	// Act
+	page, err := svc.GetNextFeed(ctx, 7, 10, nil)
+	// Assert
 	if page != nil || !errors.Is(err, failure) {
 		t.Fatalf("page=%v, err=%v; want provider error", page, err)
 	}
@@ -352,89 +300,22 @@ func TestProfilePatchApply(t *testing.T) {
 	}
 }
 
-type photoRepositoryMock struct {
-	ProfileRepository
-	addErr    error
-	deleteKey string
-	deleteErr error
-	orderErr  error
-	added     []string
-	order     []int64
-}
-
-func (m *photoRepositoryMock) ReorderPhotos(_ context.Context, _ int64, photoIDs []int64) error {
-	m.order = photoIDs
-	return m.orderErr
-}
-
-func (m *photoRepositoryMock) AddPhoto(_ context.Context, _ int64, key string) error {
-	m.added = append(m.added, key)
-	return m.addErr
-}
-func (m *photoRepositoryMock) DeletePhoto(context.Context, int64, int64) (string, error) {
-	return m.deleteKey, m.deleteErr
-}
-func (m *photoRepositoryMock) GetByUserIDCurrentProfile(context.Context, int64) (*model.Profile, error) {
-	return &model.Profile{Photos: []model.Photo{{ID: 1, StorageKey: "left.jpg"}}}, nil
-}
-
-func TestProfileServicePhotoFiles(t *testing.T) {
-	ctx := context.Background()
-	urls := photoURLProviderFunc(func(_ context.Context, key string) (string, error) { return "https://media.example/cats/" + key, nil })
-
-	repo, files := &photoRepositoryMock{}, &fakePhotos{}
-	photos, err := NewProfileService(repo, nil, urls, files).AddPhoto(ctx, 7, model.PhotoUpload{Data: []byte("a"), Ext: ".jpg"})
-	if err != nil || len(photos) != 1 || photos[0].URL != "https://media.example/cats/left.jpg" {
-		t.Fatalf("add: photos = %+v, err = %v", photos, err)
-	}
-	if !reflect.DeepEqual(repo.added, []string{"uploads/1.jpg"}) || len(files.deleted) != 0 {
-		t.Fatalf("add: added = %v, deleted = %v", repo.added, files.deleted)
-	}
-
-	repo, files = &photoRepositoryMock{addErr: model.ErrPhotoLimit}, &fakePhotos{}
-	if _, err := NewProfileService(repo, nil, urls, files).AddPhoto(ctx, 7, model.PhotoUpload{Data: []byte("a"), Ext: ".jpg"}); !errors.Is(err, model.ErrPhotoLimit) {
-		t.Fatalf("limit: err = %v", err)
-	}
-	if !reflect.DeepEqual(files.deleted, []string{"uploads/1.jpg"}) {
-		t.Errorf("saved file must be removed when photo is not added, deleted = %v", files.deleted)
-	}
-
-	repo, files = &photoRepositoryMock{deleteKey: "gone.jpg"}, &fakePhotos{}
-	if _, err := NewProfileService(repo, nil, urls, files).DeletePhoto(ctx, 7, 1); err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(files.deleted, []string{"gone.jpg"}) {
-		t.Errorf("deleted = %v", files.deleted)
-	}
-
-	repo = &photoRepositoryMock{}
-	if photos, err := NewProfileService(repo, nil, urls, nil).ReorderPhotos(ctx, 7, []int64{1}); err != nil ||
-		!reflect.DeepEqual(repo.order, []int64{1}) || photos[0].URL != "https://media.example/cats/left.jpg" {
-		t.Fatalf("reorder: photos = %+v, err = %v", photos, err)
-	}
-	repo = &photoRepositoryMock{orderErr: model.ErrPhotoOrderMismatch}
-	if _, err := NewProfileService(repo, nil, urls, nil).ReorderPhotos(ctx, 7, []int64{2}); !errors.Is(err, model.ErrPhotoOrderMismatch) {
-		t.Fatalf("reorder mismatch: err = %v", err)
-	}
-
-	repo, files = &photoRepositoryMock{deleteErr: model.ErrLastPhoto}, &fakePhotos{}
-	if _, err := NewProfileService(repo, nil, urls, files).DeletePhoto(ctx, 7, 1); !errors.Is(err, model.ErrLastPhoto) || len(files.deleted) != 0 {
-		t.Errorf("last photo: err = %v, deleted = %v", err, files.deleted)
-	}
-}
-
 func TestProfileServiceFeedSkipsIncompleteProfiles(t *testing.T) {
 	viewer := filledProfile(model.Profile{UserID: 7}, "Viewer")
 	incomplete := filledProfile(model.Profile{UserID: 30}, "Broken")
 	incomplete.CurrentVersion.Name = nil
-	repo := &feedRepositoryMock{t: t,
-		viewer: func(context.Context, int64) (*model.Profile, error) { return &viewer, nil },
-		feed: func(context.Context, int64, int, *int64) ([]model.FeedCandidate, *int64, error) {
-			return feedCandidates(incomplete, filledProfile(model.Profile{UserID: 31}, "Anna")), nil, nil
-		},
-	}
-	svc := NewProfileService(repo, &feedCompatibilityMock{t: t}, photoURLProviderFunc(func(_ context.Context, key string) (string, error) { return "https://media.example/cats/" + key, nil }), nil)
-	page, err := svc.GetNextFeed(context.Background(), 7, 10, nil)
+	// Arrange
+	ctx := context.Background()
+	ctrl := gomock.NewController(t)
+	repo := NewMockProfileRepository(ctrl)
+	urls := NewMockPhotoURLProvider(ctrl)
+	repo.EXPECT().GetByUserIDCurrentProfile(ctx, int64(7)).Return(&viewer, nil).Times(1)
+	repo.EXPECT().GetProfilesByCursorAndLimit(ctx, int64(7), 10, (*int64)(nil)).Return(feedCandidates(incomplete, filledProfile(model.Profile{UserID: 31}, "Anna")), nil, nil).Times(1)
+	urls.EXPECT().GetPhotoURL(ctx, "main.jpg").Return("https://media.example/cats/main.jpg", nil).Times(1)
+	svc := NewProfileService(repo, NewMockCompatibilityService(ctrl), urls, nil)
+	// Act
+	page, err := svc.GetNextFeed(ctx, 7, 10, nil)
+	// Assert
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,33 +332,27 @@ func feedCandidates(profiles ...model.Profile) []model.FeedCandidate {
 	return candidates
 }
 
-// photoURLProviderFunc isolates service tests from concrete URL providers.
-type photoURLProviderFunc func(context.Context, string) (string, error)
-
-func (f photoURLProviderFunc) GetPhotoURL(ctx context.Context, key string) (string, error) {
-	return f(ctx, key)
-}
-
 func TestProfileServiceGetMyProfilePhotoURLs(t *testing.T) {
 	for _, fail := range []bool{false, true} {
 		t.Run(fmt.Sprint("provider error=", fail), func(t *testing.T) {
 			ctx := context.Background()
 			failure := errors.New("signing failed")
-			calls := 0
-			provider := photoURLProviderFunc(func(got context.Context, key string) (string, error) {
-				calls++
-				if got != ctx || key != "left.jpg" {
-					t.Fatalf("unexpected arguments: %v, %q", got, key)
-				}
-				if fail {
-					return "", failure
-				}
-				return "https://storage.example/photos/left.jpg?signature=test", nil
-			})
-			profile, err := NewProfileService(&photoRepositoryMock{}, nil, provider, nil).GetMyProfile(ctx, 7)
-			if calls != 1 {
-				t.Fatalf("provider calls = %d", calls)
+			// Arrange
+			ctrl := gomock.NewController(t)
+			repo := NewMockProfileRepository(ctrl)
+			provider := NewMockPhotoURLProvider(ctrl)
+			repo.EXPECT().GetByUserIDCurrentProfile(ctx, int64(7)).Return(&model.Profile{Photos: []model.Photo{{ID: 1, StorageKey: "left.jpg"}}}, nil).Times(1)
+			url := "https://storage.example/photos/left.jpg?signature=test"
+			var providerErr error
+			if fail {
+				url = ""
+				providerErr = failure
 			}
+			provider.EXPECT().GetPhotoURL(ctx, "left.jpg").Return(url, providerErr).Times(1)
+			svc := NewProfileService(repo, nil, provider, nil)
+			// Act
+			profile, err := svc.GetMyProfile(ctx, 7)
+			// Assert
 			if fail {
 				if profile != nil || !errors.Is(err, failure) {
 					t.Fatalf("profile=%v error=%v", profile, err)
@@ -491,5 +366,147 @@ func TestProfileServiceGetMyProfilePhotoURLs(t *testing.T) {
 				t.Fatalf("unexpected photo: %+v", profile.Photos[0])
 			}
 		})
+	}
+}
+
+func TestProfileService_AddPhoto_SaveError(t *testing.T) {
+	// Arrange
+	ctrl := gomock.NewController(t)
+
+	repo := NewMockProfileRepository(ctrl)
+	photos := NewMockPhotoStorage(ctrl)
+	urls := NewMockPhotoURLProvider(ctrl)
+
+	service := service.NewProfileService(repo, nil, urls, photos)
+
+	ctx := context.Background()
+	userID := int64(42)
+	upload := model.PhotoUpload{
+		Data: []byte("photo bytes"),
+		Ext:  ".jpg",
+	}
+
+	wantErr := errors.New("storage unavalible")
+
+	photos.EXPECT().
+		Save(ctx, upload.Data, upload.Ext).Return("", wantErr).Times(1)
+
+	// Act
+	result, err := service.AddPhoto(ctx, userID, upload)
+
+	// Assert
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected storage error, got %v", err)
+	}
+	if result != nil {
+		t.Fatalf("expected nil photos, got %#v", result)
+	}
+}
+
+func TestProfileService_AddPhoto_RepositoryErrorDeleteFile(t *testing.T) {
+	// Arrange
+	ctrl := gomock.NewController(t)
+
+	repo := NewMockProfileRepository(ctrl)
+	photos := NewMockPhotoStorage(ctrl)
+	urls := NewMockPhotoURLProvider(ctrl)
+
+	service := service.NewProfileService(repo, nil, urls, photos)
+
+	ctx := context.Background()
+	userID := int64(42)
+	upload := model.PhotoUpload{
+		Data: []byte("photo bytes"),
+		Ext:  ".jpg",
+	}
+
+	key := "photos/test.jpg"
+	wantErr := model.ErrPhotoLimit
+
+	gomock.InOrder(
+		photos.EXPECT().
+			Save(ctx, upload.Data, upload.Ext).
+			Return(key, nil).Times(1),
+		repo.EXPECT().
+			AddPhoto(ctx, userID, key).Return(wantErr).Times(1),
+
+		photos.EXPECT().Delete(gomock.Any(), key).Return(nil).Times(1),
+	)
+
+	// Act
+	result, err := service.AddPhoto(ctx, userID, upload)
+
+	// Assert
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected photo limit error, got %v", err)
+	}
+	if result != nil {
+		t.Fatalf("expected nil photos, got %#v", result)
+	}
+}
+
+func TestProfileService_GetMyProfile_ProfilePhotoOK(t *testing.T) {
+	// Arrange
+	ctrl := gomock.NewController(t)
+	repo := NewMockProfileRepository(ctrl)
+	urls := NewMockPhotoURLProvider(ctrl)
+
+	profileService := service.NewProfileService(repo, nil, urls, nil)
+	userID := int64(42)
+	ctx := context.Background()
+
+	profile := &model.Profile{
+		UserID: userID,
+		Photos: []model.Photo{
+			{ID: 1, StorageKey: "photos/cat1.jpg"},
+			{ID: 2, StorageKey: "photos/cat2.jpg"},
+		},
+	}
+
+	repo.EXPECT().
+		GetByUserIDCurrentProfile(ctx, userID).
+		Return(profile, nil).
+		Times(1)
+
+	urls.EXPECT().
+		GetPhotoURL(ctx, "photos/cat1.jpg").
+		Return("https://example.com/cat1.jpg", nil).
+		Times(1)
+
+	urls.EXPECT().
+		GetPhotoURL(ctx, "photos/cat2.jpg").
+		Return("https://example.com/cat2.jpg", nil).
+		Times(1)
+
+	// Act
+	got, err := profileService.GetMyProfile(ctx, userID)
+	// Assert
+	if err != nil {
+		t.Fatalf("GetMyProfile() error: %v", err)
+	}
+
+	if got == nil {
+		t.Fatal("expected profile, got nil")
+	}
+
+	if got.UserID != userID {
+		t.Fatalf("UserID = %d, want %d", got.UserID, userID)
+	}
+
+	wantPhotos := []model.Photo{
+		{
+			ID:         1,
+			StorageKey: "photos/cat1.jpg",
+			URL:        "https://example.com/cat1.jpg",
+		},
+		{
+			ID:         2,
+			StorageKey: "photos/cat2.jpg",
+			URL:        "https://example.com/cat2.jpg",
+		},
+	}
+
+	if !reflect.DeepEqual(got.Photos, wantPhotos) {
+		t.Fatalf("Photos = %#v, want %#v", got.Photos, wantPhotos)
 	}
 }

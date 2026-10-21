@@ -34,7 +34,3 @@ func (h *LogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 func (h *LogHandler) WithGroup(name string) slog.Handler {
 	return &LogHandler{next: h.next.WithGroup(name)}
 }
-
-type Writer interface {
-	Write(p []byte) (n int, err error)
-}
