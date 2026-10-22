@@ -19,6 +19,8 @@ const (
 	msgInternalError = "Внутренняя ошибка сервера"
 	msgUnauthorized  = "Необходимо войти заново"
 	msgInvalidData   = "Некорректные данные"
+
+	msgInvalidMatchesQuery = "Некорректные параметры списка мэтчей"
 )
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

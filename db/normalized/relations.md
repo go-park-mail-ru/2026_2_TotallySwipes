@@ -1025,6 +1025,8 @@ ON UPDATE RESTRICT
 | `first_user_id` | Участник пары с меньшим идентификатором пользователя. |
 | `second_user_id` | Участник пары с большим идентификатором пользователя. |
 | `access_to_message` | Разрешена ли переписка для этой пары. |
+| `first_user_seen_at` | Когда первый участник впервые открыл мэтч; NULL - мэтч для него новый. |
+| `second_user_seen_at` | Когда второй участник впервые открыл мэтч; NULL - мэтч для него новый. |
 | `created_at` | Время создания записи. |
 | `updated_at` | Время последнего обновления записи. |
 
@@ -1034,6 +1036,8 @@ ON UPDATE RESTRICT
 | `first_user_id`     | bigint  | NOT NULL, FK -> user.id |
 | `second_user_id`    | bigint  | NOT NULL, FK -> user.id |
 | `access_to_message` | boolean | NOT NULL, DEFAULT true  |
+| `first_user_seen_at` | timestamptz | NULL |
+| `second_user_seen_at` | timestamptz | NULL |
 | `created_at` | timestamptz | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
 | `updated_at` | timestamptz | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
 
