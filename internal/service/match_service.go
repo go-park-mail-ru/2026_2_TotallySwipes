@@ -11,6 +11,7 @@ import (
 type MatchRepository interface {
 	GetMatches(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.Match, int, *int64, error)
 	MarkSeen(ctx context.Context, userID, matchID int64) error
+	GetSummary(ctx context.Context, userID int64) (*model.MatchSummary, error)
 }
 
 type MatchViewerRepository interface {
@@ -86,6 +87,18 @@ func (s *MatchService) MarkSeen(ctx context.Context, userID, matchID int64) erro
 		return fmt.Errorf("mark match id=%d seen: %w", matchID, err)
 	}
 	return nil
+}
+
+// GetSummary возвращает число мэтчей пользователя и сколько из них он ещё не открывал
+func (s *MatchService) GetSummary(ctx context.Context, userID int64) (*model.MatchSummary, error) {
+	if userID <= 0 {
+		return nil, fmt.Errorf("%w: invalid user ID", model.ErrInvalidMatchesRequest)
+	}
+	summary, err := s.repo.GetSummary(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get matches summary: %w", err)
+	}
+	return summary, nil
 }
 
 func isCompleteBigFive(v model.BigFive) bool {

@@ -13,6 +13,7 @@ import (
 type MatchService interface {
 	GetMatches(ctx context.Context, userID int64, limit int, cursor *int64) (*model.MatchPage, error)
 	MarkSeen(ctx context.Context, userID, matchID int64) error
+	GetSummary(ctx context.Context, userID int64) (*model.MatchSummary, error)
 }
 
 type MatchHandler struct {
@@ -52,4 +53,14 @@ func (h *MatchHandler) MarkSeen(w http.ResponseWriter, r *http.Request, userID i
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Summary - GET /matches/summary: число мэтчей и новых для счётчика в навигации
+func (h *MatchHandler) Summary(w http.ResponseWriter, r *http.Request, userID int64) {
+	summary, err := h.svc.GetSummary(r.Context(), userID)
+	if err != nil {
+		writeServiceError(w, "get matches summary", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, dto.NewMatchesSummaryResponse(summary))
 }
