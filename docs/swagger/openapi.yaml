@@ -598,6 +598,122 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/location/me:
+    get:
+      security:
+        - cookieAuth: []
+      summary: Получить своё местоположение
+      description: Координаты доступны только владельцу. Если местоположение не задано, location равен null.
+      responses:
+        '200':
+          description: Сохранённое местоположение или null
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationResponse'
+              examples:
+                notSet:
+                  value:
+                    location: null
+                saved:
+                  value:
+                    location:
+                      city: Хотьково
+                      district: Сергиево-Посадский городской округ
+                      coordinates:
+                        latitude: 56.25
+                        longitude: 37.99
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      security:
+        - cookieAuth: []
+      summary: Подтвердить и сохранить своё местоположение
+      description: >-
+        Создаёт или заменяет местоположение по preview_id из предварительного определения.
+        Результат должен принадлежать текущему пользователю и не быть просроченным.
+        Адрес и исходные координаты берутся из проверенного backend результата;
+        user_id определяется по авторизации. При ошибке прежнее местоположение не меняется.
+        Удаление местоположения не поддерживается.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationConfirmRequest'
+      responses:
+        '200':
+          description: Сохранённое местоположение; location не равен null
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '410':
+          description: Результат предварительного определения истёк или недоступен текущему пользователю
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: LOCATION_PREVIEW_UNAVAILABLE
+                  message: Повторите определение местоположения
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/location/me/preview:
+    post:
+      security:
+        - cookieAuth: []
+      summary: Предварительно определить местоположение по координатам
+      description: >-
+        Определяет город и административный район или городской округ через геокодер,
+        не изменяя сохранённое местоположение. Для деревни может возвращаться ближайший город.
+        Поддерживается только Россия. Временный результат привязан к текущему пользователю
+        и содержит исходные координаты запроса, а не координаты здания из ответа геокодера.
+        Для сохранения передайте preview_id в PUT /api/v1/location/me.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationCoordinates'
+      responses:
+        '200':
+          description: Адрес для подтверждения и временный идентификатор результата
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationPreviewResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          description: Город не определён или точка вне поддерживаемой территории; прежнее местоположение не меняется
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: LOCATION_NOT_FOUND
+                  message: Не удалось определить местоположение
+        '429':
+          $ref: '#/components/responses/GeocoderQuotaExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/v1/filters/me:
     get:
       security:
@@ -928,6 +1044,71 @@ components:
         type: string
         example: access_token=eyJhbGciOi...; Path=/; HttpOnly; Secure; SameSite=Lax
   schemas:
+    LocationCoordinates:
+      type: object
+      additionalProperties: false
+      required: [latitude, longitude]
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          example: 56.25
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          example: 37.99
+    LocationResponse:
+      type: object
+      required: [location]
+      properties:
+        location:
+          type: object
+          nullable: true
+          required: [city, district, coordinates]
+          properties:
+            city:
+              type: string
+              minLength: 1
+              description: Город, определённый геокодером; для деревни может быть ближайшим городом.
+              example: Хотьково
+            district:
+              type: string
+              nullable: true
+              description: Административный район или городской округ; null, если не определён.
+              example: Сергиево-Посадский городской округ
+            coordinates:
+              $ref: '#/components/schemas/LocationCoordinates'
+    LocationConfirmRequest:
+      type: object
+      additionalProperties: false
+      required: [preview_id]
+      properties:
+        preview_id:
+          type: string
+          minLength: 1
+          description: Непрозрачный идентификатор результата предварительного определения.
+          example: loc_preview_a7b93c
+    LocationPreviewResponse:
+      type: object
+      required: [preview_id, city, district]
+      properties:
+        preview_id:
+          type: string
+          minLength: 1
+          example: loc_preview_a7b93c
+        city:
+          type: string
+          minLength: 1
+          example: Хотьково
+        district:
+          type: string
+          nullable: true
+          description: Административный район или городской округ; null, если не определён.
+          example: Сергиево-Посадский городской округ
     DatingGoal:
       type: string
       description: Ключ цели знакомства; подписи хранит клиент.
@@ -1281,6 +1462,16 @@ components:
                     type: string
                     enum: [MISSING_ANSWER, DUPLICATE_QUESTION, QUESTION_NOT_IN_TEST, VALUE_OUT_OF_RANGE]
   responses:
+    GeocoderQuotaExceeded:
+      description: Quota exceeded — превышен лимит запросов пользователя или исчерпана квота геокодера
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TestError'
+          example:
+            error:
+              code: GEOCODER_QUOTA_EXCEEDED
+              message: Quota exceeded
     UnsupportedMediaType:
       description: Тело должно быть application/json
       content:

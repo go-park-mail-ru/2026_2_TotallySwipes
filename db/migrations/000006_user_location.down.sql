@@ -1,0 +1,7 @@
+BEGIN;
+
+DROP TABLE "user_location";
+
+DROP EXTENSION IF EXISTS postgis;
+
+COMMIT;
