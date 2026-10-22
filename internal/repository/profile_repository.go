@@ -19,37 +19,50 @@ func NewProfileRepository(db *sql.DB) *ProfileRepo {
 	return &ProfileRepo{db: db}
 }
 
-const profileColumns = `
-	p.id, p.user_id, p.created_at, p.updated_at,
+const profileSelect = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
 	       EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id),
 	       v.id, v.recorded_at, v.name, v.birth_date, v.sex, v.dating_goal, v.about_me,
 	       v.education, v.work, v.smoking, v.alcohol, v.height,
 	       ps.id, ps.recorded_at,
-	       ps.openness, ps.conscientiousness, ps.extraversion, ps.agreeableness, ps.neuroticism`
+	       ps.openness, ps.conscientiousness, ps.extraversion, ps.agreeableness, ps.neuroticism
+		   FROM profile AS p
+			LEFT JOIN LATERAL (
+				SELECT * FROM profile_version WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
+			) AS v ON true
+			LEFT JOIN LATERAL (
+				SELECT * FROM profile_psycho WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
+			) AS ps ON true
+			WHERE p.user_id = $1`
 
-const profileFrom = `
-	FROM profile AS p
-	LEFT JOIN LATERAL (
-	    SELECT * FROM profile_version WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
-	) AS v ON true
-	LEFT JOIN LATERAL (
-	    SELECT * FROM profile_psycho WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
-	) AS ps ON true`
-
-// profileSelect читает профиль с признаком фильтра, последней версией анкеты и последним психопрофилем.
-const profileSelect = "SELECT " + profileColumns + profileFrom
-
-const likedMeSelect = `
-	EXISTS (
-		SELECT 1
-		FROM swipe s
-		JOIN profile viewer ON viewer.id = s.target_profile_id
-		WHERE s.author_id = p.user_id
-		AND viewer.user_id = $2
-		AND s.action IN ('like', 'super_like')
-	) AS liked_me`
-
-const feedSelect = "SELECT " + profileColumns + ", " + likedMeSelect + profileFrom
+const feedSelect = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
+	       EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id),
+	       v.id, v.recorded_at, v.name, v.birth_date, v.sex, v.dating_goal, v.about_me,
+	       v.education, v.work, v.smoking, v.alcohol, v.height,
+	       ps.id, ps.recorded_at,
+	       ps.openness, ps.conscientiousness, ps.extraversion, ps.agreeableness, ps.neuroticism,  EXISTS (
+				SELECT 1
+				FROM swipe s
+				JOIN profile viewer ON viewer.id = s.target_profile_id
+				WHERE s.author_id = p.user_id
+				AND viewer.user_id = $2
+				AND s.action IN ('like', 'super_like')
+			) AS liked_me FROM profile AS p
+			LEFT JOIN LATERAL (
+				SELECT * FROM profile_version WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
+			) AS v ON true
+			LEFT JOIN LATERAL (
+				SELECT * FROM profile_psycho WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
+			) AS ps ON true
+			WHERE p.user_id > $1 AND p.user_id <> $2
+			AND v.name IS NOT NULL AND v.birth_date IS NOT NULL AND v.sex IS NOT NULL
+			AND v.dating_goal IS NOT NULL
+			AND EXISTS (SELECT 1 FROM photo WHERE profile_id = p.id)
+			AND EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id)
+			AND NOT EXISTS (
+				SELECT 1 FROM search_filter AS f WHERE f.user_id = $2
+					AND ((f.sex <> 'all' AND f.sex <> v.sex)
+					OR date_part('year', age($4::date, v.birth_date)) NOT BETWEEN f.age_from AND f.age_to))
+			ORDER BY p.user_id ASC LIMIT $3`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -153,7 +166,7 @@ func loadProfileByUserID(ctx context.Context, tx *sql.Tx, userID int64, lock boo
 		}
 	}
 
-	profile, err := scanProfile(tx.QueryRowContext(ctx, profileSelect+` WHERE p.user_id = $1`, userID))
+	profile, err := scanProfile(tx.QueryRowContext(ctx, profileSelect, userID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, model.ErrNotFound
 	}
@@ -330,17 +343,7 @@ func (r *ProfileRepo) GetProfilesByCursorAndLimit(ctx context.Context, userID in
 	}
 	defer tx.Rollback()
 
-	rows, err := tx.QueryContext(ctx, feedSelect+`
-		WHERE p.user_id > $1 AND p.user_id <> $2
-		  AND v.name IS NOT NULL AND v.birth_date IS NOT NULL AND v.sex IS NOT NULL
-		  AND v.dating_goal IS NOT NULL
-		  AND EXISTS (SELECT 1 FROM photo WHERE profile_id = p.id)
-		  AND EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id)
-		  AND NOT EXISTS (
-		      SELECT 1 FROM search_filter AS f WHERE f.user_id = $2
-		        AND ((f.sex <> 'all' AND f.sex <> v.sex)
-		          OR date_part('year', age($4::date, v.birth_date)) NOT BETWEEN f.age_from AND f.age_to))
-		ORDER BY p.user_id ASC LIMIT $3`, afterID, userID, limit+1, time.Now().Format(time.DateOnly))
+	rows, err := tx.QueryContext(ctx, feedSelect, afterID, userID, limit+1, time.Now().Format(time.DateOnly))
 	if err != nil {
 		return nil, nil, fmt.Errorf("feed: select profiles: %w", err)
 	}
