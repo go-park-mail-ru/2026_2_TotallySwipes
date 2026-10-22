@@ -1010,6 +1010,42 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/matches/summary:
+    get:
+      security:
+        - cookieAuth: []
+      summary: Счётчик мэтчей для навигации
+      description: >-
+        Лёгкая ручка для пункта «Симпатии» в сайдбаре и таб-баре: общее число мэтчей
+        и сколько из них текущий пользователь ещё не открывал. Если has_new равен true,
+        клиент выделяет счётчик. Мэтч перестаёт быть новым после POST /api/v1/matches/{match_id}/seen.
+      responses:
+        '200':
+          description: Счётчик получен
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [total, new_count, has_new]
+                properties:
+                  total:
+                    type: integer
+                    minimum: 0
+                    example: 12
+                  new_count:
+                    type: integer
+                    minimum: 0
+                    description: Мэтчи, которые текущий пользователь ещё не открывал (is_new в GET /api/v1/matches).
+                    example: 3
+                  has_new:
+                    type: boolean
+                    description: true, если new_count больше нуля.
+                    example: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/v1/matches/{match_id}/seen:
     post:
       security:

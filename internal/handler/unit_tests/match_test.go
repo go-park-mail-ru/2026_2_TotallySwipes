@@ -22,6 +22,12 @@ type fakeMatchService struct {
 	limit   int
 	cursor  *int64
 	matchID int64
+	summary *model.MatchSummary
+}
+
+func (f *fakeMatchService) GetSummary(_ context.Context, userID int64) (*model.MatchSummary, error) {
+	f.userID = userID
+	return f.summary, f.err
 }
 
 func (f *fakeMatchService) MarkSeen(_ context.Context, userID, matchID int64) error {
@@ -131,6 +137,30 @@ func TestMatchHandlerMarkSeen(t *testing.T) {
 			r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, tc.target, nil))
 			if rec.Code != tc.status || svc.matchID != tc.wantMatchID {
 				t.Fatalf("status = %d, match id = %d; want %d, %d; body = %s", rec.Code, svc.matchID, tc.status, tc.wantMatchID, rec.Body)
+			}
+		})
+	}
+}
+
+func TestMatchHandlerSummary(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		summary *model.MatchSummary
+		err     error
+		status  int
+		want    string
+	}{
+		{"has new", &model.MatchSummary{Total: 12, New: 3}, nil, http.StatusOK, `{"total":12,"new_count":3,"has_new":true}`},
+		{"all seen", &model.MatchSummary{Total: 12}, nil, http.StatusOK, `{"total":12,"new_count":0,"has_new":false}`},
+		{"no matches", &model.MatchSummary{}, nil, http.StatusOK, `{"total":0,"new_count":0,"has_new":false}`},
+		{"internal error", nil, context.DeadlineExceeded, http.StatusInternalServerError, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &fakeMatchService{summary: tc.summary, err: tc.err}
+			rec := httptest.NewRecorder()
+			NewMatchHandler(svc).Summary(rec, httptest.NewRequest(http.MethodGet, "/api/v1/matches/summary", nil), 7)
+			if rec.Code != tc.status || svc.userID != 7 || (tc.want != "" && rec.Body.String() != tc.want) {
+				t.Fatalf("status = %d, user = %d, body = %s", rec.Code, svc.userID, rec.Body)
 			}
 		})
 	}

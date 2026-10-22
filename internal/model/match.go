@@ -7,6 +7,11 @@ const (
 	MatchesMaxLimit     = 48
 )
 
+type MatchSummary struct {
+	Total int
+	New   int
+}
+
 type MatchPage struct {
 	Items      []Match
 	Total      int

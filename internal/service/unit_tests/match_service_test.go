@@ -18,6 +18,12 @@ type fakeMatches struct {
 	calls      int
 	limit      int
 	cursor     *int64
+	summary    *model.MatchSummary
+}
+
+func (f *fakeMatches) GetSummary(context.Context, int64) (*model.MatchSummary, error) {
+	f.calls++
+	return f.summary, f.err
 }
 
 func (f *fakeMatches) GetMatches(_ context.Context, _ int64, limit int, cursor *int64) ([]model.Match, int, *int64, error) {
@@ -143,6 +149,33 @@ func TestMatchServiceMarkSeen(t *testing.T) {
 			err := svc.MarkSeen(context.Background(), tc.userID, tc.matchID)
 			if repo.calls != tc.wantCalls || !errors.Is(err, tc.wantErr) || (tc.wantErr == nil) != (err == nil) {
 				t.Fatalf("calls = %d, error = %v; want %d, %v", repo.calls, err, tc.wantCalls, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestMatchServiceGetSummary(t *testing.T) {
+	failure := errors.New("dependency failure")
+	for _, tc := range []struct {
+		name      string
+		userID    int64
+		repo      fakeMatches
+		wantErr   error
+		wantCalls int
+	}{
+		{name: "invalid user", wantErr: model.ErrInvalidMatchesRequest},
+		{name: "repository failure", userID: 7, repo: fakeMatches{err: failure}, wantErr: failure, wantCalls: 1},
+		{name: "ok", userID: 7, repo: fakeMatches{summary: &model.MatchSummary{Total: 12, New: 3}}, wantCalls: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := tc.repo
+			svc := NewMatchService(&repo, fakeMatchViewer{}, NewCompatibilityService(), NewLocalPhotoURLProvider("https://media.example"))
+			got, err := svc.GetSummary(context.Background(), tc.userID)
+			if repo.calls != tc.wantCalls || !errors.Is(err, tc.wantErr) || (tc.wantErr == nil) != (err == nil) {
+				t.Fatalf("calls = %d, error = %v; want %d, %v", repo.calls, err, tc.wantCalls, tc.wantErr)
+			}
+			if tc.wantErr == nil && !reflect.DeepEqual(got, repo.summary) {
+				t.Fatalf("summary = %+v, want %+v", got, repo.summary)
 			}
 		})
 	}

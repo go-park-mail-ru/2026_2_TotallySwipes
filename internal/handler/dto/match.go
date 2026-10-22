@@ -11,6 +11,16 @@ func ParseMatchesQuery(q url.Values) (PageQuery, map[string]string) {
 	return parsePageQuery(q, model.MatchesDefaultLimit, model.MatchesMaxLimit)
 }
 
+type MatchesSummaryResponse struct {
+	Total    int  `json:"total"`
+	NewCount int  `json:"new_count"`
+	HasNew   bool `json:"has_new"`
+}
+
+func NewMatchesSummaryResponse(s *model.MatchSummary) MatchesSummaryResponse {
+	return MatchesSummaryResponse{Total: s.Total, NewCount: s.New, HasNew: s.New > 0}
+}
+
 type MatchesResponse struct {
 	Items      []MatchItem `json:"items"`
 	Total      int         `json:"total"`

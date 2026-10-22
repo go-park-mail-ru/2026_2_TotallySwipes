@@ -108,3 +108,16 @@ func (r *MatchRepository) MarkSeen(ctx context.Context, userID, matchID int64) e
 	}
 	return nil
 }
+
+// GetSummary считает все мэтчи пользователя и ещё не открытые им
+func (r *MatchRepository) GetSummary(ctx context.Context, userID int64) (*model.MatchSummary, error) {
+	var s model.MatchSummary
+	err := r.db.QueryRowContext(ctx, `
+		SELECT count(*),
+		       count(*) FILTER (WHERE CASE WHEN first_user_id = $1 THEN first_user_seen_at ELSE second_user_seen_at END IS NULL)
+		FROM match WHERE first_user_id = $1 OR second_user_id = $1`, userID).Scan(&s.Total, &s.New)
+	if err != nil {
+		return nil, fmt.Errorf("matches summary user id=%d: %w", userID, err)
+	}
+	return &s, nil
+}

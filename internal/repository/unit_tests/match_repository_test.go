@@ -92,6 +92,18 @@ func TestMatchRepositoryGetMatches(t *testing.T) {
 	swipe(stranger, first, model.SwipeLike)
 	swipe(first, stranger, model.SwipeLike)
 	firstMatch, secondMatch := matchID(viewer, first), matchID(viewer, second)
+	summary := func(userID int64, wantTotal, wantNew int) {
+		t.Helper()
+		s, err := matches.GetSummary(ctx, userID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s.Total != wantTotal || s.New != wantNew {
+			t.Fatalf("summary user %d = %+v, want total %d new %d", userID, *s, wantTotal, wantNew)
+		}
+	}
+	summary(viewer, 2, 2)
+
 	if err := matches.MarkSeen(ctx, viewer, firstMatch); err != nil {
 		t.Fatal(err)
 	}
@@ -101,6 +113,9 @@ func TestMatchRepositoryGetMatches(t *testing.T) {
 	if err := matches.MarkSeen(ctx, oneSided, firstMatch); !errors.Is(err, model.ErrNotFound) {
 		t.Fatalf("mark seen by outsider: %v, want ErrNotFound", err)
 	}
+	summary(viewer, 2, 1)
+	summary(first, 2, 2)
+	summary(oneSided, 0, 0)
 	if partner, _, _, err := matches.GetMatches(ctx, first, 10, nil); err != nil || len(partner) != 2 || !partner[1].IsNew {
 		t.Fatalf("partner matches = %+v, err = %v; viewer's view must not affect partner", partner, err)
 	}
