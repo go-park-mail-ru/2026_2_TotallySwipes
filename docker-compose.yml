@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:18
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -39,7 +39,6 @@ services:
       - miniodata:/data
     command: ["server", "/data", "--address", ":9000"]
 
-  # Removed minio-init for now - use web UI to create buckets manually or script later
   api:
     image: ${API_IMAGE:-totallyswipes-api}
     build: .
