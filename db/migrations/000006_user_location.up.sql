@@ -6,7 +6,7 @@ CREATE TABLE "user_location" (
     user_id BIGINT PRIMARY KEY REFERENCES "user"(id) ON DELETE CASCADE,
     сity text NOT NULL CHECK (btrim(city) <> ''),
     district text CHECK (district IS NULL OR btrim(district) <> ''),
-    coordinates geography(Point, 4326),
+    coordinates geography(Point, 4326) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT user_location_dates CHECK (created_at <= updated_at)
