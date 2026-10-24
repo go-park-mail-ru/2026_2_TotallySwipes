@@ -35,8 +35,8 @@ type ProfileRepository interface {
 	DeletePhoto(ctx context.Context, userID, photoID int64) (string, error)
 	// ReorderPhotos задаёт порядок фото; model.ErrPhotoOrderMismatch, если набор id не совпадает с фото анкеты.
 	ReorderPhotos(ctx context.Context, userID int64, photoIDs []int64) error
-	// GetProfilesByCursorAndLimit возвращает страницу заполненных анкет и курсор следующей (nil в конце).
-	GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error)
+	// GetCandidatesByCursorAndLimit возвращает страницу заполненных анкет и курсор следующей (nil в конце).
+	GetCandidatesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error)
 }
 
 type ProfileService struct {
@@ -149,6 +149,7 @@ func (s *ProfileService) GetShortProfile(ctx context.Context, userID int64) (*mo
 		UserID:  profile.UserID,
 		Name:    fields.Name,
 		Missing: profile.Missing(),
+		City:    profile.City,
 	}
 	if fields.BirthDate != nil {
 		age := model.AgeAt(*fields.BirthDate, time.Now())
@@ -175,8 +176,13 @@ func (s *ProfileService) GetNextFeed(ctx context.Context, userID int64, limit in
 	if len(userProfile.Missing()) > 0 {
 		return nil, fmt.Errorf("get feed user id=%d: profile incomplete: %w", userID, model.ErrProfileRequired)
 	}
+
+	if userProfile.City == nil {
+		return nil, fmt.Errorf("get feed user id=%d: city is missed: %w", userID, model.ErrLocationRequired)
+	}
+
 	userVector, userHasTest := feedBigFive(userProfile.CurrentPsycho)
-	candidates, nextCursor, err := s.profileRepo.GetProfilesByCursorAndLimit(ctx, userID, limit, cursor)
+	candidates, nextCursor, err := s.profileRepo.GetCandidatesByCursorAndLimit(ctx, userID, limit, cursor)
 
 	if err != nil {
 		return nil, fmt.Errorf("get feed profiles: %w", err)
@@ -218,6 +224,7 @@ func (s *ProfileService) GetNextFeed(ctx context.Context, userID int64, limit in
 			LikedMe:       candidate.LikedMe,
 			Tags:          make([]string, 0, len(profile.Tags)),
 			Photos:        make([]model.FeedPhoto, 0, len(profile.Photos)),
+			City:          profile.City,
 		}
 
 		for _, tag := range profile.Tags {

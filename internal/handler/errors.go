@@ -22,6 +22,7 @@ var domainErrors = []struct {
 	api apiError
 }{
 	{model.ErrInvalidCoordinates, apiError{http.StatusBadRequest, codeValidationError, "Некорректные координаты", nil}},
+	{model.ErrLocationRequired, apiError{http.StatusConflict, "LOCATION_REQUIRED", "Сначала необходимо указать город", nil}},
 	{model.ErrLocationPreviewUnavailable, apiError{http.StatusGone, "LOCATION_PREVIEW_UNAVAILABLE", "Повторите определение местоположения", nil}},
 	{model.ErrLocationNotFound, apiError{http.StatusUnprocessableEntity, "LOCATION_NOT_FOUND", "Не удалось определить местоположение", nil}},
 	{model.ErrCityNotFound, apiError{http.StatusUnprocessableEntity, "LOCATION_NOT_FOUND", "Не удалось определить город", nil}},

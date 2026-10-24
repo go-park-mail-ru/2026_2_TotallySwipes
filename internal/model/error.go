@@ -10,6 +10,7 @@ var (
 	ErrInvalidSession     = errors.New("invalid session")
 	ErrInvalidSwipe       = errors.New("invalid self-swipe")
 	ErrProfileIncomplete  = errors.New("profile incomplete")
+	ErrLocationRequired   = errors.New("location required")
 	// ErrSessionNotOpened означает, что аккаунт создан, но сессия не открыта.
 	ErrSessionNotOpened       = errors.New("account created, session not opened")
 	ErrInvalidFeedRequest     = errors.New("invalid feed request")

@@ -89,7 +89,7 @@ func TestProfileRepo_Feed(t *testing.T) {
 				}
 			}
 			// Act
-			got, next, err := repo.GetProfilesByCursorAndLimit(context.Background(), 42, 2, tc.cursor)
+			got, next, err := repo.GetCandidatesByCursorAndLimit(context.Background(), 42, 2, tc.cursor)
 			// Assert
 			if tc.failAt == "scan" {
 				if err == nil || got != nil || next != nil {

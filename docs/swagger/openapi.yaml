@@ -395,6 +395,11 @@ paths:
                     nullable: true
                     description: URL главного фото (photos[0]). null, если фото нет.
                     example: http://localhost:8080/cats/cat-1.jpg
+                  city:
+                    type: string
+                    nullable: true
+                    description: Текущий город пользователя
+                    example: Москва
                   missing:
                     $ref: '#/components/schemas/Missing'
         '401':
@@ -829,6 +834,7 @@ paths:
                         - tags
                         - photos
                         - liked_me
+                        - city
                       properties:
                         user_id:
                           minimum: 1
@@ -920,6 +926,10 @@ paths:
                             true, если последнее действие кандидата по отношению
                             к текущему пользователю — like или super_like.
                           example: false
+                        city:
+                          type: string
+                          nullale: true
+                          example: Москва
                   next_cursor:
                     minimum: 1
                     type: integer
@@ -930,7 +940,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
-          description: У текущего пользователя нет анкеты
+          description: У текущего пользователя нет заполненной анкеты или геопозиция не зафиксирована
           content:
             application/json:
               schema:
@@ -946,6 +956,9 @@ paths:
                     properties:
                       code:
                         type: string
+                        enum:
+                          - PROFILE_REQUIRED
+                          - LOCATION_REQUIRED
                         example: PROFILE_REQUIRED
                       message:
                         type: string
@@ -1213,6 +1226,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Photo'
+        city:
+          type: string
+          nullable: true
+          description: Текущий город пользователя
+          example: Москва
         missing:
           $ref: '#/components/schemas/Missing'
     ProfilePatch:

@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 
 CREATE TABLE "user_location" (
     user_id BIGINT PRIMARY KEY REFERENCES "user"(id) ON DELETE CASCADE,
-    сity text NOT NULL CHECK (btrim(city) <> ''),
+    city text NOT NULL CHECK (btrim(city) <> ''),
     district text CHECK (district IS NULL OR btrim(district) <> ''),
     coordinates geography(Point, 4326) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -20,7 +20,7 @@ func NewProfileRepository(db *sql.DB) *ProfileRepo {
 }
 
 const profileSelect = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
-	       EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id),
+	       EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id), l.city,
 	       v.id, v.recorded_at, v.name, v.birth_date, v.sex, v.dating_goal, v.about_me,
 	       v.education, v.work, v.smoking, v.alcohol, v.height,
 	       ps.id, ps.recorded_at,
@@ -32,10 +32,11 @@ const profileSelect = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
 			LEFT JOIN LATERAL (
 				SELECT * FROM profile_psycho WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
 			) AS ps ON true
+			LEFT JOIN user_location AS l ON l.user_id = p.user_id
 			WHERE p.user_id = $1`
 
 const feedSelect = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
-	       EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id),
+	       EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id), l.city,
 	       v.id, v.recorded_at, v.name, v.birth_date, v.sex, v.dating_goal, v.about_me,
 	       v.education, v.work, v.smoking, v.alcohol, v.height,
 	       ps.id, ps.recorded_at,
@@ -53,6 +54,8 @@ const feedSelect = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
 			LEFT JOIN LATERAL (
 				SELECT * FROM profile_psycho WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
 			) AS ps ON true
+			JOIN user_location AS l ON l.user_id = p.user_id
+			JOIN user_location AS v_location ON v_location.user_id = $2 AND v_location.city = l.city
 			WHERE p.user_id > $1 AND p.user_id <> $2
 			AND v.name IS NOT NULL AND v.birth_date IS NOT NULL AND v.sex IS NOT NULL
 			AND v.dating_goal IS NOT NULL
@@ -77,7 +80,7 @@ func scanCandidate(row rowScanner) (*model.FeedCandidate, error) {
 	var psycho model.ProfilePsycho
 	f := &p.CurrentVersion.ProfileFields
 
-	err := row.Scan(&p.ID, &p.UserID, &p.CreatedAt, &p.UpdatedAt, &p.HasSearchFilter,
+	err := row.Scan(&p.ID, &p.UserID, &p.CreatedAt, &p.UpdatedAt, &p.HasSearchFilter, &p.City,
 		&versionID, &versionRecordedAt, &f.Name, &f.BirthDate, &f.Sex, &f.DatingGoal, &f.AboutMe,
 		&f.Education, &f.Work, &f.Smoking, &f.Alcohol, &f.Height,
 		&psychoID, &psychoRecordedAt,
@@ -110,7 +113,7 @@ func scanProfile(row rowScanner) (*model.Profile, error) {
 	var psycho model.ProfilePsycho
 	f := &p.CurrentVersion.ProfileFields
 
-	err := row.Scan(&p.ID, &p.UserID, &p.CreatedAt, &p.UpdatedAt, &p.HasSearchFilter,
+	err := row.Scan(&p.ID, &p.UserID, &p.CreatedAt, &p.UpdatedAt, &p.HasSearchFilter, &p.City,
 		&versionID, &versionRecordedAt, &f.Name, &f.BirthDate, &f.Sex, &f.DatingGoal, &f.AboutMe,
 		&f.Education, &f.Work, &f.Smoking, &f.Alcohol, &f.Height,
 		&psychoID, &psychoRecordedAt,
@@ -330,8 +333,8 @@ func (r *ProfileRepo) ReorderPhotos(ctx context.Context, userID int64, photoIDs 
 	return nil
 }
 
-// GetProfilesByCursorAndLimit - страница заполненных анкет под фильтр пользователя; условие заполненности должно совпадать с model.Profile.Missing
-func (r *ProfileRepo) GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error) {
+// GetCandidatesByCursorAndLimit - страница заполненных анкет под фильтр пользователя; условие заполненности должно совпадать с model.Profile.Missing
+func (r *ProfileRepo) GetCandidatesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error) {
 	afterID := int64(0)
 	if cursor != nil {
 		afterID = *cursor

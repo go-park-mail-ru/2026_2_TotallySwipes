@@ -15,12 +15,13 @@ type ProfileShortResponse struct {
 	Age      *int     `json:"age"`
 	PhotoURL *string  `json:"photo_url"`
 	Missing  []string `json:"missing"`
+	City     *string  `json:"city"`
 }
 
 func NewProfileShortResponse(p *model.ProfileShort) ProfileShortResponse {
 	return ProfileShortResponse{
 		UserID: p.UserID, Name: p.Name, Age: p.Age, PhotoURL: p.MainPhotoURL,
-		Missing: p.Missing,
+		Missing: p.Missing, City: p.City,
 	}
 }
 
@@ -74,6 +75,7 @@ type ProfileResponse struct {
 	Tags       []string          `json:"tags"`
 	Photos     []PhotoResponse   `json:"photos"`
 	Missing    []string          `json:"missing"`
+	City       *string           `json:"city"`
 }
 
 func NewProfileResponse(p *model.Profile, now time.Time) ProfileResponse {
@@ -92,6 +94,7 @@ func NewProfileResponse(p *model.Profile, now time.Time) ProfileResponse {
 		Tags:       make([]string, 0, len(p.Tags)),
 		Photos:     newPhotoResponses(p.Photos),
 		Missing:    p.Missing(),
+		City:       p.City,
 	}
 	if f.BirthDate != nil {
 		date := f.BirthDate.Format(validate.DateLayout)
