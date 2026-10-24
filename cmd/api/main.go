@@ -11,6 +11,7 @@ import (
 
 	"dating-app/internal/auth"
 	"dating-app/internal/config"
+	"dating-app/internal/geocoder"
 	"dating-app/internal/handler"
 	"dating-app/internal/logging"
 	"dating-app/internal/middleware"
@@ -30,6 +31,7 @@ type handlers struct {
 	profile    *handler.ProfileHandler
 	psychoTest *handler.PsychoTestHandler
 	swipe      *handler.SwipeHandler
+	location   *handler.LocationHandler
 }
 
 func main() {
@@ -97,6 +99,8 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 	swipeRepo := repository.NewSwipeRepository(db)
 	psychoTestRepo := repository.NewPsychoTestRepository(db)
 	sessionRepo := repository.NewSessionRepository(rdb)
+	previewsRepo := repository.NewLocationPreviewRepository(rdb, cfg.Redis.LocationPreviewTTL)
+	locationRepo := repository.NewLocationRepository(db)
 
 	issuer := auth.NewJWTIssuer(cfg.Auth.JWTSecret, cfg.Auth.JWTAccessTTL)
 	// photoStorage := storage.NewLocalPhotoStorage(cfg.PhotoDir)
@@ -106,12 +110,19 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 		return err
 	}
 
+	geocoderHTTPClient := &http.Client{
+		Timeout: cfg.Geocoder.HTTPClientTimeout,
+	}
+
+	reverseGeocoder := geocoder.NewGeoQoder(geocoderHTTPClient, cfg.Geocoder.BaseURL, cfg.Geocoder.APIKey)
+
 	compatibilitySvc := service.NewCompatibilityService()
 	profileSvc := service.NewProfileService(profileRepo, compatibilitySvc, minioURLProvider, minioStorage)
 	authSvc := service.NewAuthService(userRepo, profileSvc, sessionRepo, auth.BcryptHasher{}, issuer, cfg.Auth.JWTRefreshTTL)
 	psychoTestSvc := service.NewPsychoTestService(psychoTestRepo, profileRepo, compatibilitySvc, psychoTest)
 	filterSvc := service.NewFilterService(filterRepo)
 	swipeSvc := service.NewSwipeService(swipeRepo, profileRepo)
+	locationSvc := service.NewLocationService(locationRepo, reverseGeocoder, previewsRepo)
 
 	h := handlers{
 		auth:       handler.NewAuthHandler(authSvc, cfg.Auth.CookieSecure),
@@ -120,6 +131,7 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 		profile:    handler.NewProfileHandler(profileSvc),
 		psychoTest: handler.NewPsychoTestHandler(psychoTestSvc),
 		swipe:      handler.NewSwipeHandler(swipeSvc),
+		location:   handler.NewLocationHandler(locationSvc),
 	}
 
 	var root http.Handler = newRouter(cfg, issuer, h)
@@ -174,6 +186,9 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 	api.Handle("/tests/current", authed(h.psychoTest.Current)).Methods(http.MethodGet)
 	api.Handle("/tests/results/me", authed(h.psychoTest.MyResult)).Methods(http.MethodGet)
 	api.Handle("/tests/{test_id}/results", authed(h.psychoTest.Submit)).Methods(http.MethodPost)
+
+	api.Handle("/location/me/preview", authed(h.location.Preview)).Methods(http.MethodPost)
+	api.Handle("/location/me", authed(h.location.SaveLocation)).Methods(http.MethodPut)
 
 	return r
 }

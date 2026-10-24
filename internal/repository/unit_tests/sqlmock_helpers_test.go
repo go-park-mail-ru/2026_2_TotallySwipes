@@ -41,12 +41,12 @@ func newSQLMock(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 var fixtureTime = time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC)
 var fixtureBirth = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 
-var profileRowColumns = []string{"id", "user_id", "created_at", "updated_at", "has_filter", "version_id", "version_recorded_at", "name", "birth_date", "sex", "dating_goal", "about_me", "education", "work", "smoking", "alcohol", "height", "psycho_id", "psycho_recorded_at", "openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism"}
+var profileRowColumns = []string{"id", "user_id", "created_at", "updated_at", "has_filter", "city", "version_id", "version_recorded_at", "name", "birth_date", "sex", "dating_goal", "about_me", "education", "work", "smoking", "alcohol", "height", "psycho_id", "psycho_recorded_at", "openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism"}
 
 func profileValues(id, userID int64, filled bool) []driver.Value {
-	values := []driver.Value{id, userID, fixtureTime, fixtureTime, filled, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil}
+	values := []driver.Value{id, userID, fixtureTime, fixtureTime, filled, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil}
 	if filled {
-		copy(values[5:17], []driver.Value{int64(11), fixtureTime, "Anna", fixtureBirth, "female", "friendship", nil, "higher", "Engineer", "negative", nil, int64(180)})
+		copy(values[6:18], []driver.Value{int64(11), fixtureTime, "Anna", fixtureBirth, "female", "friendship", nil, "higher", "Engineer", "negative", nil, int64(180)})
 	}
 	return values
 }

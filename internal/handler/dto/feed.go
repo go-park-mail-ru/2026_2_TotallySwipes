@@ -74,6 +74,7 @@ type FeedItem struct {
 	Tags          []string         `json:"tags"`
 	Photos        []FeedPhoto      `json:"photos"`
 	LikedMe       bool             `json:"liked_me"`
+	City          *string          `json:"city"`
 }
 
 type FeedPhoto struct {
@@ -106,6 +107,7 @@ func NewFeedResponse(page *model.FeedPage) FeedResponse {
 			Tags:          item.Tags,
 			Photos:        photos,
 			LikedMe:       item.LikedMe,
+			City:          item.City,
 		})
 	}
 	return resp

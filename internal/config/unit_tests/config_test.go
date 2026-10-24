@@ -12,6 +12,7 @@ func setRequired(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://localhost/db")
 	t.Setenv("JWT_SECRET", "secret")
+	t.Setenv("GEOCODER_API_KEY", "test-geocoder-key")
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -32,10 +33,11 @@ func TestLoadDefaults(t *testing.T) {
 func TestLoadMissingRequired(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("JWT_SECRET", "")
+	t.Setenv("GEOCODER_API_KEY", "")
 
 	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL") || !strings.Contains(err.Error(), "JWT_SECRET") {
-		t.Fatalf("want both required vars in error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL") || !strings.Contains(err.Error(), "JWT_SECRET") || !strings.Contains(err.Error(), "GEOCODER_API_KEY") {
+		t.Fatalf("want all required vars in error, got %v", err)
 	}
 }
 
@@ -133,5 +135,14 @@ func TestLoadMinIOPublicEndpoint(t *testing.T) {
 	}
 	if cfg.MinIO.Endpoint != "minio:9000" || cfg.MinIO.PublicEndpoint != "192.0.2.10:9000" || cfg.MinIO.PhotoURLTTL != 10*time.Minute {
 		t.Fatal("internal/public endpoints or photo TTL loaded incorrectly")
+	}
+}
+
+func TestLoadMissingGeocoderAPIKey(t *testing.T) {
+	setRequired(t)
+	t.Setenv("GEOCODER_API_KEY", "")
+	cfg, err := Load()
+	if cfg != nil || err == nil || !strings.Contains(err.Error(), "GEOCODER_API_KEY") {
+		t.Fatalf("want missing geocoder key error, got cfg=%+v, err=%v", cfg, err)
 	}
 }
