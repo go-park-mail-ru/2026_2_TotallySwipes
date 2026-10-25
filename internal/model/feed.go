@@ -22,6 +22,12 @@ type FeedItem struct {
 	LikedMe       bool
 }
 
+// MatchedProfile - анкета собеседника по мэтчу
+type MatchedProfile struct {
+	MatchID int64
+	Item    FeedItem
+}
+
 type FeedCandidate struct {
 	Profile Profile
 	LikedMe bool

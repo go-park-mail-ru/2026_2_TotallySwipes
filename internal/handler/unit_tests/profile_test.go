@@ -19,6 +19,9 @@ import (
 )
 
 type fakeProfiles struct {
+	matched  *model.MatchedProfile
+	viewer   int64
+	target   int64
 	patch    *model.ProfilePatch
 	upload   *model.PhotoUpload
 	deleted  int64
@@ -56,6 +59,11 @@ func (f *fakeProfiles) ReorderPhotos(_ context.Context, _ int64, photoIDs []int6
 	return f.photos, f.err
 }
 
+func (f *fakeProfiles) GetMatchedProfile(_ context.Context, viewerID, targetID int64) (*model.MatchedProfile, error) {
+	f.viewer, f.target = viewerID, targetID
+	return f.matched, f.err
+}
+
 func profileRouter(svc *fakeProfiles) http.Handler {
 	h := NewProfileHandler(svc)
 	withUser := func(fn UserHandlerFunc) http.Handler {
@@ -68,6 +76,7 @@ func profileRouter(svc *fakeProfiles) http.Handler {
 	r.Handle("/profile/me/photos", withUser(h.AddPhoto)).Methods(http.MethodPost)
 	r.Handle("/profile/me/photos/order", withUser(h.ReorderPhotos)).Methods(http.MethodPut)
 	r.Handle("/profile/me/photos/{photo_id}", withUser(h.DeletePhoto)).Methods(http.MethodDelete)
+	r.Handle("/profiles/{user_id}", withUser(h.GetByUserID)).Methods(http.MethodGet)
 	return r
 }
 
@@ -277,5 +286,45 @@ func TestProfileHandler_ReorderPhotos(t *testing.T) {
 	rec, resp = put(&fakeProfiles{err: model.ErrPhotoOrderMismatch}, `{"photo_ids": [1, 2]}`)
 	if rec.Code != http.StatusBadRequest || errCode(resp) != "VALIDATION_ERROR" || errFields(resp)["photo_ids"] == nil {
 		t.Errorf("mismatch: status = %d, body = %v", rec.Code, resp)
+	}
+}
+
+func TestProfileHandler_GetByUserID(t *testing.T) {
+	compatibility, about := 0.87, "Люблю велосипед"
+	matched := &model.MatchedProfile{MatchID: 15, Item: model.FeedItem{
+		UserID: 8, Name: "Даша", Age: 24, DatingGoal: model.DatingGoalRelationship, Compatibility: &compatibility,
+		AboutMe: &about, Tags: []string{"books"}, Photos: []model.FeedPhoto{{ID: 3, URL: "https://media.example/cats/a.jpg"}}, LikedMe: true,
+	}}
+	for _, tc := range []struct {
+		name       string
+		target     string
+		matched    *model.MatchedProfile
+		err        error
+		status     int
+		wantTarget int64
+	}{
+		{"ok", "/profiles/8", matched, nil, http.StatusOK, 8},
+		{"bad id", "/profiles/abc", nil, nil, http.StatusBadRequest, 0},
+		{"zero id", "/profiles/0", nil, nil, http.StatusBadRequest, 0},
+		{"no match", "/profiles/9", nil, model.ErrProfileNotFound, http.StatusNotFound, 9},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &fakeProfiles{matched: tc.matched, err: tc.err}
+			rec, body := serve(t, profileRouter(svc), httptest.NewRequest(http.MethodGet, tc.target, nil))
+			if rec.Code != tc.status || svc.target != tc.wantTarget || (tc.wantTarget != 0 && svc.viewer != 7) {
+				t.Fatalf("status = %d, viewer = %d, target = %d; body = %s", rec.Code, svc.viewer, svc.target, rec.Body)
+			}
+			if tc.status != http.StatusOK {
+				return
+			}
+			want := map[string]any{
+				"match_id": float64(15), "user_id": float64(8), "name": "Даша", "age": float64(24), "dating_goal": "relationship",
+				"compatibility": 0.87, "about_me": about, "education": nil, "work": nil, "smoking": nil, "alcohol": nil, "height": nil,
+				"tags": []any{"books"}, "photos": []any{map[string]any{"id": float64(3), "url": "https://media.example/cats/a.jpg"}}, "liked_me": true,
+			}
+			if !reflect.DeepEqual(body, want) {
+				t.Fatalf("body = %v, want %v", body, want)
+			}
+		})
 	}
 }
