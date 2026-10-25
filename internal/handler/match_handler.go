@@ -28,28 +28,28 @@ func NewMatchHandler(svc MatchService) *MatchHandler {
 func (h *MatchHandler) List(w http.ResponseWriter, r *http.Request, userID int64) {
 	query, errs := dto.ParseMatchesQuery(r.URL.Query())
 	if len(errs) > 0 {
-		writeError(w, http.StatusBadRequest, codeValidationError, msgInvalidMatchesQuery, errs)
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, msgInvalidMatchesQuery, errs)
 		return
 	}
 
 	page, err := h.svc.GetMatches(r.Context(), userID, query.Limit, query.Cursor)
 	if err != nil {
-		writeServiceError(w, "get matches", err)
+		writeServiceError(r.Context(), w, "get matches", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.NewMatchesResponse(page))
+	writeJSON(r.Context(), w, http.StatusOK, dto.NewMatchesResponse(page))
 }
 
 // MarkSeen - POST /matches/{match_id}/seen: мэтч перестаёт быть новым для текущего пользователя
 func (h *MatchHandler) MarkSeen(w http.ResponseWriter, r *http.Request, userID int64) {
 	matchID, err := strconv.ParseInt(mux.Vars(r)["match_id"], 10, 64)
 	if err != nil || matchID <= 0 {
-		writeError(w, http.StatusBadRequest, codeValidationError, "Некорректный match_id", nil)
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, "Некорректный match_id", nil)
 		return
 	}
 
 	if err := h.svc.MarkSeen(r.Context(), userID, matchID); err != nil {
-		writeServiceError(w, "mark match seen", err)
+		writeServiceError(r.Context(), w, "mark match seen", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -59,8 +59,8 @@ func (h *MatchHandler) MarkSeen(w http.ResponseWriter, r *http.Request, userID i
 func (h *MatchHandler) Summary(w http.ResponseWriter, r *http.Request, userID int64) {
 	summary, err := h.svc.GetSummary(r.Context(), userID)
 	if err != nil {
-		writeServiceError(w, "get matches summary", err)
+		writeServiceError(r.Context(), w, "get matches summary", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.NewMatchesSummaryResponse(summary))
+	writeJSON(r.Context(), w, http.StatusOK, dto.NewMatchesSummaryResponse(summary))
 }

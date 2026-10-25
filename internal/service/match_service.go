@@ -22,11 +22,11 @@ type MatchService struct {
 	repo             MatchRepository
 	profileRepo      MatchViewerRepository
 	compatibilitySvc CompatibilityService
-	media            URLProvider
+	photoURLs        PhotoURLProvider
 }
 
-func NewMatchService(repo MatchRepository, profileRepo MatchViewerRepository, compatibilitySvc CompatibilityService, media URLProvider) *MatchService {
-	return &MatchService{repo: repo, profileRepo: profileRepo, compatibilitySvc: compatibilitySvc, media: media}
+func NewMatchService(repo MatchRepository, profileRepo MatchViewerRepository, compatibilitySvc CompatibilityService, photoURLs PhotoURLProvider) *MatchService {
+	return &MatchService{repo: repo, profileRepo: profileRepo, compatibilitySvc: compatibilitySvc, photoURLs: photoURLs}
 }
 
 // GetMatches формирует страницу мэтчей с возрастом, главным фото и совместимостью при наличии обоих тестов.
@@ -57,7 +57,7 @@ func (s *MatchService) GetMatches(ctx context.Context, userID int64, limit int, 
 			m.Age = &age
 		}
 		if m.PhotoKey != nil {
-			url, err := s.media.GetURL(ctx, *m.PhotoKey)
+			url, err := s.photoURLs.GetPhotoURL(ctx, *m.PhotoKey)
 			if err != nil {
 				return nil, fmt.Errorf("get matches photo match id=%d: %w", m.ID, err)
 			}

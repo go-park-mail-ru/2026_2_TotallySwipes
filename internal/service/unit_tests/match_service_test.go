@@ -6,6 +6,7 @@ import (
 	. "dating-app/internal/service"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -35,6 +36,15 @@ func (f *fakeMatches) GetMatches(_ context.Context, _ int64, limit int, cursor *
 func (f *fakeMatches) MarkSeen(context.Context, int64, int64) error {
 	f.calls++
 	return f.err
+}
+
+type matchPhotoURLs struct{}
+
+func (matchPhotoURLs) GetPhotoURL(_ context.Context, key string) (string, error) {
+	if strings.Contains(key, "..") {
+		return "", model.ErrInvalidPhotoStorageKey
+	}
+	return "https://media.example/cats/" + key, nil
 }
 
 type fakeMatchViewer struct {
@@ -90,7 +100,7 @@ func TestMatchServiceGetMatches(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := tc.repo
 			repo.matches = append([]model.Match(nil), tc.repo.matches...)
-			svc := NewMatchService(&repo, tc.viewer, NewCompatibilityService(), NewLocalPhotoURLProvider("https://media.example"))
+			svc := NewMatchService(&repo, tc.viewer, NewCompatibilityService(), matchPhotoURLs{})
 			page, err := svc.GetMatches(context.Background(), tc.userID, tc.limit, tc.cursor)
 			if repo.calls != tc.wantCalls {
 				t.Fatalf("repository calls = %d, want %d", repo.calls, tc.wantCalls)
@@ -145,7 +155,7 @@ func TestMatchServiceMarkSeen(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := &fakeMatches{err: tc.repoErr}
-			svc := NewMatchService(repo, fakeMatchViewer{}, NewCompatibilityService(), NewLocalPhotoURLProvider("https://media.example"))
+			svc := NewMatchService(repo, fakeMatchViewer{}, NewCompatibilityService(), matchPhotoURLs{})
 			err := svc.MarkSeen(context.Background(), tc.userID, tc.matchID)
 			if repo.calls != tc.wantCalls || !errors.Is(err, tc.wantErr) || (tc.wantErr == nil) != (err == nil) {
 				t.Fatalf("calls = %d, error = %v; want %d, %v", repo.calls, err, tc.wantCalls, tc.wantErr)
@@ -169,7 +179,7 @@ func TestMatchServiceGetSummary(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := tc.repo
-			svc := NewMatchService(&repo, fakeMatchViewer{}, NewCompatibilityService(), NewLocalPhotoURLProvider("https://media.example"))
+			svc := NewMatchService(&repo, fakeMatchViewer{}, NewCompatibilityService(), matchPhotoURLs{})
 			got, err := svc.GetSummary(context.Background(), tc.userID)
 			if repo.calls != tc.wantCalls || !errors.Is(err, tc.wantErr) || (tc.wantErr == nil) != (err == nil) {
 				t.Fatalf("calls = %d, error = %v; want %d, %v", repo.calls, err, tc.wantCalls, tc.wantErr)

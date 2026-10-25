@@ -114,7 +114,7 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 	psychoTestSvc := service.NewPsychoTestService(psychoTestRepo, profileRepo, compatibilitySvc, psychoTest)
 	filterSvc := service.NewFilterService(filterRepo)
 	swipeSvc := service.NewSwipeService(swipeRepo, profileRepo)
-	matchSvc := service.NewMatchService(matchRepo, profileRepo, compatibilitySvc, urlProvider)
+	matchSvc := service.NewMatchService(matchRepo, profileRepo, compatibilitySvc, minioURLProvider)
 
 	h := handlers{
 		auth:       handler.NewAuthHandler(authSvc, cfg.Auth.CookieSecure),
