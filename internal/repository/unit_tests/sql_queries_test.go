@@ -112,3 +112,7 @@ const insertMatchSQL = `
 				AND s.action IN ('like', 'super_like')
 		)
 		ON CONFLICT (first_user_id, second_user_id) DO NOTHING`
+
+const insertProfileTagsSQL = `INSERT INTO profile_tag (profile_version_id, tag_id)
+SELECT $1, tag_id
+FROM unnest($2::bigint[]) AS tags(tag_id)`

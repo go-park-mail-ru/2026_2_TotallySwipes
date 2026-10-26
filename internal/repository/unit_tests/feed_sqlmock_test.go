@@ -5,12 +5,43 @@ import (
 	"database/sql/driver"
 	"dating-app/internal/model"
 	"dating-app/internal/repository"
+	"encoding/json"
 	"errors"
 	"github.com/DATA-DOG/go-sqlmock"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 )
+
+const feedTagsSQL = `SELECT pt.profile_version_id, t.id, t.name
+FROM profile_tag AS pt
+JOIN tag AS t ON t.id = pt.tag_id
+WHERE pt.profile_version_id = ANY($1::bigint[])
+ORDER BY pt.profile_version_id, t.id`
+
+const feedPhotosSQL = `SELECT profile_id, id, storage_key, position
+FROM photo
+WHERE profile_id = ANY($1::bigint[])
+ORDER BY profile_id, position`
+
+// arrayConverter encodes array arguments as JSON; map iteration order is arbitrary.
+type idSetArgument []int64
+
+func (want idSetArgument) Match(value driver.Value) bool {
+	encoded, ok := value.(string)
+	if !ok {
+		return false
+	}
+	var got []int64
+	if err := json.Unmarshal([]byte(encoded), &got); err != nil {
+		return false
+	}
+	expected := append([]int64(nil), want...)
+	slices.Sort(got)
+	slices.Sort(expected)
+	return slices.Equal(got, expected)
+}
 
 type dateArgument struct{ first, last string }
 
@@ -34,7 +65,12 @@ func TestProfileRepo_Feed(t *testing.T) {
 		{name: "query error", failAt: "query", wantErr: failure},
 		{name: "iteration error", count: 2, failAt: "rows", wantErr: failure},
 		{name: "scan error", count: 1, failAt: "scan"},
-		{name: "relations error", count: 1, failAt: "relations", wantErr: failure},
+		{name: "tags query error", count: 1, failAt: "tags", wantErr: failure},
+		{name: "photos query error", count: 1, failAt: "photos", wantErr: failure},
+		{name: "tags iteration error", count: 2, failAt: "tags_rows", wantErr: failure},
+		{name: "photos iteration error", count: 2, failAt: "photos_rows", wantErr: failure},
+		{name: "tags scan error", count: 1, failAt: "tags_scan"},
+		{name: "photos scan error", count: 1, failAt: "photos_scan"},
 		{name: "commit error", count: 1, failAt: "commit", wantErr: failure},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -58,6 +94,7 @@ func TestProfileRepo_Feed(t *testing.T) {
 					rows := sqlmock.NewRows(append(append([]string{}, profileRowColumns...), "liked_me"))
 					for i := 0; i < tc.count; i++ {
 						values := profileValues(int64(7+i), int64(101+i), true)
+						values[6] = int64(11 + i)
 						if tc.failAt == "scan" {
 							values[0] = "invalid ID"
 						}
@@ -67,15 +104,45 @@ func TestProfileRepo_Feed(t *testing.T) {
 						rows.RowError(1, failure)
 					}
 					query.WillReturnRows(rows).RowsWillBeClosed()
-					if tc.failAt != "rows" && tc.failAt != "scan" {
-						for i := 0; i < tc.count && i < 2; i++ {
-							tags := mock.ExpectQuery(tagsSQL).WithArgs(int64(11))
-							if tc.failAt == "relations" {
-								tags.WillReturnError(failure)
-								break
+					if tc.failAt != "rows" && tc.failAt != "scan" && tc.count > 0 {
+						var versionIDs, profileIDs idSetArgument
+						tagsRows := sqlmock.NewRows([]string{"profile_version_id", "id", "name"})
+						photosRows := sqlmock.NewRows([]string{"profile_id", "id", "storage_key", "position"})
+						for i := 0; i < min(tc.count, 2); i++ {
+							versionIDs = append(versionIDs, int64(11+i))
+							profileIDs = append(profileIDs, int64(7+i))
+						}
+						// Return profiles in reverse order to verify association by ID.
+						for i := min(tc.count, 2) - 1; i >= 0; i-- {
+							var tagID, photoID any = int64(1 + i), int64(21 + i)
+							if tc.failAt == "tags_scan" {
+								tagID = "invalid ID"
 							}
-							tags.WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow(int64(1), "coffee")).RowsWillBeClosed()
-							expectPhotos(mock, int64(7+i), 1)
+							if tc.failAt == "photos_scan" {
+								photoID = "invalid ID"
+							}
+							tagsRows.AddRow(int64(11+i), tagID, []string{"coffee", "music"}[i])
+							photosRows.AddRow(int64(7+i), photoID, photoKey(i+1), 1)
+						}
+						tags := mock.ExpectQuery(feedTagsSQL).WithArgs(versionIDs)
+						if tc.failAt == "tags" {
+							tags.WillReturnError(failure)
+						} else {
+							if tc.failAt == "tags_rows" {
+								tagsRows.RowError(1, failure)
+							}
+							tags.WillReturnRows(tagsRows).RowsWillBeClosed()
+							if tc.failAt != "tags_rows" && tc.failAt != "tags_scan" {
+								photos := mock.ExpectQuery(feedPhotosSQL).WithArgs(profileIDs)
+								if tc.failAt == "photos" {
+									photos.WillReturnError(failure)
+								} else {
+									if tc.failAt == "photos_rows" {
+										photosRows.RowError(1, failure)
+									}
+									photos.WillReturnRows(photosRows).RowsWillBeClosed()
+								}
+							}
 						}
 					}
 				}
@@ -91,7 +158,7 @@ func TestProfileRepo_Feed(t *testing.T) {
 			// Act
 			got, next, err := repo.GetCandidatesByCursorAndLimit(context.Background(), 42, 2, tc.cursor)
 			// Assert
-			if tc.failAt == "scan" {
+			if tc.failAt == "scan" || tc.failAt == "tags_scan" || tc.failAt == "photos_scan" {
 				if err == nil || got != nil || next != nil {
 					t.Fatalf("got=%v next=%v err=%v", got, next, err)
 				}
@@ -119,10 +186,10 @@ func TestProfileRepo_Feed(t *testing.T) {
 			}
 			for i, candidate := range got {
 				p := candidate.Profile
-				if p.ID != int64(7+i) || p.UserID != int64(101+i) || candidate.LikedMe != (i%2 == 0) || p.CurrentVersion.ID != 11 || *p.CurrentVersion.Name != "Anna" || !p.HasSearchFilter {
+				if p.ID != int64(7+i) || p.UserID != int64(101+i) || candidate.LikedMe != (i%2 == 0) || p.CurrentVersion.ID != int64(11+i) || *p.CurrentVersion.Name != "Anna" || !p.HasSearchFilter {
 					t.Fatalf("candidate=%+v", candidate)
 				}
-				if !reflect.DeepEqual(p.Tags, []model.Tag{{ID: 1, Name: "coffee"}}) || !reflect.DeepEqual(p.Photos, []model.Photo{{ID: 1, StorageKey: photoKey(1), Position: 1}}) {
+				if !reflect.DeepEqual(p.Tags, []model.Tag{{ID: int64(1 + i), Name: []string{"coffee", "music"}[i]}}) || !reflect.DeepEqual(p.Photos, []model.Photo{{ID: int64(21 + i), StorageKey: photoKey(i + 1), Position: 1}}) {
 					t.Fatalf("relations=%+v", p)
 				}
 			}

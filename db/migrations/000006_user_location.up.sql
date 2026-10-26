@@ -12,6 +12,4 @@ CREATE TABLE "user_location" (
     CONSTRAINT user_location_dates CHECK (created_at <= updated_at)
 );
 
-CREATE INDEX user_location_coordinates_gist ON user_location USING GIST (coordinates);
-
 COMMIT;

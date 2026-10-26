@@ -11,13 +11,42 @@ import (
 	"dating-app/internal/model"
 )
 
-type ProfileRepo struct {
-	db *sql.DB
-}
+const lockProfileByUserIDQuery = `SELECT id FROM profile WHERE user_id = $1 FOR UPDATE`
 
-func NewProfileRepository(db *sql.DB) *ProfileRepo {
-	return &ProfileRepo{db: db}
-}
+const insertPhotoQuery = `INSERT INTO photo (profile_id, storage_key, position) VALUES ($1, $2, $3)`
+
+const deletePhotoQuery = `DELETE FROM photo WHERE id = $1`
+
+const shiftPhotoPositionsQuery = `UPDATE photo SET position = position - 1, updated_at = CURRENT_TIMESTAMP
+								  WHERE profile_id = $1 AND position > $2`
+
+const reorderPhotosQuery = `UPDATE photo SET position = o.position, updated_at = CURRENT_TIMESTAMP
+							FROM unnest($2::bigint[]) WITH ORDINALITY AS o(id, position)
+						  	WHERE photo.id = o.id AND photo.profile_id = $1 AND photo.position <> o.position`
+
+const selectTagsByNamesQuery = `SELECT id, name FROM tag WHERE name = ANY($1)`
+
+const touchProfileQuery = `UPDATE profile SET updated_at = CURRENT_TIMESTAMP WHERE id = $1`
+
+const selectProfileTagsQuery = `SELECT t.id, t.name FROM tag AS t
+							    JOIN profile_tag AS pt ON pt.tag_id = t.id WHERE pt.profile_version_id = $1 ORDER BY t.id`
+
+const selectProfilePhotosQuery = `SELECT id, storage_key, position FROM photo WHERE profile_id = $1 ORDER BY position`
+
+const selectTagsByIDsQuery = `SELECT pt.profile_version_id, t.id, t.name
+								  FROM profile_tag AS pt
+								  JOIN tag AS t ON t.id = pt.tag_id
+								  WHERE pt.profile_version_id = ANY($1::bigint[])
+								  ORDER BY pt.profile_version_id, t.id`
+
+const selectPhotosByIDsQuery = `SELECT profile_id, id, storage_key, position
+								FROM photo
+								WHERE profile_id = ANY($1::bigint[])
+								ORDER BY profile_id, position`
+
+const insertProfileTagsQuery = `INSERT INTO profile_tag (profile_version_id, tag_id)
+								SELECT $1, tag_id
+								FROM unnest($2::bigint[]) AS tags(tag_id)`
 
 const profileSelect = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
 	       EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id), l.city,
@@ -66,6 +95,14 @@ const feedSelect = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
 					AND ((f.sex <> 'all' AND f.sex <> v.sex)
 					OR date_part('year', age($4::date, v.birth_date)) NOT BETWEEN f.age_from AND f.age_to))
 			ORDER BY p.user_id ASC LIMIT $3`
+
+type ProfileRepo struct {
+	db *sql.DB
+}
+
+func NewProfileRepository(db *sql.DB) *ProfileRepo {
+	return &ProfileRepo{db: db}
+}
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -160,7 +197,7 @@ func (r *ProfileRepo) GetByUserIDCurrentProfile(ctx context.Context, userID int6
 func loadProfileByUserID(ctx context.Context, tx *sql.Tx, userID int64, lock bool) (*model.Profile, error) {
 	if lock {
 		var id int64
-		err := tx.QueryRowContext(ctx, `SELECT id FROM profile WHERE user_id = $1 FOR UPDATE`, userID).Scan(&id)
+		err := tx.QueryRowContext(ctx, lockProfileByUserIDQuery, userID).Scan(&id)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, model.ErrNotFound
 		}
@@ -232,7 +269,7 @@ func (r *ProfileRepo) AddPhoto(ctx context.Context, userID int64, storageKey str
 	}
 
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO photo (profile_id, storage_key, position) VALUES ($1, $2, $3)`,
+		insertPhotoQuery,
 		profile.ID, storageKey, len(profile.Photos)+1)
 	if err != nil {
 		return fmt.Errorf("add photo profile_id=%d: %w", profile.ID, err)
@@ -275,12 +312,11 @@ func (r *ProfileRepo) DeletePhoto(ctx context.Context, userID, photoID int64) (s
 	}
 	photo := profile.Photos[idx]
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM photo WHERE id = $1`, photo.ID); err != nil {
+	if _, err := tx.ExecContext(ctx, deletePhotoQuery, photo.ID); err != nil {
 		return "", fmt.Errorf("delete photo id=%d: %w", photo.ID, err)
 	}
 	_, err = tx.ExecContext(ctx,
-		`UPDATE photo SET position = position - 1, updated_at = CURRENT_TIMESTAMP
-		 WHERE profile_id = $1 AND position > $2`, profile.ID, photo.Position)
+		shiftPhotoPositionsQuery, profile.ID, photo.Position)
 	if err != nil {
 		return "", fmt.Errorf("shift photos profile_id=%d: %w", profile.ID, err)
 	}
@@ -316,9 +352,7 @@ func (r *ProfileRepo) ReorderPhotos(ctx context.Context, userID int64, photoIDs 
 	}
 
 	_, err = tx.ExecContext(ctx,
-		`UPDATE photo SET position = o.position, updated_at = CURRENT_TIMESTAMP
-		 FROM unnest($2::bigint[]) WITH ORDINALITY AS o(id, position)
-		 WHERE photo.id = o.id AND photo.profile_id = $1 AND photo.position <> o.position`,
+		reorderPhotosQuery,
 		profile.ID, photoIDs)
 	if err != nil {
 		return fmt.Errorf("reorder photos profile_id=%d: %w", profile.ID, err)
@@ -359,9 +393,9 @@ func (r *ProfileRepo) GetCandidatesByCursorAndLimit(ctx context.Context, userID 
 		if err != nil {
 			return nil, nil, fmt.Errorf("feed: scan profile: %w", err)
 		}
-
 		candidates = append(candidates, *candidate)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, nil, fmt.Errorf("feed: read profiles: %w", err)
 	}
@@ -373,16 +407,97 @@ func (r *ProfileRepo) GetCandidatesByCursorAndLimit(ctx context.Context, userID 
 		nextCursor = &id
 	}
 
+	byProfileID := make(map[int64]*model.Profile)
+	byVersionID := make(map[int64]*model.Profile)
 	for i := range candidates {
-		if err := loadRelations(ctx, tx, &candidates[i].Profile); err != nil {
-			return nil, nil, fmt.Errorf("feed: %w", err)
+		p := &candidates[i].Profile
+
+		byProfileID[p.ID] = p
+		if p.CurrentVersion.ID != 0 {
+			byVersionID[p.CurrentVersion.ID] = p
 		}
+	}
+
+	if err := loadCandidateRelations(ctx, tx, byProfileID, byVersionID); err != nil {
+		return nil, nil, fmt.Errorf("feed: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, nil, fmt.Errorf("feed: commit read: %w", err)
 	}
+
 	return candidates, nextCursor, nil
+}
+
+func loadCandidateRelations(ctx context.Context, tx *sql.Tx, byProfileID, byVersionID map[int64]*model.Profile) error {
+
+	if len(byProfileID) == 0 {
+		return nil
+	}
+
+	versionIDs := make([]int64, 0, len(byVersionID))
+	for id := range byVersionID {
+		versionIDs = append(versionIDs, id)
+	}
+
+	profileIDs := make([]int64, 0, len(byProfileID))
+	for id := range byProfileID {
+		profileIDs = append(profileIDs, id)
+	}
+
+	tagRows, err := tx.QueryContext(ctx, selectTagsByIDsQuery, versionIDs)
+	if err != nil {
+		return fmt.Errorf("select candidate tags: %w", err)
+	}
+	defer tagRows.Close()
+
+	for tagRows.Next() {
+		var versionID int64
+		var tag model.Tag
+
+		if err := tagRows.Scan(&versionID, &tag.ID, &tag.Name); err != nil {
+			return fmt.Errorf("scan candidate tag: %w", err)
+		}
+		p := byVersionID[versionID]
+		p.Tags = append(p.Tags, tag)
+	}
+
+	if err := tagRows.Err(); err != nil {
+		return fmt.Errorf("read candidate tags: %w", err)
+	}
+
+	if err := tagRows.Close(); err != nil {
+		return fmt.Errorf("close candidate tags: %w", err)
+	}
+
+	photoRows, err := tx.QueryContext(ctx, selectPhotosByIDsQuery, profileIDs)
+
+	if err != nil {
+		return fmt.Errorf("select candidate photos: %w", err)
+	}
+	defer photoRows.Close()
+
+	for photoRows.Next() {
+		var profileID int64
+		var photo model.Photo
+
+		if err := photoRows.Scan(&profileID, &photo.ID, &photo.StorageKey, &photo.Position); err != nil {
+			return fmt.Errorf("scan candidate photo: %w", err)
+		}
+
+		p := byProfileID[profileID]
+		p.Photos = append(p.Photos, photo)
+	}
+
+	if err := photoRows.Err(); err != nil {
+		return fmt.Errorf("read candidate photos: %w", err)
+	}
+
+	if err := photoRows.Close(); err != nil {
+		return fmt.Errorf("close candidate photos: %w", err)
+	}
+
+	return nil
 }
 
 // loadRelations дополняет профиль тегами актуальной версии и фотографиями.
@@ -418,13 +533,20 @@ func insertProfileVersion(ctx context.Context, tx *sql.Tx, profileID int64, v *m
 		return 0, fmt.Errorf("insert profile version profile_id=%d: %w", profileID, err)
 	}
 
-	for _, tag := range v.Tags {
-		_, err := tx.ExecContext(ctx,
-			`INSERT INTO profile_tag (profile_version_id, tag_id) VALUES ($1, $2)`, versionID, tag.ID)
+	if len(v.Tags) > 0 {
+		tagIDs := make([]int64, 0, len(v.Tags))
+
+		for _, tag := range v.Tags {
+			tagIDs = append(tagIDs, tag.ID)
+		}
+
+		_, err := tx.ExecContext(ctx, insertProfileTagsQuery, versionID, tagIDs)
+
 		if err != nil {
-			return 0, fmt.Errorf("insert profile tag version_id=%d tag_id=%d: %w", versionID, tag.ID, err)
+			return 0, fmt.Errorf("insert profile tags version_id=%d: %w", versionID, err)
 		}
 	}
+
 	return versionID, nil
 }
 
@@ -439,7 +561,7 @@ func findTags(ctx context.Context, tx *sql.Tx, names []string) ([]model.Tag, err
 		return tags, nil
 	}
 
-	rows, err := tx.QueryContext(ctx, `SELECT id, name FROM tag WHERE name = ANY($1)`, names)
+	rows, err := tx.QueryContext(ctx, selectTagsByNamesQuery, names)
 	if err != nil {
 		return nil, fmt.Errorf("find tags: %w", err)
 	}
@@ -468,7 +590,7 @@ func findTags(ctx context.Context, tx *sql.Tx, names []string) ([]model.Tag, err
 }
 
 func touchProfile(ctx context.Context, tx *sql.Tx, profileID int64) error {
-	_, err := tx.ExecContext(ctx, `UPDATE profile SET updated_at = CURRENT_TIMESTAMP WHERE id = $1`, profileID)
+	_, err := tx.ExecContext(ctx, touchProfileQuery, profileID)
 	if err != nil {
 		return fmt.Errorf("update profile id=%d timestamp: %w", profileID, err)
 	}
@@ -477,8 +599,7 @@ func touchProfile(ctx context.Context, tx *sql.Tx, profileID int64) error {
 
 func loadTags(ctx context.Context, tx *sql.Tx, versionID int64) ([]model.Tag, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT t.id, t.name FROM tag AS t
-		JOIN profile_tag AS pt ON pt.tag_id = t.id WHERE pt.profile_version_id = $1 ORDER BY t.id`, versionID)
+		selectProfileTagsQuery, versionID)
 	if err != nil {
 		return nil, err
 	}
@@ -497,7 +618,7 @@ func loadTags(ctx context.Context, tx *sql.Tx, versionID int64) ([]model.Tag, er
 
 func loadPhotos(ctx context.Context, tx *sql.Tx, profileID int64) ([]model.Photo, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT id, storage_key, position FROM photo WHERE profile_id = $1 ORDER BY position`, profileID)
+		selectProfilePhotosQuery, profileID)
 	if err != nil {
 		return nil, err
 	}
