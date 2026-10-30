@@ -36,4 +36,8 @@ var (
 	ErrLocationNotFound           = errors.New("location not found")
 	ErrCityNotFound               = errors.New("city not found")
 	ErrGeocoderQuotaExceeded      = errors.New("geocoder quota exceeded")
+	ErrTimepadStatusCode          = errors.New("timepad status code")
+	ErrInvalidCity                = errors.New("invalid city")
+	ErrNoEvents                   = errors.New("no events")
+	ErrSearchAlreadyActive        = errors.New("search already active")
 )
