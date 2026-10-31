@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"dating-app/internal/model"
 	"errors"
+	"fmt"
 )
 
 type MatchRepository struct {
@@ -29,5 +30,8 @@ func (r *MatchRepository) GetParticipants(ctx context.Context, userID, matchID i
 		return [2]int64{}, model.ErrNotFound
 	}
 
+	if err != nil {
+		return [2]int64{}, fmt.Errorf("get match participants: %w", err)
+	}
 	return partisipants, nil
 }
