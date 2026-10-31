@@ -1064,6 +1064,176 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/matches:
+    get:
+      security:
+        - cookieAuth: []
+      summary: Получить список мэтчей
+      description: >-
+        Мэтч возникает, когда оба пользователя поставили друг другу like или super_like
+        (POST /api/v1/feed/swipe). Возвращаются мэтчи текущего пользователя от новых к старым
+        с краткими данными собеседника для страницы «Симпатии».
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 48
+            default: 12
+
+        - name: cursor
+          description: Курсор из next_cursor предыдущего ответа. В первом запросе не передаётся.
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            format: int64
+
+      responses:
+        '200':
+          description: Мэтчи загружены. Если мэтчей нет, items пустой, next_cursor равен null.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, next_cursor]
+                properties:
+                  total:
+                    type: integer
+                    description: Общее число мэтчей пользователя, не зависит от cursor.
+                    example: 12
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [match_id, user_id, name, age, photo_url, compatibility, is_new, created_at]
+                      properties:
+                        match_id:
+                          type: integer
+                          format: int64
+                          example: 15
+                        user_id:
+                          description: Идентификатор собеседника.
+                          type: integer
+                          format: int64
+                          example: 42
+                        name:
+                          type: string
+                          nullable: true
+                          example: Аня
+                        age:
+                          type: integer
+                          nullable: true
+                          example: 22
+                        photo_url:
+                          type: string
+                          nullable: true
+                          description: URL главного фото собеседника. null, если фото нет.
+                          example: http://localhost:8080/cats/cat-1.jpg
+                        compatibility:
+                          type: number
+                          format: double
+                          minimum: 0
+                          maximum: 1
+                          nullable: true
+                          description: Совместимость по Big Five. null, если кто-то из пары не прошёл тест.
+                          example: 0.87
+                        is_new:
+                          type: boolean
+                          description: Текущий пользователь ещё не открывал этот мэтч (POST /api/v1/matches/{match_id}/seen).
+                          example: true
+                        created_at:
+                          type: string
+                          format: date-time
+                          example: '2026-10-18T12:00:00Z'
+                  next_cursor:
+                    type: integer
+                    format: int64
+                    nullable: true
+                    description: match_id последнего элемента, если есть следующая страница.
+                    example: 15
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/matches/summary:
+    get:
+      security:
+        - cookieAuth: []
+      summary: Счётчик мэтчей для навигации
+      description: >-
+        Лёгкая ручка для пункта «Симпатии» в сайдбаре и таб-баре: общее число мэтчей
+        и сколько из них текущий пользователь ещё не открывал. Если has_new равен true,
+        клиент выделяет счётчик. Мэтч перестаёт быть новым после POST /api/v1/matches/{match_id}/seen.
+      responses:
+        '200':
+          description: Счётчик получен
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [total, new_count, has_new]
+                properties:
+                  total:
+                    type: integer
+                    minimum: 0
+                    example: 12
+                  new_count:
+                    type: integer
+                    minimum: 0
+                    description: Мэтчи, которые текущий пользователь ещё не открывал (is_new в GET /api/v1/matches).
+                    example: 3
+                  has_new:
+                    type: boolean
+                    description: true, если new_count больше нуля.
+                    example: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/matches/{match_id}/seen:
+    post:
+      security:
+        - cookieAuth: []
+      summary: Отметить мэтч просмотренным
+      description: >-
+        Снимает с мэтча признак is_new для текущего пользователя; у собеседника признак не меняется.
+        Клиент вызывает ручку при открытии карточки мэтча. Повторный вызов безопасен.
+      parameters:
+        - name: match_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        '204':
+          description: Мэтч отмечен просмотренным
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Мэтч не найден или пользователь не участник пары
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: MATCH_NOT_FOUND
+                  message: Мэтч не найден
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
 components:
   securitySchemes:
     cookieAuth:

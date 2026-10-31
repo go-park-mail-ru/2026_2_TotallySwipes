@@ -2,6 +2,7 @@ package dto
 
 import (
 	"dating-app/internal/model"
+	"fmt"
 	"net/url"
 	"strconv"
 )
@@ -11,20 +12,26 @@ const (
 	feedMaxLimit     = 10
 )
 
-type FeedQuery struct {
+type PageQuery struct {
 	Limit  int
 	Cursor *int64
 }
 
+type FeedQuery = PageQuery
+
 // ParseFeedQuery разбирает необязательные limit и cursor; пустая map - запрос корректен
 func ParseFeedQuery(q url.Values) (FeedQuery, map[string]string) {
+	return parsePageQuery(q, feedDefaultLimit, feedMaxLimit)
+}
+
+func parsePageQuery(q url.Values, defaultLimit, maxLimit int) (PageQuery, map[string]string) {
 	errs := make(map[string]string)
-	query := FeedQuery{Limit: feedDefaultLimit}
+	query := PageQuery{Limit: defaultLimit}
 
 	if v, ok := singleParam(q, "limit", errs); ok {
 		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 || n > feedMaxLimit {
-			errs["limit"] = "limit должен быть целым числом от 1 до 10"
+		if err != nil || n < 1 || n > maxLimit {
+			errs["limit"] = fmt.Sprintf("limit должен быть целым числом от 1 до %d", maxLimit)
 		} else {
 			query.Limit = n
 		}

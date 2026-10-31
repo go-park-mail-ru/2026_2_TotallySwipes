@@ -13,6 +13,7 @@ var (
 	// ErrSessionNotOpened означает, что аккаунт создан, но сессия не открыта.
 	ErrSessionNotOpened       = errors.New("account created, session not opened")
 	ErrInvalidFeedRequest     = errors.New("invalid feed request")
+	ErrInvalidMatchesRequest  = errors.New("invalid matches request")
 	ErrInvalidTestRequest     = errors.New("invalid test request")
 	ErrInvalidAnswers         = errors.New("invalid test answers")
 	ErrTestNotFound           = errors.New("test not found")
@@ -27,6 +28,7 @@ var (
 	// ErrLastPhoto - нельзя удалить единственное фото заполненной анкеты
 	ErrLastPhoto     = errors.New("last photo of completed profile")
 	ErrPhotoNotFound = errors.New("photo not found")
+	ErrMatchNotFound = errors.New("match not found")
 	// ErrPhotoOrderMismatch - новый порядок не совпадает с текущим набором фото анкеты
 	ErrPhotoOrderMismatch = errors.New("photo order mismatch")
 )
