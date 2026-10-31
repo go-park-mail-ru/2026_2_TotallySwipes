@@ -140,6 +140,37 @@ func (r *ProfileRepo) GetByUserIDCurrentProfile(ctx context.Context, userID int6
 	return profile, nil
 }
 
+// GetMatchedProfile загружает анкету targetID и id мэтча с viewerID; model.ErrNotFound, если мэтча или анкеты нет
+func (r *ProfileRepo) GetMatchedProfile(ctx context.Context, viewerID, targetID int64) (*model.Profile, int64, error) {
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return nil, 0, fmt.Errorf("get matched profile: begin read: %w", err)
+	}
+	defer tx.Rollback()
+
+	var matchID int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT id FROM match
+		WHERE first_user_id = LEAST($1::bigint, $2::bigint) AND second_user_id = GREATEST($1::bigint, $2::bigint)`,
+		viewerID, targetID).Scan(&matchID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, 0, model.ErrNotFound
+	}
+	if err != nil {
+		return nil, 0, fmt.Errorf("get matched profile: find match: %w", err)
+	}
+
+	profile, err := loadProfileByUserID(ctx, tx, targetID, false)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, 0, fmt.Errorf("get matched profile: commit read: %w", err)
+	}
+	return profile, matchID, nil
+}
+
 // loadProfileByUserID читает профиль в транзакции; lock - заблокировать строку профиля
 func loadProfileByUserID(ctx context.Context, tx *sql.Tx, userID int64, lock bool) (*model.Profile, error) {
 	if lock {

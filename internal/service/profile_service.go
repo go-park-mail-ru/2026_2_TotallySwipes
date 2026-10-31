@@ -37,6 +37,8 @@ type ProfileRepository interface {
 	ReorderPhotos(ctx context.Context, userID int64, photoIDs []int64) error
 	// GetProfilesByCursorAndLimit возвращает страницу заполненных анкет и курсор следующей (nil в конце).
 	GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error)
+	// GetMatchedProfile возвращает анкету targetID и id мэтча с viewerID; model.ErrNotFound, если мэтча нет.
+	GetMatchedProfile(ctx context.Context, viewerID, targetID int64) (*model.Profile, int64, error)
 }
 
 type ProfileService struct {
@@ -175,7 +177,7 @@ func (s *ProfileService) GetNextFeed(ctx context.Context, userID int64, limit in
 	if len(userProfile.Missing()) > 0 {
 		return nil, fmt.Errorf("get feed user id=%d: profile incomplete: %w", userID, model.ErrProfileRequired)
 	}
-	userVector, userHasTest := feedBigFive(userProfile.CurrentPsycho)
+	userVector, _ := feedBigFive(userProfile.CurrentPsycho)
 	candidates, nextCursor, err := s.profileRepo.GetProfilesByCursorAndLimit(ctx, userID, limit, cursor)
 
 	if err != nil {
@@ -191,54 +193,91 @@ func (s *ProfileService) GetNextFeed(ctx context.Context, userID int64, limit in
 			continue
 		}
 
-		profileVector, candidateHasTest := feedBigFive(profile.CurrentPsycho)
-		var compatibilityRes *float64
-		if userHasTest && candidateHasTest {
-			compatibility, err := s.compatibilitySvc.CalculateDistance(*userVector, *profileVector)
-			if err != nil {
-				return nil, fmt.Errorf("get feed compatibility user id=%d: %w", profile.UserID, err)
-			}
-			compatibilityRes = &compatibility
+		item, err := s.feedItem(ctx, &profile, userVector)
+		if err != nil {
+			return nil, fmt.Errorf("get feed: %w", err)
 		}
-
-		// В ленту попадают только заполненные анкеты, обязательные поля заданы
-		fields := profile.CurrentVersion.ProfileFields
-		item := model.FeedItem{
-			UserID:        profile.UserID,
-			Name:          *fields.Name,
-			Age:           model.AgeAt(*fields.BirthDate, time.Now()),
-			AboutMe:       fields.AboutMe,
-			Education:     fields.Education,
-			Work:          fields.Work,
-			Smoking:       fields.Smoking,
-			Alcohol:       fields.Alcohol,
-			Height:        fields.Height,
-			DatingGoal:    *fields.DatingGoal,
-			Compatibility: compatibilityRes,
-			LikedMe:       candidate.LikedMe,
-			Tags:          make([]string, 0, len(profile.Tags)),
-			Photos:        make([]model.FeedPhoto, 0, len(profile.Photos)),
-		}
-
-		for _, tag := range profile.Tags {
-			item.Tags = append(item.Tags, tag.Name)
-		}
-
-		for _, photo := range profile.Photos {
-
-			url, err := s.photoURLs.GetPhotoURL(ctx, photo.StorageKey)
-
-			if err != nil {
-				return nil, fmt.Errorf("get feed photo id=%d: %w", photo.ID, err)
-			}
-
-			item.Photos = append(item.Photos, model.FeedPhoto{ID: photo.ID, URL: url})
-		}
+		item.LikedMe = candidate.LikedMe
 
 		page.Items = append(page.Items, item)
 	}
 
 	return page, nil
+}
+
+// GetMatchedProfile возвращает анкету собеседника только при наличии мэтча, иначе model.ErrProfileNotFound
+func (s *ProfileService) GetMatchedProfile(ctx context.Context, viewerID, targetID int64) (*model.MatchedProfile, error) {
+	if viewerID <= 0 || targetID <= 0 || viewerID == targetID {
+		return nil, fmt.Errorf("get matched profile viewer=%d target=%d: %w", viewerID, targetID, model.ErrProfileNotFound)
+	}
+
+	profile, matchID, err := s.profileRepo.GetMatchedProfile(ctx, viewerID, targetID)
+	if errors.Is(err, model.ErrNotFound) {
+		return nil, fmt.Errorf("get matched profile viewer=%d target=%d: %w", viewerID, targetID, model.ErrProfileNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get matched profile: %w", err)
+	}
+	if missing := profile.Missing(); len(missing) > 0 {
+		slog.WarnContext(ctx, "matched profile is incomplete", "user_id", targetID, "missing", missing)
+		return nil, fmt.Errorf("get matched profile user id=%d: incomplete: %w", targetID, model.ErrProfileNotFound)
+	}
+
+	var viewerVector *model.BigFive
+	viewer, err := s.profileRepo.GetByUserIDCurrentProfile(ctx, viewerID)
+	if err != nil && !errors.Is(err, model.ErrNotFound) {
+		return nil, fmt.Errorf("get matched profile viewer: %w", err)
+	}
+	if viewer != nil {
+		viewerVector, _ = feedBigFive(viewer.CurrentPsycho)
+	}
+
+	item, err := s.feedItem(ctx, profile, viewerVector)
+	if err != nil {
+		return nil, fmt.Errorf("get matched profile: %w", err)
+	}
+	item.LikedMe = true
+	return &model.MatchedProfile{MatchID: matchID, Item: item}, nil
+}
+
+// feedItem собирает карточку заполненной анкеты: возраст, теги, URL фото и совместимость, если у обоих есть тест
+func (s *ProfileService) feedItem(ctx context.Context, profile *model.Profile, viewerVector *model.BigFive) (model.FeedItem, error) {
+	var compatibilityRes *float64
+	if profileVector, ok := feedBigFive(profile.CurrentPsycho); ok && viewerVector != nil {
+		compatibility, err := s.compatibilitySvc.CalculateDistance(*viewerVector, *profileVector)
+		if err != nil {
+			return model.FeedItem{}, fmt.Errorf("compatibility user id=%d: %w", profile.UserID, err)
+		}
+		compatibilityRes = &compatibility
+	}
+
+	fields := profile.CurrentVersion.ProfileFields
+	item := model.FeedItem{
+		UserID:        profile.UserID,
+		Name:          *fields.Name,
+		Age:           model.AgeAt(*fields.BirthDate, time.Now()),
+		AboutMe:       fields.AboutMe,
+		Education:     fields.Education,
+		Work:          fields.Work,
+		Smoking:       fields.Smoking,
+		Alcohol:       fields.Alcohol,
+		Height:        fields.Height,
+		DatingGoal:    *fields.DatingGoal,
+		Compatibility: compatibilityRes,
+		Tags:          make([]string, 0, len(profile.Tags)),
+		Photos:        make([]model.FeedPhoto, 0, len(profile.Photos)),
+	}
+	for _, tag := range profile.Tags {
+		item.Tags = append(item.Tags, tag.Name)
+	}
+	for _, photo := range profile.Photos {
+		url, err := s.photoURLs.GetPhotoURL(ctx, photo.StorageKey)
+		if err != nil {
+			return model.FeedItem{}, fmt.Errorf("photo id=%d: %w", photo.ID, err)
+		}
+		item.Photos = append(item.Photos, model.FeedPhoto{ID: photo.ID, URL: url})
+	}
+	return item, nil
 }
 
 // profileRequired переводит model.ErrNotFound в model.ErrProfileRequired (409 PROFILE_REQUIRED)

@@ -170,6 +170,7 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 	api.Handle("/profile/me/photos", authed(h.profile.AddPhoto)).Methods(http.MethodPost)
 	api.Handle("/profile/me/photos/order", authed(h.profile.ReorderPhotos)).Methods(http.MethodPut)
 	api.Handle("/profile/me/photos/{photo_id}", authed(h.profile.DeletePhoto)).Methods(http.MethodDelete)
+	api.Handle("/profiles/{user_id}", authed(h.profile.GetByUserID)).Methods(http.MethodGet)
 
 	api.Handle("/tests/current", authed(h.psychoTest.Current)).Methods(http.MethodGet)
 	api.Handle("/tests/results/me", authed(h.psychoTest.MyResult)).Methods(http.MethodGet)

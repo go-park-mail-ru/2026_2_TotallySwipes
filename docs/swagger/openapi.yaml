@@ -598,6 +598,158 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/profiles/{user_id}:
+    get:
+      security:
+      - cookieAuth: []
+      summary: Посмотреть анкету собеседника
+      description: Возвращает анкету другого пользователя в том же формате, что карточка ленты (GET /api/v1/feed),
+        и match_id. Доступно только при мэтче между текущим пользователем и владельцем анкеты. Если мэтча нет, анкеты
+        нет или запрошена своя анкета, возвращается 404 PROFILE_NOT_FOUND, чтобы по ответу нельзя было узнать, существует
+        ли пользователь. Свою анкету клиент берёт из GET /api/v1/profile/me.
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+      responses:
+        '200':
+          description: Анкета получена
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - match_id
+                - user_id
+                - name
+                - age
+                - about_me
+                - education
+                - work
+                - smoking
+                - alcohol
+                - height
+                - dating_goal
+                - compatibility
+                - tags
+                - photos
+                - liked_me
+                properties:
+                  match_id:
+                    type: integer
+                    format: int64
+                    minimum: 1
+                    description: Мэтч текущего пользователя с владельцем анкеты; нужен для перехода к переписке.
+                    example: 15
+                  user_id:
+                    minimum: 1
+                    type: integer
+                    format: int64
+                    example: 42
+                  name:
+                    minLength: 1
+                    maxLength: 100
+                    pattern: \S
+                    description: Имя не должно состоять только из пробелов.
+                    type: string
+                    example: Аня
+                  about_me:
+                    type: string
+                    nullable: true
+                    description: Описание пользователя в анкете. null, если описание не задано.
+                    example: Люблю путешествия и настольные игры.
+                  education:
+                    allOf:
+                    - $ref: '#/components/schemas/Education'
+                    nullable: true
+                  work:
+                    type: string
+                    nullable: true
+                    maxLength: 100
+                  smoking:
+                    allOf:
+                    - $ref: '#/components/schemas/Attitude'
+                    nullable: true
+                  alcohol:
+                    allOf:
+                    - $ref: '#/components/schemas/Attitude'
+                    nullable: true
+                  height:
+                    type: integer
+                    minimum: 100
+                    maximum: 250
+                    nullable: true
+                    description: Рост в сантиметрах.
+                  dating_goal:
+                    $ref: '#/components/schemas/DatingGoal'
+                  compatibility:
+                    type: number
+                    format: double
+                    minimum: 0
+                    maximum: 1
+                    nullable: true
+                    description: Совместимость с текущим пользователем, рассчитанная сервисом совместимости. Чем
+                      выше значение, тем выше совместимость; 0 — минимальная, 1 — максимальная. Значение не является
+                      вероятностью успешных отношений. null, если текущий пользователь или кандидат ещё не прошёл
+                      тест.
+                    example: 0.87
+                  age:
+                    minimum: 18
+                    type: integer
+                    example: 22
+                  tags:
+                    maxItems: 10
+                    uniqueItems: true
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TagKey'
+                    example:
+                    - coffee
+                    - music
+                  photos:
+                    type: array
+                    minItems: 0
+                    maxItems: 6
+                    items:
+                      type: object
+                      required:
+                      - id
+                      - url
+                      properties:
+                        id:
+                          minimum: 1
+                          type: integer
+                          format: int64
+                          example: 7
+                        url:
+                          minLength: 1
+                          type: string
+                          example: /media/photo-7.jpg
+                  liked_me:
+                    type: boolean
+                    description: Для анкеты из мэтча всегда true.
+                    example: false
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Мэтча с пользователем нет или анкета недоступна
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: PROFILE_NOT_FOUND
+                  message: Целевая анкета не найдена или недоступна
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/v1/filters/me:
     get:
       security:

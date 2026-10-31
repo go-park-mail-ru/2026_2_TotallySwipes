@@ -26,6 +26,7 @@ type ProfileService interface {
 	AddPhoto(ctx context.Context, userID int64, upload model.PhotoUpload) ([]model.Photo, error)
 	DeletePhoto(ctx context.Context, userID, photoID int64) ([]model.Photo, error)
 	ReorderPhotos(ctx context.Context, userID int64, photoIDs []int64) ([]model.Photo, error)
+	GetMatchedProfile(ctx context.Context, viewerID, targetID int64) (*model.MatchedProfile, error)
 }
 
 type ProfileHandler struct {
@@ -167,4 +168,20 @@ func readPhotoUpload(w http.ResponseWriter, r *http.Request) (model.PhotoUpload,
 		return model.PhotoUpload{}, false
 	}
 	return upload, true
+}
+
+// GetByUserID - GET /profiles/{user_id}: анкета собеседника, доступна только при мэтче
+func (h *ProfileHandler) GetByUserID(w http.ResponseWriter, r *http.Request, userID int64) {
+	targetID, err := strconv.ParseInt(mux.Vars(r)["user_id"], 10, 64)
+	if err != nil || targetID <= 0 {
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, "Некорректный user_id", nil)
+		return
+	}
+
+	profile, err := h.svc.GetMatchedProfile(r.Context(), userID, targetID)
+	if err != nil {
+		writeServiceError(r.Context(), w, "get matched profile", err)
+		return
+	}
+	writeJSON(r.Context(), w, http.StatusOK, dto.NewMatchedProfileResponse(profile))
 }

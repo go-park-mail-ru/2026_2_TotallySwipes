@@ -87,26 +87,40 @@ func NewFeedResponse(page *model.FeedPage) FeedResponse {
 		NextCursor: page.NextCursor,
 	}
 	for _, item := range page.Items {
-		photos := make([]FeedPhoto, 0, len(item.Photos))
-		for _, photo := range item.Photos {
-			photos = append(photos, FeedPhoto{ID: photo.ID, URL: photo.URL})
-		}
-		resp.Items = append(resp.Items, FeedItem{
-			UserID:        item.UserID,
-			Name:          item.Name,
-			Age:           item.Age,
-			DatingGoal:    string(item.DatingGoal),
-			Compatibility: item.Compatibility,
-			AboutMe:       item.AboutMe,
-			Education:     item.Education,
-			Work:          item.Work,
-			Smoking:       item.Smoking,
-			Alcohol:       item.Alcohol,
-			Height:        item.Height,
-			Tags:          item.Tags,
-			Photos:        photos,
-			LikedMe:       item.LikedMe,
-		})
+		resp.Items = append(resp.Items, newFeedItem(item))
 	}
 	return resp
+}
+
+func newFeedItem(item model.FeedItem) FeedItem {
+	photos := make([]FeedPhoto, 0, len(item.Photos))
+	for _, photo := range item.Photos {
+		photos = append(photos, FeedPhoto{ID: photo.ID, URL: photo.URL})
+	}
+	return FeedItem{
+		UserID:        item.UserID,
+		Name:          item.Name,
+		Age:           item.Age,
+		DatingGoal:    string(item.DatingGoal),
+		Compatibility: item.Compatibility,
+		AboutMe:       item.AboutMe,
+		Education:     item.Education,
+		Work:          item.Work,
+		Smoking:       item.Smoking,
+		Alcohol:       item.Alcohol,
+		Height:        item.Height,
+		Tags:          item.Tags,
+		Photos:        photos,
+		LikedMe:       item.LikedMe,
+	}
+}
+
+// MatchedProfileResponse - карточка анкеты в формате ленты и id мэтча для перехода к переписке
+type MatchedProfileResponse struct {
+	MatchID int64 `json:"match_id"`
+	FeedItem
+}
+
+func NewMatchedProfileResponse(p *model.MatchedProfile) MatchedProfileResponse {
+	return MatchedProfileResponse{MatchID: p.MatchID, FeedItem: newFeedItem(p.Item)}
 }
