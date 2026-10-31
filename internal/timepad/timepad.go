@@ -4,8 +4,10 @@ import (
 	"context"
 	"dating-app/internal/model"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -45,6 +47,10 @@ type timepadEvent struct {
 	} `json:"categories"`
 }
 
+func NewTimepadProvider(client *http.Client, baseURL string, apiKey string) *TimepadProvider {
+	return &TimepadProvider{client: client, baseURL: baseURL, apiKey: apiKey}
+}
+
 func (p *TimepadProvider) GetEvents(ctx context.Context, eventQuery *model.EventQuery) (*model.EventPage, error) {
 	u, err := url.Parse(p.baseURL)
 
@@ -61,12 +67,12 @@ func (p *TimepadProvider) GetEvents(ctx context.Context, eventQuery *model.Event
 		return nil, fmt.Errorf("create timepad provider request: %w", err)
 	}
 
-	request.Header.Set("Authorization", p.apiKey)
+	request.Header.Set("Authorization", "Bearer "+p.apiKey)
 	request.Header.Set("Accept", "application/json")
 
 	resp, err := p.client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("call timepad: %w", err)
+		return nil, timepadRequestError(ctx, "call timepad", err)
 	}
 	defer resp.Body.Close()
 
@@ -77,7 +83,7 @@ func (p *TimepadProvider) GetEvents(ctx context.Context, eventQuery *model.Event
 	page, err := readBody(resp.Body)
 
 	if err != nil {
-		return nil, fmt.Errorf("read body timepad provider: %w", err)
+		return nil, timepadRequestError(ctx, "read body timepad provider", err)
 	}
 
 	return page, nil
@@ -171,4 +177,14 @@ func setQuery(query *url.Values, eventQuery *model.EventQuery) {
 			query.Add("category_ids", strconv.FormatInt(id, 64))
 		}
 	}
+}
+
+// Only timeouts of this provider map to TIMEPAD_TIMEOUT; client cancellation does not.
+func timepadRequestError(ctx context.Context, op string, err error) error {
+	var netErr net.Error
+	if !errors.Is(ctx.Err(), context.Canceled) &&
+		(errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout())) {
+		return fmt.Errorf("%s: %w: %w", op, model.ErrTimepadTimeout, err)
+	}
+	return fmt.Errorf("%s: %w", op, err)
 }

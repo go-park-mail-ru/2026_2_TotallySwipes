@@ -3,14 +3,17 @@ package model
 import "errors"
 
 var (
-	ErrNotFound           = errors.New("not found")
-	ErrEmailAlreadyExists = errors.New("email already exists")
-	ErrPasswordTooLong    = errors.New("password too long")
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrInvalidSession     = errors.New("invalid session")
-	ErrInvalidSwipe       = errors.New("invalid self-swipe")
-	ErrProfileIncomplete  = errors.New("profile incomplete")
-	ErrLocationRequired   = errors.New("location required")
+	ErrTimepadTimeout         = errors.New("timepad timeout")
+	ErrResultAlreadySubmitted = errors.New("result already submitted")
+	ErrSearchStateConflict    = errors.New("search state conflict")
+	ErrNotFound               = errors.New("not found")
+	ErrEmailAlreadyExists     = errors.New("email already exists")
+	ErrPasswordTooLong        = errors.New("password too long")
+	ErrInvalidCredentials     = errors.New("invalid credentials")
+	ErrInvalidSession         = errors.New("invalid session")
+	ErrInvalidSwipe           = errors.New("invalid self-swipe")
+	ErrProfileIncomplete      = errors.New("profile incomplete")
+	ErrLocationRequired       = errors.New("location required")
 	// ErrSessionNotOpened означает, что аккаунт создан, но сессия не открыта.
 	ErrSessionNotOpened       = errors.New("account created, session not opened")
 	ErrInvalidFeedRequest     = errors.New("invalid feed request")
@@ -40,4 +43,5 @@ var (
 	ErrInvalidCity                = errors.New("invalid city")
 	ErrNoEvents                   = errors.New("no events")
 	ErrSearchAlreadyActive        = errors.New("search already active")
+	ErrInvalidEventResults        = errors.New("invalid event results")
 )

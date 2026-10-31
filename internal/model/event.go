@@ -9,9 +9,10 @@ import (
 type SearchStatus string
 
 const (
-	SearchStatusVoting    SearchStatus = "voting"
-	SearchStatusCompleted SearchStatus = "completed"
-	SearchStatusCancelled SearchStatus = "cancelled"
+	SearchStatusVoting         SearchStatus = "voting"
+	SearchStatusWaitingPartner SearchStatus = "waiting_partner"
+	SearchStatusCompleted      SearchStatus = "completed"
+	SearchStatusCancelled      SearchStatus = "cancelled"
 )
 
 type ParticipantResult struct {
@@ -52,11 +53,18 @@ type Event struct {
 }
 
 type SearchEventsState struct {
-	SearchID uuid.UUID
-	MatchID  int64
-	City     string
-	Events   []Event
-	Status   SearchStatus
+	SearchID  uuid.UUID
+	MatchID   int64
+	City      string
+	Events    []Event
+	Status    SearchStatus
+	ExpiresAt time.Time
+
+	// CurrentUserLikedEventIDs is nil until the user's result is accepted.
+	CurrentUserLikedEventIDs []int64
+	CurrentUserFinished      bool
+	PartnerFinished          bool
+	Matches                  []Event
 }
 
 type EventQuery struct {

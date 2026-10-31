@@ -20,6 +20,7 @@ import (
 	"dating-app/internal/service"
 	"dating-app/internal/storage"
 	"dating-app/internal/storage/s3"
+	"dating-app/internal/timepad"
 )
 
 const connectTimeout = 5 * time.Second
@@ -32,6 +33,7 @@ type handlers struct {
 	psychoTest *handler.PsychoTestHandler
 	swipe      *handler.SwipeHandler
 	location   *handler.LocationHandler
+	event      *handler.EventHandler
 }
 
 func main() {
@@ -102,6 +104,9 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 	previewsRepo := repository.NewLocationPreviewRepository(rdb, cfg.Redis.LocationPreviewTTL)
 	locationRepo := repository.NewLocationRepository(db)
 
+	eventRepo := repository.NewEventRepository(rdb, cfg.Redis.EventRepositoryTTL)
+	matchRepo := repository.NewMatchRepository(db)
+
 	issuer := auth.NewJWTIssuer(cfg.Auth.JWTSecret, cfg.Auth.JWTAccessTTL)
 	// photoStorage := storage.NewLocalPhotoStorage(cfg.PhotoDir)
 	// urlProvider := service.NewLocalPhotoURLProvider(cfg.HTTP.PublicURL)
@@ -113,8 +118,12 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 	geocoderHTTPClient := &http.Client{
 		Timeout: cfg.Geocoder.HTTPClientTimeout,
 	}
+	timepadHTTPClient := &http.Client{
+		Timeout: cfg.Timepad.HTTPClientTimeout,
+	}
 
 	reverseGeocoder := geocoder.NewGeoQoder(geocoderHTTPClient, cfg.Geocoder.BaseURL, cfg.Geocoder.APIKey)
+	timepadProvider := timepad.NewTimepadProvider(timepadHTTPClient, cfg.Timepad.BaseURL, cfg.Timepad.APIKey)
 
 	compatibilitySvc := service.NewCompatibilityService()
 	profileSvc := service.NewProfileService(profileRepo, compatibilitySvc, minioURLProvider, minioStorage)
@@ -123,6 +132,7 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 	filterSvc := service.NewFilterService(filterRepo)
 	swipeSvc := service.NewSwipeService(swipeRepo, profileRepo)
 	locationSvc := service.NewLocationService(locationRepo, reverseGeocoder, previewsRepo)
+	eventSvc := service.NewEventService(timepadProvider, matchRepo, eventRepo)
 
 	h := handlers{
 		auth:       handler.NewAuthHandler(authSvc, cfg.Auth.CookieSecure),
@@ -132,6 +142,7 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 		psychoTest: handler.NewPsychoTestHandler(psychoTestSvc),
 		swipe:      handler.NewSwipeHandler(swipeSvc),
 		location:   handler.NewLocationHandler(locationSvc),
+		event:      handler.NewEventHandler(eventSvc),
 	}
 
 	var root http.Handler = newRouter(cfg, issuer, h)
@@ -189,6 +200,9 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 
 	api.Handle("/location/me/preview", authed(h.location.Preview)).Methods(http.MethodPost)
 	api.Handle("/location/me", authed(h.location.SaveLocation)).Methods(http.MethodPut)
+	api.Handle("/matches/{match_id}/search-places", authed(h.event.CreateSearch)).Methods(http.MethodPost)
+	api.Handle("/matches/{match_id}/place-searches/{search_id}", authed(h.event.GetSearch)).Methods(http.MethodGet)
+	api.Handle("/matches/{match_id}/place-searches/{search_id}/results", authed(h.event.Submit)).Methods(http.MethodPost)
 
 	return r
 }

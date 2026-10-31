@@ -1144,6 +1144,87 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/matches/{match_id}/place-searches/{search_id}/results:
+    post:
+      summary: Отправить итоговые лайки участника подбора
+      description: >-
+        Доступно участнику матча; подбор должен принадлежать указанному матчу.
+        Первый принятый результат фиксируется и не может быть изменён.
+        Повторная отправка после принятия результата возвращает 409 RESULT_ALREADY_SUBMITTED,
+        даже если набор ID совпадает или отличается только порядком. Это правило действует
+        и после завершения или отмены, пока подбор доступен.
+        После сетевой ошибки с неизвестным исходом или RESULT_ALREADY_SUBMITTED клиент
+        получает актуальное состояние через GET подбора. Если current_user_finished=true,
+        используется серверный результат; если false и подбор активен, отправку можно повторить.
+        После первого результата его автор получает waiting_partner; после второго подбор
+        атомарно переходит в completed. Пустое пересечение означает matches=[] и «Нет совпадений».
+        Timepad не вызывается, TTL не продлевается. При конкурентной отправке результатов
+        одного участника принимается только один пакет, остальные получают конфликт.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/MatchId'
+        - name: search_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [liked_event_ids]
+              properties:
+                liked_event_ids:
+                  type: array
+                  nullable: false
+                  uniqueItems: true
+                  maxItems: 10
+                  description: ID из сохранённого набора; [] означает отсутствие лайков. Поле обязательно, null недопустим.
+                  items:
+                    type: integer
+                    format: int64
+            example:
+              liked_event_ids: [4180718]
+      responses:
+        '200':
+          description: Первый результат принят; актуальное состояние для отправителя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchState'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/PlaceSearchNotFound'
+        '409':
+          description: >-
+            RESULT_ALREADY_SUBMITTED — результат участника уже принят, включая повтор того же набора.
+            SEARCH_STATE_CONFLICT — новый результат для конечного состояния.
+            Для недоступного или истёкшего подбора возвращается 404.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              examples:
+                alreadySubmitted:
+                  value:
+                    error:
+                      code: RESULT_ALREADY_SUBMITTED
+                      message: Результат уже принят. Получите актуальное состояние подбора.
+                stateConflict:
+                  value:
+                    error:
+                      code: SEARCH_STATE_CONFLICT
+                      message: Подбор уже завершён или отменён
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
 components:
   parameters:
     MatchId:
