@@ -12,6 +12,8 @@ func setRequired(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://localhost/db")
 	t.Setenv("JWT_SECRET", "secret")
+	t.Setenv("GEOCODER_API_KEY", "test-geocoder-key")
+	t.Setenv("TIMEPAD_API_TOKEN", "test-timepad-token")
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -32,10 +34,11 @@ func TestLoadDefaults(t *testing.T) {
 func TestLoadMissingRequired(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("JWT_SECRET", "")
+	t.Setenv("GEOCODER_API_KEY", "")
 
 	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL") || !strings.Contains(err.Error(), "JWT_SECRET") {
-		t.Fatalf("want both required vars in error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL") || !strings.Contains(err.Error(), "JWT_SECRET") || !strings.Contains(err.Error(), "GEOCODER_API_KEY") {
+		t.Fatalf("want all required vars in error, got %v", err)
 	}
 }
 
@@ -133,5 +136,54 @@ func TestLoadMinIOPublicEndpoint(t *testing.T) {
 	}
 	if cfg.MinIO.Endpoint != "minio:9000" || cfg.MinIO.PublicEndpoint != "192.0.2.10:9000" || cfg.MinIO.PhotoURLTTL != 10*time.Minute {
 		t.Fatal("internal/public endpoints or photo TTL loaded incorrectly")
+	}
+}
+
+func TestLoadMissingGeocoderAPIKey(t *testing.T) {
+	setRequired(t)
+	t.Setenv("GEOCODER_API_KEY", "")
+	cfg, err := Load()
+	if cfg != nil || err == nil || !strings.Contains(err.Error(), "GEOCODER_API_KEY") {
+		t.Fatalf("want missing geocoder key error, got cfg=%+v, err=%v", cfg, err)
+	}
+}
+
+func TestLoadTimepad(t *testing.T) {
+	setRequired(t)
+	t.Setenv("TIMEPAD_BASE_URL", "")
+	t.Setenv("TIMEPAD_HTTP_CLIENT_TIMEOUT", "")
+	t.Setenv("EVENT_SEARCH_TTL", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Timepad.BaseURL != "https://api.timepad.ru/v1/events" || cfg.Timepad.HTTPClientTimeout != 5*time.Second || cfg.Redis.EventRepositoryTTL != 24*time.Hour || cfg.Timepad.APIKey != "test-timepad-token" {
+		t.Fatal("incorrect Timepad defaults")
+	}
+	t.Setenv("TIMEPAD_BASE_URL", "http://localhost:9001/events")
+	t.Setenv("TIMEPAD_HTTP_CLIENT_TIMEOUT", "2s")
+	t.Setenv("EVENT_SEARCH_TTL", "12h")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Timepad.BaseURL != "http://localhost:9001/events" || cfg.Timepad.HTTPClientTimeout != 2*time.Second || cfg.Redis.EventRepositoryTTL != 12*time.Hour {
+		t.Fatal("incorrect Timepad overrides")
+	}
+}
+
+func TestLoadInvalidTimepad(t *testing.T) {
+	setRequired(t)
+	t.Setenv("TIMEPAD_API_TOKEN", "")
+	t.Setenv("TIMEPAD_HTTP_CLIENT_TIMEOUT", "0s")
+	t.Setenv("EVENT_SEARCH_TTL", "-1h")
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected configuration error")
+	}
+	for _, key := range []string{"TIMEPAD_API_TOKEN", "TIMEPAD_HTTP_CLIENT_TIMEOUT", "EVENT_SEARCH_TTL"} {
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("missing error for %s", key)
+		}
 	}
 }

@@ -318,6 +318,7 @@ func TestProfileHandler_GetByUserID(t *testing.T) {
 				return
 			}
 			want := map[string]any{
+				"city":     nil,
 				"match_id": float64(15), "user_id": float64(8), "name": "Даша", "age": float64(24), "dating_goal": "relationship",
 				"compatibility": 0.87, "about_me": about, "education": nil, "work": nil, "smoking": nil, "alcohol": nil, "height": nil,
 				"tags": []any{"books"}, "photos": []any{map[string]any{"id": float64(3), "url": "https://media.example/cats/a.jpg"}}, "liked_me": true,

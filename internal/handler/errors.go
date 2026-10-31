@@ -21,6 +21,19 @@ var domainErrors = []struct {
 	err error
 	api apiError
 }{
+	{model.ErrInvalidCity, apiError{http.StatusBadRequest, codeValidationError, "Некорректный город", nil}},
+	{model.ErrInvalidEventResults, apiError{http.StatusBadRequest, codeValidationError, "Некорректный список понравившихся событий", nil}},
+	{model.ErrNoEvents, apiError{http.StatusConflict, "NO_EVENTS", "Нет подходящих событий", nil}},
+	{model.ErrSearchAlreadyActive, apiError{http.StatusConflict, "SEARCH_ALREADY_ACTIVE", "Для матча уже существует подбор в другом городе", nil}},
+	{model.ErrResultAlreadySubmitted, apiError{http.StatusConflict, "RESULT_ALREADY_SUBMITTED", "Результат уже принят. Получите актуальное состояние подбора.", nil}},
+	{model.ErrSearchStateConflict, apiError{http.StatusConflict, "SEARCH_STATE_CONFLICT", "Подбор уже завершён или отменён", nil}},
+	{model.ErrTimepadTimeout, apiError{http.StatusRequestTimeout, "TIMEPAD_TIMEOUT", "Сервис подбора событий временно недоступен. Попробуйте позже.", nil}},
+	{model.ErrInvalidCoordinates, apiError{http.StatusBadRequest, codeValidationError, "Некорректные координаты", nil}},
+	{model.ErrLocationRequired, apiError{http.StatusConflict, "LOCATION_REQUIRED", "Сначала необходимо указать город", nil}},
+	{model.ErrLocationPreviewUnavailable, apiError{http.StatusGone, "LOCATION_PREVIEW_UNAVAILABLE", "Повторите определение местоположения", nil}},
+	{model.ErrLocationNotFound, apiError{http.StatusUnprocessableEntity, "LOCATION_NOT_FOUND", "Не удалось определить местоположение", nil}},
+	{model.ErrCityNotFound, apiError{http.StatusUnprocessableEntity, "LOCATION_NOT_FOUND", "Не удалось определить город", nil}},
+	{model.ErrGeocoderQuotaExceeded, apiError{http.StatusTooManyRequests, "GEOCODER_QUOTA_EXCEEDED", "Quota exceeded", nil}},
 	{model.ErrInvalidCredentials, apiError{http.StatusUnauthorized, codeInvalidCredentials, "Неверная почта или пароль", nil}},
 	{model.ErrInvalidSession, apiError{http.StatusUnauthorized, codeUnauthorized, msgUnauthorized, nil}},
 	{model.ErrEmailAlreadyExists, apiError{http.StatusConflict, codeEmailAlreadyExists, "Почта уже занята", nil}},
@@ -45,6 +58,7 @@ var domainErrors = []struct {
 	{model.ErrInvalidSwipe, apiError{http.StatusBadRequest, codeValidationError, msgInvalidData,
 		map[string]string{"target_user_id": "Нельзя свайпать собственную анкету"}}},
 	{model.ErrProfileNotFound, apiError{http.StatusNotFound, "PROFILE_NOT_FOUND", "Целевая анкета не найдена или недоступна", nil}},
+	{model.ErrNotFound, apiError{http.StatusNotFound, "NOT_FOUND", "Ресурс не найден или недоступен", nil}},
 }
 
 // writeServiceError отвечает по domainErrors, остальные ошибки логирует и отдаёт 500

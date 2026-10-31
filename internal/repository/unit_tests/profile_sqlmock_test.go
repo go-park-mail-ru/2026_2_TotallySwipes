@@ -153,13 +153,13 @@ func TestProfileRepo_PatchProfile(t *testing.T) {
 					version.WillReturnError(failure)
 				} else {
 					version.WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(12)))
-					for _, id := range ids {
-						tag := mock.ExpectExec(`INSERT INTO profile_tag (profile_version_id, tag_id) VALUES ($1, $2)`).WithArgs(int64(12), id)
+					if len(ids) > 0 {
+						tags := mock.ExpectExec(insertProfileTagsSQL).WithArgs(int64(12), ids)
 						if tc.failAt == "tag" {
-							tag.WillReturnError(failure)
-							break
+							tags.WillReturnError(failure)
+						} else {
+							tags.WillReturnResult(sqlmock.NewResult(0, int64(len(ids))))
 						}
-						tag.WillReturnResult(sqlmock.NewResult(0, 1))
 					}
 					if tc.failAt != "tag" {
 						if tc.failAt == "touch" {

@@ -17,6 +17,8 @@ type Config struct {
 	Auth     AuthConfig
 	HTTP     HTTPConfig
 	MinIO    MinIOConfig
+	Geocoder GeocoderConfig
+	Timepad  TimepadConfig
 }
 
 type DatabaseConfig struct {
@@ -24,7 +26,9 @@ type DatabaseConfig struct {
 }
 
 type RedisConfig struct {
-	Addr string
+	Addr               string
+	LocationPreviewTTL time.Duration
+	EventRepositoryTTL time.Duration
 }
 
 type AuthConfig struct {
@@ -54,7 +58,20 @@ type MinIOConfig struct {
 	PhotoURLTTL    time.Duration
 }
 
-// Load читает конфиг из env; обязательны только DATABASE_URL и JWT_SECRET, ошибки собираются разом
+type GeocoderConfig struct {
+	HTTPClientTimeout time.Duration
+	BaseURL           string
+	APIKey            string
+}
+
+type TimepadConfig struct {
+	HTTPClientTimeout time.Duration
+	BaseURL           string
+	APIKey            string
+}
+
+// Load читает конфиг из env; обязательны DATABASE_URL, JWT_SECRET,
+// GEOCODER_API_KEY и TIMEPAD_API_TOKEN; ошибки собираются разом.
 func Load() (*Config, error) {
 	var r envReader
 
@@ -65,7 +82,9 @@ func Load() (*Config, error) {
 			URL: r.required("DATABASE_URL"),
 		},
 		Redis: RedisConfig{
-			Addr: r.str("REDIS_ADDR", "localhost:6379"),
+			Addr:               r.str("REDIS_ADDR", "localhost:6379"),
+			EventRepositoryTTL: r.positiveDuration("EVENT_SEARCH_TTL", 24*time.Hour),
+			LocationPreviewTTL: r.positiveDuration("LOCATION_PREVIEW_TTL", 10*time.Minute),
 		},
 		Auth: AuthConfig{
 			JWTSecret:     r.required("JWT_SECRET"),
@@ -89,6 +108,16 @@ func Load() (*Config, error) {
 			Bucket:         r.str("MINIO_BUCKET", "photos"),
 			UseTLS:         r.boolean("MINIO_USE_TLS", false),
 			PhotoURLTTL:    r.positiveDuration("MINIO_PHOTO_URL_TTL", 15*time.Minute),
+		},
+		Timepad: TimepadConfig{
+			HTTPClientTimeout: r.positiveDuration("TIMEPAD_HTTP_CLIENT_TIMEOUT", 5*time.Second),
+			BaseURL:           r.str("TIMEPAD_BASE_URL", "https://api.timepad.ru/v1/events"),
+			APIKey:            r.required("TIMEPAD_API_TOKEN"),
+		},
+		Geocoder: GeocoderConfig{
+			HTTPClientTimeout: r.positiveDuration("GEOCODER_HTTP_CLIENT_TIMEOUT", 5*time.Second),
+			BaseURL:           r.str("GEOCODER_BASE_URL", "https://api/v1/reverse"),
+			APIKey:            r.required("GEOCODER_API_KEY"),
 		},
 	}
 

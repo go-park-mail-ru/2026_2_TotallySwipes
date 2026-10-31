@@ -11,6 +11,12 @@ import (
 	"dating-app/internal/model"
 )
 
+const insertUserQuery = `INSERT INTO "user" (email, password_hash) VALUES ($1, $2) RETURNING id`
+
+const insertEmptyProfileQuery = `INSERT INTO profile (user_id) VALUES ($1)`
+
+const selectUserByEmailQuery = `SELECT id, email, password_hash FROM "user" WHERE email = $1`
+
 const pgUniqueViolation = "23505"
 
 // isUniqueViolation - ошибка PostgreSQL 23505 (нарушение уникальности)
@@ -38,7 +44,7 @@ func (r *UserRepo) CreateUser(ctx context.Context, user *model.UserInput) (int64
 
 	var userID int64
 	err = tx.QueryRowContext(ctx,
-		`INSERT INTO "user" (email, password_hash) VALUES ($1, $2) RETURNING id`,
+		insertUserQuery,
 		user.Email, user.PasswordHash,
 	).Scan(&userID)
 	if isUniqueViolation(err) {
@@ -48,7 +54,7 @@ func (r *UserRepo) CreateUser(ctx context.Context, user *model.UserInput) (int64
 		return 0, fmt.Errorf("create user: insert user: %w", err)
 	}
 
-	if _, err := tx.ExecContext(ctx, `INSERT INTO profile (user_id) VALUES ($1)`, userID); err != nil {
+	if _, err := tx.ExecContext(ctx, insertEmptyProfileQuery, userID); err != nil {
 		return 0, fmt.Errorf("create user id=%d: insert profile: %w", userID, err)
 	}
 
@@ -64,7 +70,7 @@ func (r *UserRepo) GetUserByEmail(ctx context.Context, email string) (*model.Use
 	user := model.User{}
 
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, email, password_hash FROM "user" WHERE email = $1`,
+		selectUserByEmailQuery,
 		email).Scan(&user.ID, &user.Email, &user.PasswordHash)
 
 	if errors.Is(err, sql.ErrNoRows) {

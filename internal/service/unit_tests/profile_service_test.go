@@ -74,7 +74,7 @@ func TestProfileServiceGetNextFeed(t *testing.T) {
 				ordered = append(ordered, repo.EXPECT().GetByUserIDCurrentProfile(ctx, tc.userID).Return(tc.viewer, tc.viewerErr).Times(1))
 			}
 			if tc.wantFeedCalls > 0 {
-				ordered = append(ordered, repo.EXPECT().GetProfilesByCursorAndLimit(ctx, tc.userID, tc.limit, tc.cursor).Return(feedCandidates(tc.profiles...), tc.nextCursor, tc.feedErr).Times(1))
+				ordered = append(ordered, repo.EXPECT().GetCandidatesByCursorAndLimit(ctx, tc.userID, tc.limit, tc.cursor).Return(feedCandidates(tc.profiles...), tc.nextCursor, tc.feedErr).Times(1))
 			}
 			expected := model.BigFive{Openness: &value, Conscientiousness: &value, Extraversion: &value, Agreeableness: &value, Neuroticism: &value}
 			for i := 0; i < tc.wantCalcCalls; i++ {
@@ -193,7 +193,7 @@ func TestProfileServiceFeedItemMapping(t *testing.T) {
 			calc := NewMockCompatibilityService(ctrl)
 			urls := NewMockPhotoURLProvider(ctrl)
 			repo.EXPECT().GetByUserIDCurrentProfile(ctx, int64(7)).Return(&viewer, nil).Times(1)
-			repo.EXPECT().GetProfilesByCursorAndLimit(ctx, int64(7), 10, (*int64)(nil)).Return([]model.FeedCandidate{{Profile: candidate, LikedMe: tc.likedMe}}, nil, nil).Times(1)
+			repo.EXPECT().GetCandidatesByCursorAndLimit(ctx, int64(7), 10, (*int64)(nil)).Return([]model.FeedCandidate{{Profile: candidate, LikedMe: tc.likedMe}}, nil, nil).Times(1)
 			for _, photo := range tc.photos {
 				urls.EXPECT().GetPhotoURL(ctx, photo.StorageKey).Return("https://media.example/cats/"+photo.StorageKey, nil).Times(1)
 			}
@@ -204,7 +204,7 @@ func TestProfileServiceFeedItemMapping(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := model.FeedItem{LikedMe: tc.likedMe, UserID: 42, Name: "Anna", Age: 25, DatingGoal: model.DatingGoalRelationship, AboutMe: tc.about, Tags: tc.wantTags, Photos: tc.wantPhotos}
+			want := model.FeedItem{City: candidate.City, LikedMe: tc.likedMe, UserID: 42, Name: "Anna", Age: 25, DatingGoal: model.DatingGoalRelationship, AboutMe: tc.about, Tags: tc.wantTags, Photos: tc.wantPhotos}
 			if page == nil || len(page.Items) != 1 || !reflect.DeepEqual(page.Items[0], want) {
 				t.Fatalf("page=%+v, want item=%+v", page, want)
 			}
@@ -242,7 +242,7 @@ func TestProfileServicePropagatesURLProviderError(t *testing.T) {
 	repo := NewMockProfileRepository(ctrl)
 	urls := NewMockPhotoURLProvider(ctrl)
 	repo.EXPECT().GetByUserIDCurrentProfile(ctx, int64(7)).Return(&viewer, nil).Times(1)
-	repo.EXPECT().GetProfilesByCursorAndLimit(ctx, int64(7), 10, (*int64)(nil)).Return(feedCandidates(filledProfile(model.Profile{}, "Anna")), nil, nil).Times(1)
+	repo.EXPECT().GetCandidatesByCursorAndLimit(ctx, int64(7), 10, (*int64)(nil)).Return(feedCandidates(filledProfile(model.Profile{}, "Anna")), nil, nil).Times(1)
 	urls.EXPECT().GetPhotoURL(ctx, "main.jpg").Return("", failure).Times(1)
 	svc := NewProfileService(repo, NewMockCompatibilityService(ctrl), urls, nil)
 	// Act
@@ -254,6 +254,10 @@ func TestProfileServicePropagatesURLProviderError(t *testing.T) {
 }
 
 func filledProfile(p model.Profile, name string) model.Profile {
+	if p.City == nil {
+		city := "Москва"
+		p.City = &city
+	}
 	birth := time.Now().AddDate(-25, -6, 0)
 	sex, goal := model.SexFemale, model.DatingGoalRelationship
 	p.CurrentVersion.ProfileFields = model.ProfileFields{Name: &name, BirthDate: &birth, Sex: &sex, DatingGoal: &goal}
@@ -310,7 +314,7 @@ func TestProfileServiceFeedSkipsIncompleteProfiles(t *testing.T) {
 	repo := NewMockProfileRepository(ctrl)
 	urls := NewMockPhotoURLProvider(ctrl)
 	repo.EXPECT().GetByUserIDCurrentProfile(ctx, int64(7)).Return(&viewer, nil).Times(1)
-	repo.EXPECT().GetProfilesByCursorAndLimit(ctx, int64(7), 10, (*int64)(nil)).Return(feedCandidates(incomplete, filledProfile(model.Profile{UserID: 31}, "Anna")), nil, nil).Times(1)
+	repo.EXPECT().GetCandidatesByCursorAndLimit(ctx, int64(7), 10, (*int64)(nil)).Return(feedCandidates(incomplete, filledProfile(model.Profile{UserID: 31}, "Anna")), nil, nil).Times(1)
 	urls.EXPECT().GetPhotoURL(ctx, "main.jpg").Return("https://media.example/cats/main.jpg", nil).Times(1)
 	svc := NewProfileService(repo, NewMockCompatibilityService(ctrl), urls, nil)
 	// Act
@@ -508,5 +512,19 @@ func TestProfileService_GetMyProfile_ProfilePhotoOK(t *testing.T) {
 
 	if !reflect.DeepEqual(got.Photos, wantPhotos) {
 		t.Fatalf("Photos = %#v, want %#v", got.Photos, wantPhotos)
+	}
+}
+
+func TestProfileServiceFeedRequiresLocation(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := NewMockProfileRepository(ctrl)
+	viewer := filledProfile(model.Profile{UserID: 7}, "Viewer")
+	viewer.City = nil
+	ctx := context.Background()
+	repo.EXPECT().GetByUserIDCurrentProfile(ctx, int64(7)).Return(&viewer, nil)
+	svc := NewProfileService(repo, NewMockCompatibilityService(ctrl), NewMockPhotoURLProvider(ctrl), nil)
+	page, err := svc.GetNextFeed(ctx, 7, 10, nil)
+	if page != nil || !errors.Is(err, model.ErrLocationRequired) {
+		t.Fatalf("page=%+v, err=%v; want LOCATION_REQUIRED", page, err)
 	}
 }

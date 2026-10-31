@@ -5,9 +5,15 @@ import (
 	"dating-app/internal/model"
 	"dating-app/internal/repository"
 	"errors"
-	"github.com/DATA-DOG/go-sqlmock"
 	"testing"
+
+	"github.com/DATA-DOG/go-sqlmock"
 )
+
+const lockSwipeQuery = `SELECT id FROM "user"
+	WHERE id IN ($1, $2)
+	ORDER BY id
+	FOR UPDATE`
 
 func TestSwipeRepo_SaveSwipeAndMatch(t *testing.T) {
 	failure := errors.New("database unavailable")
@@ -19,6 +25,7 @@ func TestSwipeRepo_SaveSwipeAndMatch(t *testing.T) {
 		{name: "like without mutual match", action: "like"}, {name: "mutual match", action: "like", matched: 1},
 		{name: "super like", action: "super_like", matched: 1}, {name: "dislike", action: "dislike"},
 		{name: "begin error", action: "like", failAt: "begin", wantErr: failure},
+		{name: "lock users error", action: "like", failAt: "lock", wantErr: failure},
 		{name: "target not found", action: "like", failAt: "missing", wantErr: model.ErrNotFound},
 		{name: "target query error", action: "like", failAt: "query", wantErr: failure},
 		{name: "swipe insert error", action: "like", failAt: "swipe", wantErr: failure},
@@ -33,7 +40,11 @@ func TestSwipeRepo_SaveSwipeAndMatch(t *testing.T) {
 			begin := mock.ExpectBegin()
 			if tc.failAt == "begin" {
 				begin.WillReturnError(failure)
+			} else if tc.failAt == "lock" {
+				mock.ExpectExec(lockSwipeQuery).WithArgs(int64(42), int64(43)).WillReturnError(failure)
+				mock.ExpectRollback()
 			} else {
+				mock.ExpectExec(lockSwipeQuery).WithArgs(int64(42), int64(43)).WillReturnResult(sqlmock.NewResult(0, 2))
 				target := mock.ExpectQuery(`SELECT id FROM profile WHERE user_id = $1`).WithArgs(int64(43))
 				switch tc.failAt {
 				case "missing":

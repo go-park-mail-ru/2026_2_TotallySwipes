@@ -86,6 +86,22 @@ func (mr *MockProfileRepositoryMockRecorder) GetByUserIDCurrentProfile(ctx, user
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByUserIDCurrentProfile", reflect.TypeOf((*MockProfileRepository)(nil).GetByUserIDCurrentProfile), ctx, userID)
 }
 
+// GetCandidatesByCursorAndLimit mocks base method.
+func (m *MockProfileRepository) GetCandidatesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCandidatesByCursorAndLimit", ctx, userID, limit, cursor)
+	ret0, _ := ret[0].([]model.FeedCandidate)
+	ret1, _ := ret[1].(*int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// GetCandidatesByCursorAndLimit indicates an expected call of GetCandidatesByCursorAndLimit.
+func (mr *MockProfileRepositoryMockRecorder) GetCandidatesByCursorAndLimit(ctx, userID, limit, cursor any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCandidatesByCursorAndLimit", reflect.TypeOf((*MockProfileRepository)(nil).GetCandidatesByCursorAndLimit), ctx, userID, limit, cursor)
+}
+
 // GetMatchedProfile mocks base method.
 func (m *MockProfileRepository) GetMatchedProfile(ctx context.Context, viewerID, targetID int64) (*model.Profile, int64, error) {
 	m.ctrl.T.Helper()
@@ -100,22 +116,6 @@ func (m *MockProfileRepository) GetMatchedProfile(ctx context.Context, viewerID,
 func (mr *MockProfileRepositoryMockRecorder) GetMatchedProfile(ctx, viewerID, targetID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMatchedProfile", reflect.TypeOf((*MockProfileRepository)(nil).GetMatchedProfile), ctx, viewerID, targetID)
-}
-
-// GetProfilesByCursorAndLimit mocks base method.
-func (m *MockProfileRepository) GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetProfilesByCursorAndLimit", ctx, userID, limit, cursor)
-	ret0, _ := ret[0].([]model.FeedCandidate)
-	ret1, _ := ret[1].(*int64)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
-}
-
-// GetProfilesByCursorAndLimit indicates an expected call of GetProfilesByCursorAndLimit.
-func (mr *MockProfileRepositoryMockRecorder) GetProfilesByCursorAndLimit(ctx, userID, limit, cursor any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProfilesByCursorAndLimit", reflect.TypeOf((*MockProfileRepository)(nil).GetProfilesByCursorAndLimit), ctx, userID, limit, cursor)
 }
 
 // PatchProfile mocks base method.

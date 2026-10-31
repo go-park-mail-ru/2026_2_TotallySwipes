@@ -395,6 +395,11 @@ paths:
                     nullable: true
                     description: URL главного фото (photos[0]). null, если фото нет.
                     example: http://localhost:8080/cats/cat-1.jpg
+                  city:
+                    type: string
+                    nullable: true
+                    description: Текущий город пользователя
+                    example: Москва
                   missing:
                     $ref: '#/components/schemas/Missing'
         '401':
@@ -598,155 +603,119 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /api/v1/profiles/{user_id}:
+  /api/v1/location/me:
     get:
       security:
-      - cookieAuth: []
-      summary: Посмотреть анкету собеседника
-      description: Возвращает анкету другого пользователя в том же формате, что карточка ленты (GET /api/v1/feed),
-        и match_id. Доступно только при мэтче между текущим пользователем и владельцем анкеты. Если мэтча нет, анкеты
-        нет или запрошена своя анкета, возвращается 404 PROFILE_NOT_FOUND, чтобы по ответу нельзя было узнать, существует
-        ли пользователь. Свою анкету клиент берёт из GET /api/v1/profile/me.
-      parameters:
-      - name: user_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          format: int64
-          minimum: 1
+        - cookieAuth: []
+      summary: Получить своё местоположение
+      description: Координаты доступны только владельцу. Если местоположение не задано, location равен null.
       responses:
         '200':
-          description: Анкета получена
+          description: Сохранённое местоположение или null
           content:
             application/json:
               schema:
-                type: object
-                required:
-                - match_id
-                - user_id
-                - name
-                - age
-                - about_me
-                - education
-                - work
-                - smoking
-                - alcohol
-                - height
-                - dating_goal
-                - compatibility
-                - tags
-                - photos
-                - liked_me
-                properties:
-                  match_id:
-                    type: integer
-                    format: int64
-                    minimum: 1
-                    description: Мэтч текущего пользователя с владельцем анкеты; нужен для перехода к переписке.
-                    example: 15
-                  user_id:
-                    minimum: 1
-                    type: integer
-                    format: int64
-                    example: 42
-                  name:
-                    minLength: 1
-                    maxLength: 100
-                    pattern: \S
-                    description: Имя не должно состоять только из пробелов.
-                    type: string
-                    example: Аня
-                  about_me:
-                    type: string
-                    nullable: true
-                    description: Описание пользователя в анкете. null, если описание не задано.
-                    example: Люблю путешествия и настольные игры.
-                  education:
-                    allOf:
-                    - $ref: '#/components/schemas/Education'
-                    nullable: true
-                  work:
-                    type: string
-                    nullable: true
-                    maxLength: 100
-                  smoking:
-                    allOf:
-                    - $ref: '#/components/schemas/Attitude'
-                    nullable: true
-                  alcohol:
-                    allOf:
-                    - $ref: '#/components/schemas/Attitude'
-                    nullable: true
-                  height:
-                    type: integer
-                    minimum: 100
-                    maximum: 250
-                    nullable: true
-                    description: Рост в сантиметрах.
-                  dating_goal:
-                    $ref: '#/components/schemas/DatingGoal'
-                  compatibility:
-                    type: number
-                    format: double
-                    minimum: 0
-                    maximum: 1
-                    nullable: true
-                    description: Совместимость с текущим пользователем, рассчитанная сервисом совместимости. Чем
-                      выше значение, тем выше совместимость; 0 — минимальная, 1 — максимальная. Значение не является
-                      вероятностью успешных отношений. null, если текущий пользователь или кандидат ещё не прошёл
-                      тест.
-                    example: 0.87
-                  age:
-                    minimum: 18
-                    type: integer
-                    example: 22
-                  tags:
-                    maxItems: 10
-                    uniqueItems: true
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/TagKey'
-                    example:
-                    - coffee
-                    - music
-                  photos:
-                    type: array
-                    minItems: 0
-                    maxItems: 6
-                    items:
-                      type: object
-                      required:
-                      - id
-                      - url
-                      properties:
-                        id:
-                          minimum: 1
-                          type: integer
-                          format: int64
-                          example: 7
-                        url:
-                          minLength: 1
-                          type: string
-                          example: /media/photo-7.jpg
-                  liked_me:
-                    type: boolean
-                    description: Для анкеты из мэтча всегда true.
-                    example: false
+                $ref: '#/components/schemas/LocationResponse'
+              examples:
+                notSet:
+                  value:
+                    location: null
+                saved:
+                  value:
+                    location:
+                      city: Хотьково
+                      district: Сергиево-Посадский городской округ
+                      coordinates:
+                        latitude: 56.25
+                        longitude: 37.99
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      security:
+        - cookieAuth: []
+      summary: Подтвердить и сохранить своё местоположение
+      description: >-
+        Создаёт или заменяет местоположение по preview_id из предварительного определения.
+        Результат должен принадлежать текущему пользователю и не быть просроченным.
+        Адрес и исходные координаты берутся из проверенного backend результата;
+        user_id определяется по авторизации. При ошибке прежнее местоположение не меняется.
+        Удаление местоположения не поддерживается.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationConfirmRequest'
+      responses:
+        '200':
+          description: Сохранённое местоположение; location не равен null
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: Мэтча с пользователем нет или анкета недоступна
+        '410':
+          description: Результат предварительного определения истёк или недоступен текущему пользователю
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TestError'
               example:
                 error:
-                  code: PROFILE_NOT_FOUND
-                  message: Целевая анкета не найдена или недоступна
+                  code: LOCATION_PREVIEW_UNAVAILABLE
+                  message: Повторите определение местоположения
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/location/me/preview:
+    post:
+      security:
+        - cookieAuth: []
+      summary: Предварительно определить местоположение по координатам
+      description: >-
+        Определяет город и административный район или городской округ через геокодер,
+        не изменяя сохранённое местоположение. Для деревни может возвращаться ближайший город.
+        Поддерживается только Россия. Временный результат привязан к текущему пользователю
+        и содержит исходные координаты запроса, а не координаты здания из ответа геокодера.
+        Для сохранения передайте preview_id в PUT /api/v1/location/me.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationCoordinates'
+      responses:
+        '200':
+          description: Адрес для подтверждения и временный идентификатор результата
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationPreviewResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          description: Город не определён или точка вне поддерживаемой территории; прежнее местоположение не меняется
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: LOCATION_NOT_FOUND
+                  message: Не удалось определить местоположение
+        '429':
+          $ref: '#/components/responses/GeocoderQuotaExceeded'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -865,6 +834,7 @@ paths:
                         - tags
                         - photos
                         - liked_me
+                        - city
                       properties:
                         user_id:
                           minimum: 1
@@ -956,6 +926,10 @@ paths:
                             true, если последнее действие кандидата по отношению
                             к текущему пользователю — like или super_like.
                           example: false
+                        city:
+                          type: string
+                          nullale: true
+                          example: Москва
                   next_cursor:
                     minimum: 1
                     type: integer
@@ -966,7 +940,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
-          description: У текущего пользователя нет анкеты
+          description: У текущего пользователя нет заполненной анкеты или геопозиция не зафиксирована
           content:
             application/json:
               schema:
@@ -982,6 +956,9 @@ paths:
                     properties:
                       code:
                         type: string
+                        enum:
+                          - PROFILE_REQUIRED
+                          - LOCATION_REQUIRED
                         example: PROFILE_REQUIRED
                       message:
                         type: string
@@ -1063,6 +1040,347 @@ paths:
                         example: Целевая анкета не найдена или недоступна
         '500':
           $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/matches/{match_id}/search-places:
+    post:
+      summary: Создать или открыть активный подбор событий
+      description: >-
+        Доступно только участникам матча. Создаёт один общий набор из 1–10 событий
+        и сразу возвращает SearchState: дополнительный GET после POST не нужен.
+        Первый участник может оценивать карточки, не дожидаясь второго.
+        Один активный подбор на матч, включая конкурентные запросы.
+        Повтор с тем же городом возвращает сохранённое состояние без Timepad;
+        другой город активного подбора даёт SEARCH_ALREADY_ACTIVE.
+        TTL — 24 часа от создания без продления. Подбор состоит из одного раунда.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/MatchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [city]
+              properties:
+                city:
+                  type: string
+                  minLength: 1
+                  description: Город встречи; после обрезки пробелов строка должна быть непустой.
+                  example: Москва
+      responses:
+        '201':
+          description: Создан подбор; объект сразу содержит общий набор карточек, status — voting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchState'
+        '200':
+          description: Активный подбор с тем же городом; тот же формат объекта с актуальным состоянием
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchState'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/PlaceSearchNotFound'
+        '408':
+          $ref: '#/components/responses/TimepadTimeout'
+        '409':
+          description: Список подходящих событий пуст либо активный подбор имеет другой город
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              examples:
+                noEvents:
+                  value:
+                    error:
+                      code: NO_EVENTS
+                      message: Нет подходящих событий
+                alreadyActive:
+                  value:
+                    error:
+                      code: SEARCH_ALREADY_ACTIVE
+                      message: Для матча уже существует подбор в другом городе
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/matches/{match_id}/place-searches/{search_id}:
+    get:
+      summary: Получить состояние подбора событий
+      description: >-
+        Используется для присоединения, восстановления страницы и polling.
+        Проверяет участие пользователя в матче и принадлежность подбора матчу.
+        Читает сохранённое состояние Redis, не вызывает Timepad и не продлевает TTL.
+        Оба участника получают один набор карточек в одном порядке.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/MatchId'
+        - name: search_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Актуальное состояние для вызывающего участника
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchState'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/PlaceSearchNotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/matches/{match_id}/place-searches/{search_id}/results:
+    post:
+      summary: Отправить итоговые лайки участника подбора
+      description: >-
+        Доступно участнику матча; подбор должен принадлежать указанному матчу.
+        Первый принятый результат фиксируется и не может быть изменён.
+        Повторная отправка после принятия результата возвращает 409 RESULT_ALREADY_SUBMITTED,
+        даже если набор ID совпадает или отличается только порядком. Это правило действует
+        и после завершения или отмены, пока подбор доступен.
+        После сетевой ошибки с неизвестным исходом или RESULT_ALREADY_SUBMITTED клиент
+        получает актуальное состояние через GET подбора. Если current_user_finished=true,
+        используется серверный результат; если false и подбор активен, отправку можно повторить.
+        После первого результата его автор получает waiting_partner; после второго подбор
+        атомарно переходит в completed. Пустое пересечение означает matches=[] и «Нет совпадений».
+        Timepad не вызывается, TTL не продлевается. При конкурентной отправке результатов
+        одного участника принимается только один пакет, остальные получают конфликт.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/MatchId'
+        - name: search_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [liked_event_ids]
+              properties:
+                liked_event_ids:
+                  type: array
+                  nullable: false
+                  uniqueItems: true
+                  maxItems: 10
+                  description: ID из сохранённого набора; [] означает отсутствие лайков. Поле обязательно, null недопустим.
+                  items:
+                    type: integer
+                    format: int64
+            example:
+              liked_event_ids: [4180718]
+      responses:
+        '200':
+          description: Первый результат принят; актуальное состояние для отправителя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchState'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/PlaceSearchNotFound'
+        '409':
+          description: >-
+            RESULT_ALREADY_SUBMITTED — результат участника уже принят, включая повтор того же набора.
+            SEARCH_STATE_CONFLICT — новый результат для конечного состояния.
+            Для недоступного или истёкшего подбора возвращается 404.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              examples:
+                alreadySubmitted:
+                  value:
+                    error:
+                      code: RESULT_ALREADY_SUBMITTED
+                      message: Результат уже принят. Получите актуальное состояние подбора.
+                stateConflict:
+                  value:
+                    error:
+                      code: SEARCH_STATE_CONFLICT
+                      message: Подбор уже завершён или отменён
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/profiles/{user_id}:
+    get:
+      security:
+      - cookieAuth: []
+      summary: Посмотреть анкету собеседника
+      description: Возвращает анкету другого пользователя в том же формате, что карточка ленты (GET /api/v1/feed),
+        и match_id. Доступно только при мэтче между текущим пользователем и владельцем анкеты. Если мэтча нет, анкеты
+        нет или запрошена своя анкета, возвращается 404 PROFILE_NOT_FOUND, чтобы по ответу нельзя было узнать, существует
+        ли пользователь. Свою анкету клиент берёт из GET /api/v1/profile/me.
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+      responses:
+        '200':
+          description: Анкета получена
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - city
+                - match_id
+                - user_id
+                - name
+                - age
+                - about_me
+                - education
+                - work
+                - smoking
+                - alcohol
+                - height
+                - dating_goal
+                - compatibility
+                - tags
+                - photos
+                - liked_me
+                properties:
+                  city:
+                    type: string
+                    nullable: true
+                  match_id:
+                    type: integer
+                    format: int64
+                    minimum: 1
+                    description: Мэтч текущего пользователя с владельцем анкеты; нужен для перехода к переписке.
+                    example: 15
+                  user_id:
+                    minimum: 1
+                    type: integer
+                    format: int64
+                    example: 42
+                  name:
+                    minLength: 1
+                    maxLength: 100
+                    pattern: \S
+                    description: Имя не должно состоять только из пробелов.
+                    type: string
+                    example: Аня
+                  about_me:
+                    type: string
+                    nullable: true
+                    description: Описание пользователя в анкете. null, если описание не задано.
+                    example: Люблю путешествия и настольные игры.
+                  education:
+                    allOf:
+                    - $ref: '#/components/schemas/Education'
+                    nullable: true
+                  work:
+                    type: string
+                    nullable: true
+                    maxLength: 100
+                  smoking:
+                    allOf:
+                    - $ref: '#/components/schemas/Attitude'
+                    nullable: true
+                  alcohol:
+                    allOf:
+                    - $ref: '#/components/schemas/Attitude'
+                    nullable: true
+                  height:
+                    type: integer
+                    minimum: 100
+                    maximum: 250
+                    nullable: true
+                    description: Рост в сантиметрах.
+                  dating_goal:
+                    $ref: '#/components/schemas/DatingGoal'
+                  compatibility:
+                    type: number
+                    format: double
+                    minimum: 0
+                    maximum: 1
+                    nullable: true
+                    description: Совместимость с текущим пользователем, рассчитанная сервисом совместимости. Чем
+                      выше значение, тем выше совместимость; 0 — минимальная, 1 — максимальная. Значение не является
+                      вероятностью успешных отношений. null, если текущий пользователь или кандидат ещё не прошёл
+                      тест.
+                    example: 0.87
+                  age:
+                    minimum: 18
+                    type: integer
+                    example: 22
+                  tags:
+                    maxItems: 10
+                    uniqueItems: true
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TagKey'
+                    example:
+                    - coffee
+                    - music
+                  photos:
+                    type: array
+                    minItems: 0
+                    maxItems: 6
+                    items:
+                      type: object
+                      required:
+                      - id
+                      - url
+                      properties:
+                        id:
+                          minimum: 1
+                          type: integer
+                          format: int64
+                          example: 7
+                        url:
+                          minLength: 1
+                          type: string
+                          example: /media/photo-7.jpg
+                  liked_me:
+                    type: boolean
+                    description: Для анкеты из мэтча всегда true.
+                    example: false
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Мэтча с пользователем нет или анкета недоступна
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: PROFILE_NOT_FOUND
+                  message: Целевая анкета не найдена или недоступна
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
 
   /api/v1/matches:
     get:
@@ -1162,6 +1480,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+
   /api/v1/matches/summary:
     get:
       security:
@@ -1197,6 +1516,7 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalServerError'
+
 
   /api/v1/matches/{match_id}/seen:
     post:
@@ -1234,7 +1554,17 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+
 components:
+  parameters:
+    MatchId:
+      name: match_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
   securitySchemes:
     cookieAuth:
       type: apiKey
@@ -1250,6 +1580,164 @@ components:
         type: string
         example: access_token=eyJhbGciOi...; Path=/; HttpOnly; Secure; SameSite=Lax
   schemas:
+    Event:
+      type: object
+      required: [id, name, starts_at, image_url, url, location, categories]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 4180718
+        name:
+          type: string
+          example: Выставка
+        starts_at:
+          type: string
+          format: date-time
+          example: '2026-10-30T13:00:00+03:00'
+        image_url:
+          type: string
+          format: uri
+          nullable: true
+        url:
+          type: string
+          format: uri
+          example: https://example.timepad.ru/event/4180718/
+        location:
+          type: object
+          required: [city, address]
+          properties:
+            city:
+              type: string
+              example: Москва
+            address:
+              type: string
+              nullable: true
+        categories:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id:
+                type: integer
+                example: 458
+              name:
+                type: string
+                example: Выставки
+    SearchState:
+      type: object
+      required: [search_id, expires_at, city, status, events, current_user_liked_event_ids, current_user_finished, partner_finished, matches]
+      properties:
+        search_id:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+          description: Фиксированный дедлайн через 24 часа после создания.
+        city:
+          type: string
+          example: Москва
+        status:
+          type: string
+          enum: [voting, waiting_partner, completed, cancelled]
+          description: >-
+            voting — результат текущего участника ещё не принят;
+            waiting_partner — принят только его результат;
+            completed — оба результата приняты, matches содержит пересечение;
+            cancelled — подбор отменён. При completed и пустом matches показать «Нет совпадений».
+        events:
+          type: array
+          minItems: 1
+          maxItems: 10
+          description: Полный неизменяемый набор; если найдено меньше 10 событий, возвращаются все найденные.
+          items:
+            $ref: '#/components/schemas/Event'
+        current_user_liked_event_ids:
+          type: array
+          nullable: true
+          uniqueItems: true
+          description: null до приёма результата; пустой массив означает отправленный результат без лайков.
+          items:
+            type: integer
+            format: int64
+        current_user_finished:
+          type: boolean
+        partner_finished:
+          type: boolean
+          description: Принят ли результат партнёра; его индивидуальные лайки не раскрываются.
+        matches:
+          type: array
+          maxItems: 10
+          description: Полные карточки пересечения в порядке events; до completed массив пуст.
+          items:
+            $ref: '#/components/schemas/Event'
+    LocationCoordinates:
+      type: object
+      additionalProperties: false
+      required: [latitude, longitude]
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          example: 56.25
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          example: 37.99
+    LocationResponse:
+      type: object
+      required: [location]
+      properties:
+        location:
+          type: object
+          nullable: true
+          required: [city, district, coordinates]
+          properties:
+            city:
+              type: string
+              minLength: 1
+              description: Город, определённый геокодером; для деревни может быть ближайшим городом.
+              example: Хотьково
+            district:
+              type: string
+              nullable: true
+              description: Административный район или городской округ; null, если не определён.
+              example: Сергиево-Посадский городской округ
+            coordinates:
+              $ref: '#/components/schemas/LocationCoordinates'
+    LocationConfirmRequest:
+      type: object
+      additionalProperties: false
+      required: [preview_id]
+      properties:
+        preview_id:
+          type: string
+          minLength: 1
+          description: Непрозрачный идентификатор результата предварительного определения.
+          example: loc_preview_a7b93c
+    LocationPreviewResponse:
+      type: object
+      required: [preview_id, city, district]
+      properties:
+        preview_id:
+          type: string
+          minLength: 1
+          example: loc_preview_a7b93c
+        city:
+          type: string
+          minLength: 1
+          example: Хотьково
+        district:
+          type: string
+          nullable: true
+          description: Административный район или городской округ; null, если не определён.
+          example: Сергиево-Посадский городской округ
     DatingGoal:
       type: string
       description: Ключ цели знакомства; подписи хранит клиент.
@@ -1354,6 +1842,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Photo'
+        city:
+          type: string
+          nullable: true
+          description: Текущий город пользователя
+          example: Москва
         missing:
           $ref: '#/components/schemas/Missing'
     ProfilePatch:
@@ -1603,6 +2096,36 @@ components:
                     type: string
                     enum: [MISSING_ANSWER, DUPLICATE_QUESTION, QUESTION_NOT_IN_TEST, VALUE_OUT_OF_RANGE]
   responses:
+    PlaceSearchNotFound:
+      description: Матч или подбор не существует, недоступен пользователю, истёк или утрачен
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TestError'
+          example:
+            error:
+              code: NOT_FOUND
+              message: Матч или подбор не найден
+    TimepadTimeout:
+      description: Истёк таймаут обращения к Timepad; подбор не создан
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TestError'
+          example:
+            error:
+              code: TIMEPAD_TIMEOUT
+              message: Сервис подбора событий временно недоступен. Попробуйте позже.
+    GeocoderQuotaExceeded:
+      description: Quota exceeded — превышен лимит запросов пользователя или исчерпана квота геокодера
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TestError'
+          example:
+            error:
+              code: GEOCODER_QUOTA_EXCEEDED
+              message: Quota exceeded
     UnsupportedMediaType:
       description: Тело должно быть application/json
       content:

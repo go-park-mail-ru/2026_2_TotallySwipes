@@ -20,6 +20,7 @@ type FeedItem struct {
 	Tags          []string
 	Photos        []FeedPhoto
 	LikedMe       bool
+	City          *string
 }
 
 // MatchedProfile - анкета собеседника по мэтчу

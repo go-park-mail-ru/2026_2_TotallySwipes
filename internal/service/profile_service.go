@@ -35,8 +35,8 @@ type ProfileRepository interface {
 	DeletePhoto(ctx context.Context, userID, photoID int64) (string, error)
 	// ReorderPhotos задаёт порядок фото; model.ErrPhotoOrderMismatch, если набор id не совпадает с фото анкеты.
 	ReorderPhotos(ctx context.Context, userID int64, photoIDs []int64) error
-	// GetProfilesByCursorAndLimit возвращает страницу заполненных анкет и курсор следующей (nil в конце).
-	GetProfilesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error)
+	// GetCandidatesByCursorAndLimit возвращает страницу заполненных анкет и курсор следующей (nil в конце).
+	GetCandidatesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error)
 	// GetMatchedProfile возвращает анкету targetID и id мэтча с viewerID; model.ErrNotFound, если мэтча нет.
 	GetMatchedProfile(ctx context.Context, viewerID, targetID int64) (*model.Profile, int64, error)
 }
@@ -148,6 +148,7 @@ func (s *ProfileService) GetShortProfile(ctx context.Context, userID int64) (*mo
 
 	fields := profile.CurrentVersion.ProfileFields
 	short := &model.ProfileShort{
+		City:    profile.City,
 		UserID:  profile.UserID,
 		Name:    fields.Name,
 		Missing: profile.Missing(),
@@ -177,8 +178,11 @@ func (s *ProfileService) GetNextFeed(ctx context.Context, userID int64, limit in
 	if len(userProfile.Missing()) > 0 {
 		return nil, fmt.Errorf("get feed user id=%d: profile incomplete: %w", userID, model.ErrProfileRequired)
 	}
+	if userProfile.City == nil {
+		return nil, fmt.Errorf("get feed: %w", model.ErrLocationRequired)
+	}
 	userVector, _ := feedBigFive(userProfile.CurrentPsycho)
-	candidates, nextCursor, err := s.profileRepo.GetProfilesByCursorAndLimit(ctx, userID, limit, cursor)
+	candidates, nextCursor, err := s.profileRepo.GetCandidatesByCursorAndLimit(ctx, userID, limit, cursor)
 
 	if err != nil {
 		return nil, fmt.Errorf("get feed profiles: %w", err)
@@ -253,6 +257,7 @@ func (s *ProfileService) feedItem(ctx context.Context, profile *model.Profile, v
 
 	fields := profile.CurrentVersion.ProfileFields
 	item := model.FeedItem{
+		City:          profile.City,
 		UserID:        profile.UserID,
 		Name:          *fields.Name,
 		Age:           model.AgeAt(*fields.BirthDate, time.Now()),

@@ -8,14 +8,20 @@
 
 Теги связаны с `profile_version` через `profile_tag.profile_version_id`. Каждая версия имеет собственный набор тегов, включая пустой; составной первичный ключ — `(profile_version_id, tag_id)`. Прямой связи `profile_tag` с `profile` нет.
 
-Фотографии и лайки остаются связаны с `profile`. Новая версия анкеты не требует переноса лайков; версия анкеты на момент лайка не фиксируется. Исторические версии сохраняют поля анкеты и наборы тегов, но не состав фотографий.
+Фотографии и свайпы связаны с `profile`. Новая версия анкеты не требует переноса свайпов; версия анкеты на момент действия не фиксируется. Исторические версии сохраняют поля анкеты и наборы тегов, но не состав фотографий.
+
+`swipe` хранит текущее действие для пары `(author_id, target_profile_id)` — это составной первичный ключ. Повторный свайп обновляет `action` и `updated_at`, сохраняя `created_at`; история действий не ведётся.
+
+У пользователя может быть **0..1 запись местоположения**. `user_location.user_id` одновременно является первичным и внешним ключом. `coordinates` содержит одну точку PostGIS типа `geography(Point, 4326)`, `district` допускает `NULL`. Местоположение обновляется без сохранения истории. Пространственного индекса нет; расстояние планируется вычислять для уже выбранных анкет.
 
 Ограничения, не выражаемые линиями ER-диаграммы:
 
+- `swipe.action` допускает только `like`, `dislike`, `super_like`; временные поля конечны, `updated_at >= created_at`. Свайп собственной анкеты запрещает backend. Для создания матча backend блокирует обоих пользователей в порядке `id`, сохраняет свайп и проверяет взаимный интерес в одной транзакции `READ COMMITTED`.
+- В `user_location` город не пустой после `btrim`, район либо `NULL`, либо не пустой после `btrim`; `created_at <= updated_at`. Удаление пользователя каскадно удаляет местоположение.
 - `subscription_no_overlap` запрещает пересечение периодов `[starts_at, ends_at)` одного пользователя через `EXCLUDE USING gist`; соседние периоды разрешены. `CHECK` требует конечных границ и положительной длительности.
-- Триггеры запрещают `UPDATE` строк `user_answer`, `profile_tag`, `profile_like` и `profile_version`.
+- Триггеры запрещают `UPDATE` строк `user_answer`, `profile_tag` и `profile_version`.
 - `profile_psycho_no_rewrite` запрещает обновление готового результата и изменение идентификаторов и времени записи незавершённого. Пять показателей либо все `NULL`, либо все заполнены — это обеспечивает `CHECK`.
-- Триггеры запрещают прямой `DELETE` строк `user_answer`, `profile_tag`, `profile_like`, `profile_version` и `profile_psycho`. Каскадное удаление при удалении владельца сохраняется. Добавление связей к старым версиям и ответов к готовым результатам пока не запрещено.
+- Триггеры запрещают прямой `DELETE` строк `user_answer`, `profile_tag`, `profile_version` и `profile_psycho`. Каскадное удаление при удалении владельца сохраняется. Добавление связей к старым версиям и ответов к готовым результатам пока не запрещено.
 
 `profile_psycho.personality_type` хранит тип, показанный после теста. Допустим `NULL`; непустое значение требует заполненных показателей и защищено от изменения вместе с готовым результатом.
 
@@ -147,11 +153,21 @@ erDiagram
         timestamptz updated_at
     }
 
-    profile_like {
-        bigint id PK
-        bigint author_id FK, UK "U1"
-        bigint profile_id FK, UK "U1"
+    swipe {
+        bigint author_id PK, FK
+        bigint target_profile_id PK, FK
+        text action "like, dislike, super_like"
         timestamptz created_at
+        timestamptz updated_at
+    }
+
+    user_location {
+        bigint user_id PK, FK
+        text city
+        text district "NULL"
+        geography coordinates "Point, SRID 4326"
+        timestamptz created_at
+        timestamptz updated_at
     }
 
     match {
@@ -189,8 +205,9 @@ erDiagram
     profile ||..o{ photo : "profile_id"
     user ||..o{ photo_comment : "author_id"
     photo ||..o{ photo_comment : "photo_id"
-    user ||..o{ profile_like : "author_id"
-    profile ||..o{ profile_like : "profile_id"
+    user ||--o{ swipe : "author_id"
+    profile ||--o{ swipe : "target_profile_id"
+    user ||--o| user_location : "user_id"
     user ||..o{ match : "first_user_id"
     user ||..o{ match : "second_user_id"
     match ||..o{ message : "match_id"

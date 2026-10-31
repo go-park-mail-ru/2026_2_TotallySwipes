@@ -9,6 +9,29 @@ import (
 	"strings"
 )
 
+const lockPsychoProfileQuery = `SELECT id FROM profile WHERE id = $1 FOR UPDATE`
+
+const insertProfilePsychoQuery = `
+		INSERT INTO profile_psycho (
+			profile_id, revision, openness, conscientiousness,
+			extraversion, agreeableness, neuroticism, personality_type
+		)
+		SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6, $7
+		FROM profile_psycho WHERE profile_id = $1
+		RETURNING id, revision, recorded_at`
+
+const insertUserAnswersPrefix = `
+		INSERT INTO user_answer (profile_psycho_id, question_no, answer_value)
+		VALUES `
+
+const selectLatestTestResultQuery = `
+		SELECT id, revision, recorded_at, personality_type,
+		       openness, conscientiousness, extraversion, agreeableness, neuroticism
+		FROM profile_psycho
+		WHERE profile_id = $1 AND openness IS NOT NULL
+		ORDER BY revision DESC
+		LIMIT 1`
+
 type PsychoTestRepo struct {
 	db *sql.DB
 }
@@ -34,7 +57,7 @@ func (r *PsychoTestRepo) SaveTestResult(ctx context.Context, profileID int64, an
 	defer tx.Rollback()
 
 	var lockedID int64
-	err = tx.QueryRowContext(ctx, `SELECT id FROM profile WHERE id = $1 FOR UPDATE`, profileID).Scan(&lockedID)
+	err = tx.QueryRowContext(ctx, lockPsychoProfileQuery, profileID).Scan(&lockedID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, model.ErrNotFound
 	}
@@ -44,14 +67,7 @@ func (r *PsychoTestRepo) SaveTestResult(ctx context.Context, profileID int64, an
 	}
 
 	var result model.TestResult
-	err = tx.QueryRowContext(ctx, `
-		INSERT INTO profile_psycho (
-			profile_id, revision, openness, conscientiousness,
-			extraversion, agreeableness, neuroticism, personality_type
-		)
-		SELECT $1, COALESCE(MAX(revision), 0) + 1, $2, $3, $4, $5, $6, $7
-		FROM profile_psycho WHERE profile_id = $1
-		RETURNING id, revision, recorded_at`,
+	err = tx.QueryRowContext(ctx, insertProfilePsychoQuery,
 		profileID, psycho.Openness, psycho.Conscientiousness,
 		psycho.Extraversion, psycho.Agreeableness, psycho.Neuroticism,
 		nullIfEmpty(string(psycho.PersonalityType)),
@@ -71,15 +87,13 @@ func (r *PsychoTestRepo) SaveTestResult(ctx context.Context, profileID int64, an
 	}
 
 	_, err = tx.ExecContext(ctx,
-		`
-		INSERT INTO user_answer (profile_psycho_id, question_no, answer_value)
-		VALUES `+strings.Join(placeholders, ", "), args...)
+		insertUserAnswersPrefix+strings.Join(placeholders, ", "), args...)
 
 	if err != nil {
 		return nil, fmt.Errorf("save test result: insert answers: %w", err)
 	}
 
-	_, err = tx.ExecContext(ctx, `UPDATE profile SET updated_at = CURRENT_TIMESTAMP WHERE id = $1`, profileID)
+	_, err = tx.ExecContext(ctx, touchProfileQuery, profileID)
 	if err != nil {
 		return nil, fmt.Errorf("save test result: update profile timestamp: %w", err)
 	}
@@ -95,13 +109,7 @@ func (r *PsychoTestRepo) SaveTestResult(ctx context.Context, profileID int64, an
 func (r *PsychoTestRepo) GetTestResult(ctx context.Context, profileID int64) (*model.TestResult, error) {
 	var result model.TestResult
 	var personalityType sql.NullString
-	err := r.db.QueryRowContext(ctx, `
-		SELECT id, revision, recorded_at, personality_type,
-		       openness, conscientiousness, extraversion, agreeableness, neuroticism
-		FROM profile_psycho
-		WHERE profile_id = $1 AND openness IS NOT NULL
-		ORDER BY revision DESC
-		LIMIT 1`,
+	err := r.db.QueryRowContext(ctx, selectLatestTestResultQuery,
 		profileID,
 	).Scan(&result.ID, &result.Revision, &result.CompletedA, &personalityType,
 		&result.BigFive.Openness, &result.BigFive.Conscientiousness, &result.BigFive.Extraversion,

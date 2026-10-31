@@ -3,13 +3,17 @@ package model
 import "errors"
 
 var (
-	ErrNotFound           = errors.New("not found")
-	ErrEmailAlreadyExists = errors.New("email already exists")
-	ErrPasswordTooLong    = errors.New("password too long")
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrInvalidSession     = errors.New("invalid session")
-	ErrInvalidSwipe       = errors.New("invalid self-swipe")
-	ErrProfileIncomplete  = errors.New("profile incomplete")
+	ErrTimepadTimeout         = errors.New("timepad timeout")
+	ErrResultAlreadySubmitted = errors.New("result already submitted")
+	ErrSearchStateConflict    = errors.New("search state conflict")
+	ErrNotFound               = errors.New("not found")
+	ErrEmailAlreadyExists     = errors.New("email already exists")
+	ErrPasswordTooLong        = errors.New("password too long")
+	ErrInvalidCredentials     = errors.New("invalid credentials")
+	ErrInvalidSession         = errors.New("invalid session")
+	ErrInvalidSwipe           = errors.New("invalid self-swipe")
+	ErrProfileIncomplete      = errors.New("profile incomplete")
+	ErrLocationRequired       = errors.New("location required")
 	// ErrSessionNotOpened означает, что аккаунт создан, но сессия не открыта.
 	ErrSessionNotOpened       = errors.New("account created, session not opened")
 	ErrInvalidFeedRequest     = errors.New("invalid feed request")
@@ -31,4 +35,15 @@ var (
 	ErrMatchNotFound = errors.New("match not found")
 	// ErrPhotoOrderMismatch - новый порядок не совпадает с текущим набором фото анкеты
 	ErrPhotoOrderMismatch = errors.New("photo order mismatch")
+
+	ErrLocationPreviewUnavailable = errors.New("location preview unavailable")
+	ErrInvalidCoordinates         = errors.New("invalid coordinates")
+	ErrLocationNotFound           = errors.New("location not found")
+	ErrCityNotFound               = errors.New("city not found")
+	ErrGeocoderQuotaExceeded      = errors.New("geocoder quota exceeded")
+	ErrTimepadStatusCode          = errors.New("timepad status code")
+	ErrInvalidCity                = errors.New("invalid city")
+	ErrNoEvents                   = errors.New("no events")
+	ErrSearchAlreadyActive        = errors.New("search already active")
+	ErrInvalidEventResults        = errors.New("invalid event results")
 )

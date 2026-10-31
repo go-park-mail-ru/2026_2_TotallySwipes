@@ -67,6 +67,7 @@ type FeedResponse struct {
 }
 
 type FeedItem struct {
+	City          *string          `json:"city"`
 	UserID        int64            `json:"user_id"`
 	Name          string           `json:"name"`
 	Age           int              `json:"age"`
@@ -105,6 +106,7 @@ func newFeedItem(item model.FeedItem) FeedItem {
 		photos = append(photos, FeedPhoto{ID: photo.ID, URL: photo.URL})
 	}
 	return FeedItem{
+		City:          item.City,
 		UserID:        item.UserID,
 		Name:          item.Name,
 		Age:           item.Age,
