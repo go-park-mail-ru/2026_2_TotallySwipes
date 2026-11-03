@@ -16,6 +16,7 @@ type Config struct {
 	Redis    RedisConfig
 	Auth     AuthConfig
 	HTTP     HTTPConfig
+	TLS      TLSConfig
 	MinIO    MinIOConfig
 	Geocoder GeocoderConfig
 	Timepad  TimepadConfig
@@ -36,6 +37,11 @@ type AuthConfig struct {
 	JWTAccessTTL  time.Duration
 	JWTRefreshTTL time.Duration
 	CookieSecure  bool
+}
+
+type TLSConfig struct {
+	CertFile string
+	KeyFile  string
 }
 
 type HTTPConfig struct {
@@ -100,6 +106,10 @@ func Load() (*Config, error) {
 			WriteTimeout:      r.duration("HTTP_WRITE_TIMEOUT", 10*time.Second),
 			IdleTimeout:       r.duration("HTTP_IDLE_TIMEOUT", 60*time.Second),
 		},
+		TLS: TLSConfig{
+			CertFile: r.str("TLS_CERT_FILE", ""),
+			KeyFile:  r.str("TLS_KEY_FILE", ""),
+		},
 		MinIO: MinIOConfig{
 			Endpoint:       r.str("MINIO_ENDPOINT", "minio:9000"),
 			PublicEndpoint: r.str("MINIO_PUBLIC_ENDPOINT", "localhost:9000"),
@@ -121,10 +131,18 @@ func Load() (*Config, error) {
 		},
 	}
 
+	if (cfg.TLS.CertFile == "") != (cfg.TLS.KeyFile == "") {
+		r.errs = append(r.errs, errors.New("TLS_CERT_FILE and TLS_KEY_FILE must be set together"))
+	}
+
 	if err := r.err(); err != nil {
 		return nil, err
 	}
-	cfg.HTTP.PublicURL = r.str("PUBLIC_URL", "http://localhost:"+cfg.HTTP.Port)
+	scheme := "http"
+	if cfg.TLS.CertFile != "" {
+		scheme = "https"
+	}
+	cfg.HTTP.PublicURL = r.str("PUBLIC_URL", scheme+"://localhost:"+cfg.HTTP.Port)
 	return cfg, nil
 }
 

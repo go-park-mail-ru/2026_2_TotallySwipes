@@ -16,3 +16,5 @@ scripts/seed/photos/*
 
 __pycache__/
 logs/
+
+certs/

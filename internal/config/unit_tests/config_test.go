@@ -187,3 +187,43 @@ func TestLoadInvalidTimepad(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadTLS(t *testing.T) {
+	for _, tc := range []struct {
+		name, cert, key string
+		wantErr         bool
+	}{
+		{"disabled", "", "", false},
+		{"enabled", "/certs/fullchain.pem", "/certs/privkey.pem", false},
+		{"missing key", "/certs/fullchain.pem", "", true},
+		{"missing certificate", "", "/certs/privkey.pem", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setRequired(t)
+			t.Setenv("TLS_CERT_FILE", tc.cert)
+			t.Setenv("TLS_KEY_FILE", tc.key)
+			t.Setenv("PUBLIC_URL", "")
+			t.Setenv("PORT", "8080")
+			cfg, err := Load()
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "TLS_CERT_FILE and TLS_KEY_FILE") {
+					t.Fatalf("expected TLS configuration error, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.TLS.CertFile != tc.cert || cfg.TLS.KeyFile != tc.key {
+				t.Fatalf("unexpected TLS config: %+v", cfg.TLS)
+			}
+			scheme := "http"
+			if tc.cert != "" {
+				scheme = "https"
+			}
+			if cfg.HTTP.PublicURL != scheme+"://localhost:8080" {
+				t.Fatalf("unexpected public URL: %s", cfg.HTTP.PublicURL)
+			}
+		})
+	}
+}

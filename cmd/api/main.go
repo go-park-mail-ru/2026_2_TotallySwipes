@@ -164,6 +164,9 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 	}
 
 	slog.Info("starting server", "port", cfg.HTTP.Port)
+	if cfg.TLS.CertFile != "" {
+		return srv.ListenAndServeTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+	}
 	return srv.ListenAndServe()
 }
 
