@@ -50,7 +50,7 @@ services:
       minio:
         condition: service_started
     env_file:
-      - docker.env
+      - .env
     environment:
       PHOTO_DIR: /photos
       LOG_DIR: /logs

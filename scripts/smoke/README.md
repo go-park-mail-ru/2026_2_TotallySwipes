@@ -12,7 +12,7 @@ Docker должен иметь доступ к образу `dhi.io/minio:latest
 Сценарий собирает текущий backend, поднимает отдельный проект
 `totallyswipes-photo-smoke`, применяет все `db/migrations/*.up.sql` и запускает API.
 Используются порты 25432, 26379, 29000 и 28080. Они должны быть свободны.
-Настройки БД, Redis и MinIO заданы явно; `docker.env` и `.env` не используются
+Настройки БД, Redis и MinIO заданы явно; `.env` не используются
 для подключения к основному стенду. После проверки тестовые контейнеры и их
 данные удаляются. Не используйте имя этого Compose-проекта для постоянных данных.
 
@@ -38,7 +38,7 @@ Docker должен иметь доступ к образу `dhi.io/minio:latest
 Из корня проекта для API в Docker:
 
 ```sh
-python3 scripts/smoke/logs.py --compose docker-compose.yml --env-file docker.env
+python3 scripts/smoke/logs.py --compose docker-compose.yml --env-file .env
 ```
 
 Для локального API:

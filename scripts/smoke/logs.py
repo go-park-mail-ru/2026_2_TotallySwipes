@@ -24,7 +24,7 @@ def main():
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--log-file", type=Path, help="Local backend.log")
     source.add_argument("--compose", type=Path, help="Compose file; read /logs/backend.log in api")
-    parser.add_argument("--env-file", default="docker.env")
+    parser.add_argument("--env-file", default=".env")
     args = parser.parse_args()
 
     def read_log():
