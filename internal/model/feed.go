@@ -20,6 +20,13 @@ type FeedItem struct {
 	Tags          []string
 	Photos        []FeedPhoto
 	LikedMe       bool
+	City          *string
+}
+
+// MatchedProfile - анкета собеседника по мэтчу
+type MatchedProfile struct {
+	MatchID int64
+	Item    FeedItem
 }
 
 type FeedCandidate struct {

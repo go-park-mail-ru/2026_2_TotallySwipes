@@ -29,6 +29,14 @@ func TestSearchFilterFeed(t *testing.T) {
 	users := repository.NewUserRepository(db)
 	profiles := repository.NewProfileRepository(db)
 	filters := repository.NewFilterRepository(db)
+	locations := repository.NewLocationRepository(db)
+	city := fmt.Sprintf("feed-city-%d", time.Now().UnixNano())
+	setCity := func(id int64, city string) {
+		t.Helper()
+		if err := locations.Upsert(ctx, &model.UserLocation{UserID: id, City: city, Coordinates: model.Coordinates{Latitude: 55.75, Longitude: 37.61}}); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	createUser := func(email string, sex model.Sex, age int) int64 {
 		t.Helper()
@@ -50,10 +58,17 @@ func TestSearchFilterFeed(t *testing.T) {
 		if err := filters.Upsert(ctx, id, &model.DefaultSearchFilter); err != nil {
 			t.Fatal(err)
 		}
+		setCity(id, city)
 		return id
 	}
 
 	viewer := createUser("filter-viewer@example.com", model.SexMale, 30)
+	otherCity := createUser("filter-other-city@example.com", model.SexFemale, 25)
+	setCity(otherCity, city+"-other")
+	noLocation := createUser("filter-no-location@example.com", model.SexFemale, 25)
+	if _, err := db.ExecContext(ctx, `DELETE FROM user_location WHERE user_id=$1`, noLocation); err != nil {
+		t.Fatal(err)
+	}
 	female25 := createUser("filter-f25@example.com", model.SexFemale, 25)
 	male25 := createUser("filter-m25@example.com", model.SexMale, 25)
 	female50 := createUser("filter-f50@example.com", model.SexFemale, 50)
@@ -64,16 +79,19 @@ func TestSearchFilterFeed(t *testing.T) {
 	if _, err := filters.Get(ctx, noFilter); !errors.Is(err, model.ErrNotFound) {
 		t.Fatalf("deleted filter: %v", err)
 	}
-	candidates := []int64{female25, male25, female50, noFilter}
+	candidates := []int64{female25, male25, female50, noFilter, otherCity, noLocation}
 
 	feedIDs := func() []int64 {
 		t.Helper()
-		page, _, err := profiles.GetProfilesByCursorAndLimit(ctx, viewer, 100, nil)
+		page, _, err := profiles.GetCandidatesByCursorAndLimit(ctx, viewer, 100, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		var ids []int64
 		for _, p := range page {
+			if p.Profile.City == nil || *p.Profile.City != city {
+				t.Fatalf("wrong candidate city: %+v", p.Profile)
+			}
 			if slices.Contains(candidates, p.Profile.UserID) {
 				ids = append(ids, p.Profile.UserID)
 			}
@@ -114,7 +132,7 @@ func TestSearchFilterFeed(t *testing.T) {
 				setSwipe(female25, viewer, tc.action)
 			}
 			cursor := female25 - 1
-			page, next, err := profiles.GetProfilesByCursorAndLimit(ctx, viewer, 1, &cursor)
+			page, next, err := profiles.GetCandidatesByCursorAndLimit(ctx, viewer, 1, &cursor)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -146,4 +164,40 @@ func TestSearchFilterFeed(t *testing.T) {
 			t.Fatalf("feed with %+v = %v, want %v", tc.filter, got, tc.want)
 		}
 	}
+	if err := filters.Upsert(ctx, viewer, &model.DefaultSearchFilter); err != nil {
+		t.Fatal(err)
+	}
+	// Кандидаты другого города/без локации созданы раньше: они не должны занимать LIMIT.
+	var cursor *int64
+	for i, wantID := range candidates[:3] {
+		page, next, err := profiles.GetCandidatesByCursorAndLimit(ctx, viewer, 1, cursor)
+		if err != nil || len(page) != 1 || page[0].Profile.UserID != wantID {
+			t.Fatalf("page %d: %+v, %v", i, page, err)
+		}
+		if i < 2 && (next == nil || *next != wantID) {
+			t.Fatalf("page %d cursor: %v", i, next)
+		}
+		if i == 2 && next != nil {
+			t.Fatalf("last page cursor: %v", next)
+		}
+		cursor = next
+	}
+	after := female50
+	page, next, err := profiles.GetCandidatesByCursorAndLimit(ctx, viewer, 1, &after)
+	if err != nil || len(page) != 0 || next != nil {
+		t.Fatalf("empty page: %+v, %v, %v", page, next, err)
+	}
+	setCity(viewer, city+"-other")
+	page, next, err = profiles.GetCandidatesByCursorAndLimit(ctx, viewer, 10, nil)
+	if err != nil || len(page) != 1 || page[0].Profile.UserID != otherCity || next != nil {
+		t.Fatalf("changed city: %+v, %v, %v", page, next, err)
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM user_location WHERE user_id=$1`, viewer); err != nil {
+		t.Fatal(err)
+	}
+	page, next, err = profiles.GetCandidatesByCursorAndLimit(ctx, viewer, 10, nil)
+	if err != nil || len(page) != 0 || next != nil {
+		t.Fatalf("viewer without location: %+v, %v, %v", page, next, err)
+	}
+
 }

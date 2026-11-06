@@ -13,6 +13,7 @@ import (
 
 	"dating-app/internal/model"
 	"dating-app/internal/repository"
+
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -40,7 +41,7 @@ func TestProfileTagHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if empty.CurrentVersion.ID != 0 || len(empty.Missing()) != 6 {
+	if empty.City != nil || empty.CurrentVersion.ID != 0 || len(empty.Missing()) != 6 {
 		t.Fatalf("new profile must be empty: %+v", empty)
 	}
 
@@ -159,7 +160,23 @@ func TestProfileTagHistory(t *testing.T) {
 		t.Fatalf("last photo: %v", err)
 	}
 
-	feed, _, err := repo.GetProfilesByCursorAndLimit(ctx, 0, 100, nil)
+	viewerID, err := users.CreateUser(ctx, &model.UserInput{Email: "history-viewer@example.com", PasswordHash: "test-hash"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.ExecContext(ctx, `DELETE FROM "user" WHERE id=$1`, viewerID)
+	locations := repository.NewLocationRepository(db)
+	city := fmt.Sprintf("history-city-%d", userID)
+	for _, id := range []int64{viewerID, userID} {
+		if err := locations.Upsert(ctx, &model.UserLocation{UserID: id, City: city, Coordinates: model.Coordinates{Latitude: 55.75, Longitude: 37.61}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	withCity, err := repo.GetByUserIDCurrentProfile(ctx, userID)
+	if err != nil || withCity.City == nil || *withCity.City != city {
+		t.Fatalf("profile city: %+v, %v", withCity, err)
+	}
+	feed, _, err := repo.GetCandidatesByCursorAndLimit(ctx, viewerID, 100, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

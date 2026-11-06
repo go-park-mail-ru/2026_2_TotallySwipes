@@ -11,10 +11,15 @@ import (
 
 type Config struct {
 	PhotoDir string
+	LogDir   string
 	Database DatabaseConfig
 	Redis    RedisConfig
 	Auth     AuthConfig
 	HTTP     HTTPConfig
+	TLS      TLSConfig
+	MinIO    MinIOConfig
+	Geocoder GeocoderConfig
+	Timepad  TimepadConfig
 }
 
 type DatabaseConfig struct {
@@ -22,7 +27,9 @@ type DatabaseConfig struct {
 }
 
 type RedisConfig struct {
-	Addr string
+	Addr               string
+	LocationPreviewTTL time.Duration
+	EventRepositoryTTL time.Duration
 }
 
 type AuthConfig struct {
@@ -30,6 +37,11 @@ type AuthConfig struct {
 	JWTAccessTTL  time.Duration
 	JWTRefreshTTL time.Duration
 	CookieSecure  bool
+}
+
+type TLSConfig struct {
+	CertFile string
+	KeyFile  string
 }
 
 type HTTPConfig struct {
@@ -42,17 +54,43 @@ type HTTPConfig struct {
 	IdleTimeout       time.Duration
 }
 
-// Load читает конфиг из env; обязательны только DATABASE_URL и JWT_SECRET, ошибки собираются разом
+type MinIOConfig struct {
+	Endpoint       string
+	PublicEndpoint string
+	AccessKey      string
+	SecretKey      string
+	Bucket         string
+	UseTLS         bool
+	PhotoURLTTL    time.Duration
+}
+
+type GeocoderConfig struct {
+	HTTPClientTimeout time.Duration
+	BaseURL           string
+	APIKey            string
+}
+
+type TimepadConfig struct {
+	HTTPClientTimeout time.Duration
+	BaseURL           string
+	APIKey            string
+}
+
+// Load читает конфиг из env; обязательны DATABASE_URL, JWT_SECRET,
+// GEOCODER_API_KEY и TIMEPAD_API_TOKEN; ошибки собираются разом.
 func Load() (*Config, error) {
 	var r envReader
 
 	cfg := &Config{
 		PhotoDir: r.str("PHOTO_DIR", "./db/data/cats"),
+		LogDir:   r.str("LOG_DIR", "./logs"),
 		Database: DatabaseConfig{
 			URL: r.required("DATABASE_URL"),
 		},
 		Redis: RedisConfig{
-			Addr: r.str("REDIS_ADDR", "localhost:6379"),
+			Addr:               r.str("REDIS_ADDR", "localhost:6379"),
+			EventRepositoryTTL: r.positiveDuration("EVENT_SEARCH_TTL", 24*time.Hour),
+			LocationPreviewTTL: r.positiveDuration("LOCATION_PREVIEW_TTL", 10*time.Minute),
 		},
 		Auth: AuthConfig{
 			JWTSecret:     r.required("JWT_SECRET"),
@@ -68,12 +106,43 @@ func Load() (*Config, error) {
 			WriteTimeout:      r.duration("HTTP_WRITE_TIMEOUT", 10*time.Second),
 			IdleTimeout:       r.duration("HTTP_IDLE_TIMEOUT", 60*time.Second),
 		},
+		TLS: TLSConfig{
+			CertFile: r.str("TLS_CERT_FILE", ""),
+			KeyFile:  r.str("TLS_KEY_FILE", ""),
+		},
+		MinIO: MinIOConfig{
+			Endpoint:       r.str("MINIO_ENDPOINT", "minio:9000"),
+			PublicEndpoint: r.str("MINIO_PUBLIC_ENDPOINT", "localhost:9000"),
+			AccessKey:      r.str("MINIO_ACCESS_KEY", "minioadmin"),
+			SecretKey:      r.str("MINIO_SECRET_KEY", "minioadmin"),
+			Bucket:         r.str("MINIO_BUCKET", "photos"),
+			UseTLS:         r.boolean("MINIO_USE_TLS", false),
+			PhotoURLTTL:    r.positiveDuration("MINIO_PHOTO_URL_TTL", 15*time.Minute),
+		},
+		Timepad: TimepadConfig{
+			HTTPClientTimeout: r.positiveDuration("TIMEPAD_HTTP_CLIENT_TIMEOUT", 5*time.Second),
+			BaseURL:           r.str("TIMEPAD_BASE_URL", "https://api.timepad.ru/v1/events"),
+			APIKey:            r.required("TIMEPAD_API_TOKEN"),
+		},
+		Geocoder: GeocoderConfig{
+			HTTPClientTimeout: r.positiveDuration("GEOCODER_HTTP_CLIENT_TIMEOUT", 5*time.Second),
+			BaseURL:           r.str("GEOCODER_BASE_URL", "https://api/v1/reverse"),
+			APIKey:            r.required("GEOCODER_API_KEY"),
+		},
+	}
+
+	if (cfg.TLS.CertFile == "") != (cfg.TLS.KeyFile == "") {
+		r.errs = append(r.errs, errors.New("TLS_CERT_FILE and TLS_KEY_FILE must be set together"))
 	}
 
 	if err := r.err(); err != nil {
 		return nil, err
 	}
-	cfg.HTTP.PublicURL = r.str("PUBLIC_URL", "http://localhost:"+cfg.HTTP.Port)
+	scheme := "http"
+	if cfg.TLS.CertFile != "" {
+		scheme = "https"
+	}
+	cfg.HTTP.PublicURL = r.str("PUBLIC_URL", scheme+"://localhost:"+cfg.HTTP.Port)
 	return cfg, nil
 }
 

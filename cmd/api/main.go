@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -12,12 +11,16 @@ import (
 
 	"dating-app/internal/auth"
 	"dating-app/internal/config"
+	"dating-app/internal/geocoder"
 	"dating-app/internal/handler"
+	"dating-app/internal/logging"
 	"dating-app/internal/middleware"
 	"dating-app/internal/psychotest"
 	"dating-app/internal/repository"
 	"dating-app/internal/service"
 	"dating-app/internal/storage"
+	"dating-app/internal/storage/s3"
+	"dating-app/internal/timepad"
 )
 
 const connectTimeout = 5 * time.Second
@@ -26,23 +29,44 @@ type handlers struct {
 	auth       *handler.AuthHandler
 	feed       *handler.FeedHandler
 	filter     *handler.FilterHandler
+	match      *handler.MatchHandler
 	profile    *handler.ProfileHandler
 	psychoTest *handler.PsychoTestHandler
 	swipe      *handler.SwipeHandler
+	location   *handler.LocationHandler
+	event      *handler.EventHandler
 }
 
 func main() {
-	if err := run(); err != nil {
-		slog.Error("server stopped", "error", err)
+	if err := start(); err != nil {
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func start() error {
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("invalid configuration: %w", err)
+		slog.Error("load config", "error", err)
+		return err
 	}
+
+	logger, logFile, err := logging.New(cfg.LogDir)
+	if err != nil {
+		slog.Error("init logger", "error", err)
+		return err
+	}
+	defer logFile.Close()
+
+	slog.SetDefault(logger)
+
+	if err := run(cfg, logger); err != nil {
+		logger.Error("server stopped", "error", err)
+		return err
+	}
+	return nil
+}
+
+func run(cfg *config.Config, logger *slog.Logger) error {
 
 	psychoTest, err := psychotest.Load()
 	if err != nil {
@@ -52,7 +76,8 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
 	defer cancel()
 
-	db, err := storage.OpenPostgres(ctx, cfg.Database.URL)
+	tracer := storage.NewTracer(logger)
+	db, err := storage.OpenPostgres(ctx, cfg.Database.URL, tracer)
 	if err != nil {
 		return err
 	}
@@ -64,37 +89,70 @@ func run() error {
 	}
 	defer rdb.Close()
 
+	minioCtx, cancelMinIO := context.WithTimeout(context.Background(), connectTimeout)
+	minioStorage, err := s3.OpenMinIOStorage(minioCtx, cfg.MinIO)
+	cancelMinIO()
+	if err != nil {
+		return err
+	}
+
 	userRepo := repository.NewUserRepository(db)
 	profileRepo := repository.NewProfileRepository(db)
 	filterRepo := repository.NewFilterRepository(db)
 	swipeRepo := repository.NewSwipeRepository(db)
+	matchRepo := repository.NewMatchRepository(db)
 	psychoTestRepo := repository.NewPsychoTestRepository(db)
 	sessionRepo := repository.NewSessionRepository(rdb)
+	previewsRepo := repository.NewLocationPreviewRepository(rdb, cfg.Redis.LocationPreviewTTL)
+	locationRepo := repository.NewLocationRepository(db)
+
+	eventRepo := repository.NewEventRepository(rdb, cfg.Redis.EventRepositoryTTL)
 
 	issuer := auth.NewJWTIssuer(cfg.Auth.JWTSecret, cfg.Auth.JWTAccessTTL)
-	photoStorage := storage.NewLocalPhotoStorage(cfg.PhotoDir)
-	urlProvider := service.NewLocalPhotoURLProvider(cfg.HTTP.PublicURL)
+	// photoStorage := storage.NewLocalPhotoStorage(cfg.PhotoDir)
+	// urlProvider := service.NewLocalPhotoURLProvider(cfg.HTTP.PublicURL)
+	minioURLProvider, err := s3.NewMinIOURLProvider(cfg.MinIO)
+	if err != nil {
+		return err
+	}
+
+	geocoderHTTPClient := &http.Client{
+		Timeout: cfg.Geocoder.HTTPClientTimeout,
+	}
+	timepadHTTPClient := &http.Client{
+		Timeout: cfg.Timepad.HTTPClientTimeout,
+	}
+
+	reverseGeocoder := geocoder.NewGeoQoder(geocoderHTTPClient, cfg.Geocoder.BaseURL, cfg.Geocoder.APIKey)
+	timepadProvider := timepad.NewTimepadProvider(timepadHTTPClient, cfg.Timepad.BaseURL, cfg.Timepad.APIKey)
 
 	compatibilitySvc := service.NewCompatibilityService()
-	profileSvc := service.NewProfileService(profileRepo, compatibilitySvc, urlProvider, photoStorage)
+	profileSvc := service.NewProfileService(profileRepo, compatibilitySvc, minioURLProvider, minioStorage)
 	authSvc := service.NewAuthService(userRepo, profileSvc, sessionRepo, auth.BcryptHasher{}, issuer, cfg.Auth.JWTRefreshTTL)
 	psychoTestSvc := service.NewPsychoTestService(psychoTestRepo, profileRepo, compatibilitySvc, psychoTest)
 	filterSvc := service.NewFilterService(filterRepo)
 	swipeSvc := service.NewSwipeService(swipeRepo, profileRepo)
+	matchSvc := service.NewMatchService(matchRepo, profileRepo, compatibilitySvc, minioURLProvider)
+	locationSvc := service.NewLocationService(locationRepo, reverseGeocoder, previewsRepo)
+	eventSvc := service.NewEventService(timepadProvider, matchRepo, eventRepo)
 
 	h := handlers{
 		auth:       handler.NewAuthHandler(authSvc, cfg.Auth.CookieSecure),
 		feed:       handler.NewFeedHandler(profileSvc),
 		filter:     handler.NewFilterHandler(filterSvc),
+		match:      handler.NewMatchHandler(matchSvc),
 		profile:    handler.NewProfileHandler(profileSvc),
 		psychoTest: handler.NewPsychoTestHandler(psychoTestSvc),
 		swipe:      handler.NewSwipeHandler(swipeSvc),
+		location:   handler.NewLocationHandler(locationSvc),
+		event:      handler.NewEventHandler(eventSvc),
 	}
 
 	var root http.Handler = newRouter(cfg, issuer, h)
 	root = middleware.Recovery(root)
 	root = middleware.CORS(cfg.HTTP.CORSOrigins)(root)
 	root = middleware.Logging(root)
+	root = middleware.RequestID(root)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.HTTP.Port,
@@ -106,6 +164,9 @@ func run() error {
 	}
 
 	slog.Info("starting server", "port", cfg.HTTP.Port)
+	if cfg.TLS.CertFile != "" {
+		return srv.ListenAndServeTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+	}
 	return srv.ListenAndServe()
 }
 
@@ -129,6 +190,10 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 	api.Handle("/feed", authed(h.feed.Get)).Methods(http.MethodGet)
 	api.Handle("/feed/swipe", authed(h.swipe.Swipe)).Methods(http.MethodPost)
 
+	api.Handle("/matches", authed(h.match.List)).Methods(http.MethodGet)
+	api.Handle("/matches/summary", authed(h.match.Summary)).Methods(http.MethodGet)
+	api.Handle("/matches/{match_id}/seen", authed(h.match.MarkSeen)).Methods(http.MethodPost)
+
 	api.Handle("/filters/me", authed(h.filter.Get)).Methods(http.MethodGet)
 	api.Handle("/filters/me", authed(h.filter.Set)).Methods(http.MethodPut)
 
@@ -138,10 +203,17 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 	api.Handle("/profile/me/photos", authed(h.profile.AddPhoto)).Methods(http.MethodPost)
 	api.Handle("/profile/me/photos/order", authed(h.profile.ReorderPhotos)).Methods(http.MethodPut)
 	api.Handle("/profile/me/photos/{photo_id}", authed(h.profile.DeletePhoto)).Methods(http.MethodDelete)
+	api.Handle("/profiles/{user_id}", authed(h.profile.GetByUserID)).Methods(http.MethodGet)
 
 	api.Handle("/tests/current", authed(h.psychoTest.Current)).Methods(http.MethodGet)
 	api.Handle("/tests/results/me", authed(h.psychoTest.MyResult)).Methods(http.MethodGet)
 	api.Handle("/tests/{test_id}/results", authed(h.psychoTest.Submit)).Methods(http.MethodPost)
+
+	api.Handle("/location/me/preview", authed(h.location.Preview)).Methods(http.MethodPost)
+	api.Handle("/location/me", authed(h.location.SaveLocation)).Methods(http.MethodPut)
+	api.Handle("/matches/{match_id}/search-places", authed(h.event.CreateSearch)).Methods(http.MethodPost)
+	api.Handle("/matches/{match_id}/place-searches/{search_id}", authed(h.event.GetSearch)).Methods(http.MethodGet)
+	api.Handle("/matches/{match_id}/place-searches/{search_id}/results", authed(h.event.Submit)).Methods(http.MethodPost)
 
 	return r
 }
