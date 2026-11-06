@@ -34,10 +34,11 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
-      - "127.0.0.1:9000:9000"
+      - "9000:9000"
     volumes:
       - miniodata:/data
-    command: ["server", "/data", "--address", ":9000"]
+      - ./certs:/certs:ro
+    command: ["server", "/data", "--address", ":9000", "--certs-dir", "/certs"]
 
   api:
     image: ${API_IMAGE:-totallyswipes-api}

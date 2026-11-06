@@ -12,6 +12,8 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
+const minioRegion = "us-east-1"
+
 type MinIOStorage struct {
 	Client *minio.Client
 	Bucket string
@@ -28,6 +30,7 @@ func OpenMinIOStorage(ctx context.Context, cfg config.MinIOConfig) (*MinIOStorag
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
 		Secure: cfg.UseTLS,
+		Region: minioRegion,
 	})
 
 	if err != nil {
@@ -59,6 +62,7 @@ func NewMinIOURLProvider(cfg config.MinIOConfig) (*MinIOURLProvider, error) {
 	client, err := minio.New(cfg.PublicEndpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
 		Secure: cfg.UseTLS,
+		Region: minioRegion,
 	})
 
 	if err != nil {
