@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,8 +14,12 @@ import (
 	"time"
 
 	"dating-app/internal/config"
+	"dating-app/internal/model"
 	"dating-app/internal/service"
 	"dating-app/internal/storage/s3"
+
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 var _ service.PhotoURLProvider = (*s3.MinIOURLProvider)(nil)
@@ -201,5 +206,71 @@ func TestNewMinIOURLProviderInvalidEndpoint(t *testing.T) {
 	})
 	if err == nil || provider != nil {
 		t.Fatalf("provider=%v err=%v", provider, err)
+	}
+}
+
+var _ service.PhotoURLProvider = (*s3.ProxyURLProvider)(nil)
+
+func TestProxyURLProvider(t *testing.T) {
+	p := s3.NewProxyURLProvider("https://api.example:8080/")
+	got, err := p.GetPhotoURL(context.Background(), "photos/a b.png")
+	if err != nil || got != "https://api.example:8080/media/photos/a%20b.png" {
+		t.Fatalf("url=%q err=%v", got, err)
+	}
+	for _, key := range []string{"", "photos/", "other/x.png", "photos/../x.png", `photos\x.png`, "/photos/x.png"} {
+		if _, err := p.GetPhotoURL(context.Background(), key); !errors.Is(err, model.ErrInvalidPhotoStorageKey) {
+			t.Errorf("key=%q err=%v", key, err)
+		}
+	}
+}
+
+func TestMinIOStorageOpenPhoto(t *testing.T) {
+	modTime := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/photos/photos/ok.png":
+			w.Header().Set("Last-Modified", modTime.Format(http.TimeFormat))
+			w.Header().Set("Content-Length", "5")
+			w.Header().Set("ETag", `"abc"`)
+			if r.Method != http.MethodHead {
+				fmt.Fprint(w, "image")
+			}
+		case "/photos/photos/missing.png":
+			w.Header().Set("Content-Type", "application/xml")
+			w.WriteHeader(http.StatusNotFound)
+			if r.Method != http.MethodHead {
+				fmt.Fprint(w, "<Error><Code>NoSuchKey</Code></Error>")
+			}
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	client, err := minio.New(strings.TrimPrefix(server.URL, "http://"), &minio.Options{
+		Creds:  credentials.NewStaticV4("test-access", "test-secret", ""),
+		Region: "us-east-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage := &s3.MinIOStorage{Client: client, Bucket: "photos"}
+
+	body, gotMod, err := storage.OpenPhoto(context.Background(), "photos/ok.png")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	data, err := io.ReadAll(body)
+	body.Close()
+	if err != nil || string(data) != "image" || !gotMod.Equal(modTime) {
+		t.Fatalf("data=%q mod=%v err=%v", data, gotMod, err)
+	}
+
+	if _, _, err := storage.OpenPhoto(context.Background(), "photos/missing.png"); !errors.Is(err, model.ErrPhotoNotFound) {
+		t.Fatalf("missing: err=%v", err)
+	}
+	if _, _, err := storage.OpenPhoto(context.Background(), "../secret"); !errors.Is(err, model.ErrInvalidPhotoStorageKey) {
+		t.Fatalf("invalid: err=%v", err)
 	}
 }

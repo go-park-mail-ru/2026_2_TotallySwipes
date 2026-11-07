@@ -35,6 +35,7 @@ type handlers struct {
 	swipe      *handler.SwipeHandler
 	location   *handler.LocationHandler
 	event      *handler.EventHandler
+	photo      *handler.PhotoHandler
 }
 
 func main() {
@@ -111,10 +112,8 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 	issuer := auth.NewJWTIssuer(cfg.Auth.JWTSecret, cfg.Auth.JWTAccessTTL)
 	// photoStorage := storage.NewLocalPhotoStorage(cfg.PhotoDir)
 	// urlProvider := service.NewLocalPhotoURLProvider(cfg.HTTP.PublicURL)
-	minioURLProvider, err := s3.NewMinIOURLProvider(cfg.MinIO)
-	if err != nil {
-		return err
-	}
+	// Фото отдаёт сам API: порт MinIO снаружи закрыт.
+	minioURLProvider := s3.NewProxyURLProvider(cfg.HTTP.PublicURL)
 
 	geocoderHTTPClient := &http.Client{
 		Timeout: cfg.Geocoder.HTTPClientTimeout,
@@ -146,6 +145,7 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 		swipe:      handler.NewSwipeHandler(swipeSvc),
 		location:   handler.NewLocationHandler(locationSvc),
 		event:      handler.NewEventHandler(eventSvc),
+		photo:      handler.NewPhotoHandler(minioStorage),
 	}
 
 	var root http.Handler = newRouter(cfg, issuer, h)
@@ -176,6 +176,7 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 
 	files := http.FileServer(http.Dir(cfg.PhotoDir))
 	r.PathPrefix("/cats/").Handler(http.StripPrefix("/cats/", files)).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc(s3.PhotoRoutePrefix+"{key:.+}", h.photo.Get).Methods(http.MethodGet, http.MethodHead)
 
 	api := r.PathPrefix("/api/v1").Subrouter()
 	requireAuth := middleware.Auth(issuer)
