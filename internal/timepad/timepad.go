@@ -179,7 +179,6 @@ func setQuery(query *url.Values, eventQuery *model.EventQuery) {
 	}
 }
 
-// Only timeouts of this provider map to TIMEPAD_TIMEOUT; client cancellation does not.
 func timepadRequestError(ctx context.Context, op string, err error) error {
 	var netErr net.Error
 	if !errors.Is(ctx.Err(), context.Canceled) &&

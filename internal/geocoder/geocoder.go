@@ -4,8 +4,10 @@ import (
 	"context"
 	"dating-app/internal/model"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -56,7 +58,7 @@ func (g *GeoQoder) Reverse(ctx context.Context, coordinates *model.Coordinates) 
 	resp, err := g.client.Do(request)
 
 	if err != nil {
-		return nil, fmt.Errorf("call geocoder: %w", err)
+		return nil, geocoderRequestError(ctx, "call geocoder", err)
 	}
 	defer resp.Body.Close()
 
@@ -69,7 +71,11 @@ func (g *GeoQoder) Reverse(ctx context.Context, coordinates *model.Coordinates) 
 		return nil, fmt.Errorf("geocoder returned status %d", resp.StatusCode)
 	}
 
-	return readBody(resp.Body)
+	address, err := readBody(resp.Body)
+	if err != nil {
+		return nil, geocoderRequestError(ctx, "read geocoder body", err)
+	}
+	return address, nil
 }
 
 func readBody(body io.ReadCloser) (*model.ResolvedAddress, error) {
@@ -101,4 +107,13 @@ func readBody(body io.ReadCloser) (*model.ResolvedAddress, error) {
 	}
 
 	return address, nil
+}
+
+func geocoderRequestError(ctx context.Context, op string, err error) error {
+	var netErr net.Error
+	if !errors.Is(ctx.Err(), context.Canceled) &&
+		(errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout())) {
+		return fmt.Errorf("%s: %w: %w", op, model.ErrGeocoderTimeout, err)
+	}
+	return fmt.Errorf("%s: %w", op, err)
 }

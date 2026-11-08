@@ -40,6 +40,7 @@ var (
 	ErrInvalidCoordinates         = errors.New("invalid coordinates")
 	ErrLocationNotFound           = errors.New("location not found")
 	ErrCityNotFound               = errors.New("city not found")
+	ErrGeocoderTimeout            = errors.New("geocoder timeout")
 	ErrGeocoderQuotaExceeded      = errors.New("geocoder quota exceeded")
 	ErrTimepadStatusCode          = errors.New("timepad status code")
 	ErrInvalidCity                = errors.New("invalid city")

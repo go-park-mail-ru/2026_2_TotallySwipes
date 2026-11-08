@@ -60,7 +60,6 @@ type SearchEventsState struct {
 	Status    SearchStatus
 	ExpiresAt time.Time
 
-	// CurrentUserLikedEventIDs is nil until the user's result is accepted.
 	CurrentUserLikedEventIDs []int64
 	CurrentUserFinished      bool
 	PartnerFinished          bool
