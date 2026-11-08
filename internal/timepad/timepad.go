@@ -174,7 +174,7 @@ func setQuery(query *url.Values, eventQuery *model.EventQuery) {
 
 	if eventQuery.CategoryIDs != nil {
 		for _, id := range *eventQuery.CategoryIDs {
-			query.Add("category_ids", strconv.FormatInt(id, 64))
+			query.Add("category_ids", strconv.FormatInt(id, 10))
 		}
 	}
 }
