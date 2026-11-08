@@ -120,7 +120,13 @@ func TestEventSearchConcurrentLifecycle(t *testing.T) {
 	if err != nil || stored.Status != model.SearchStatusCompleted || stored.Participants[0].LikedEventsIDs == nil {
 		t.Fatalf("empty results: %+v %v", stored, err)
 	}
-	server.FastForward(24 * time.Hour)
+	// Часы miniredis зафиксированы, а ExpiresAt вычисляется по реальному времени.
+	// Поэтому перематываем фактический TTL, а не номинальные 24 часа.
+	remaining := server.TTL("place-search:" + newer.SearchID.String())
+	if remaining <= 0 {
+		t.Fatalf("expected positive TTL, got %v", remaining)
+	}
+	server.FastForward(remaining + time.Millisecond)
 	if _, err := repo.GetBySearchID(ctx, newer.SearchID); !errors.Is(err, model.ErrNotFound) {
 		t.Fatalf("expired: %v", err)
 	}
