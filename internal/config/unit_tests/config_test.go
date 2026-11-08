@@ -157,7 +157,7 @@ func TestLoadTimepad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Timepad.BaseURL != "https://api.timepad.ru/v1/events" || cfg.Timepad.HTTPClientTimeout != 5*time.Second || cfg.Redis.EventRepositoryTTL != 24*time.Hour || cfg.Timepad.APIKey != "test-timepad-token" {
+	if cfg.Timepad.BaseURL != "https://api.timepad.ru/v1/events" || cfg.Timepad.HTTPClientTimeout != 5*time.Second || cfg.Redis.EventRepositoryTTL != 48*time.Hour || cfg.Timepad.APIKey != "test-timepad-token" {
 		t.Fatal("incorrect Timepad defaults")
 	}
 	t.Setenv("TIMEPAD_BASE_URL", "http://localhost:9001/events")

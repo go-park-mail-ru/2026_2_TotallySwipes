@@ -128,7 +128,8 @@ func (r *EventRepository) CreateSearch(ctx context.Context, search *model.PlaceS
 						return fmt.Errorf("active search match mismatch")
 					}
 
-					if existing.Status == model.SearchStatusVoting && existing.ExpiresAt.After(time.Now()) {
+					live := existing.Status == model.SearchStatusVoting || existing.Status == model.SearchStatusCompleted
+					if live && existing.ExpiresAt.After(time.Now()) {
 
 						actual = &existing
 						_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
@@ -248,11 +249,6 @@ func (r *EventRepository) SubmitResults(ctx context.Context, userID, matchID int
 				search.Status = model.SearchStatusCompleted
 			}
 
-			activeID, err := tx.Get(ctx, activeKey).Result()
-			if err != nil && !errors.Is(err, redis.Nil) {
-				return err
-			}
-
 			updated, err := json.Marshal(search)
 			if err != nil {
 				return err
@@ -260,9 +256,6 @@ func (r *EventRepository) SubmitResults(ctx context.Context, userID, matchID int
 
 			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 				pipe.SetArgs(ctx, key, updated, redis.SetArgs{KeepTTL: true})
-				if completed && activeID == searchID.String() {
-					pipe.Del(ctx, activeKey)
-				}
 				return nil
 			})
 

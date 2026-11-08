@@ -90,22 +90,30 @@ func TestEventSearchConcurrentLifecycle(t *testing.T) {
 	if !stored.ExpiresAt.Equal(deadline) || server.TTL(key) != ttl {
 		t.Fatal("TTL extended")
 	}
-	if server.Exists("place-search:active:42") {
-		t.Fatal("active pointer retained")
+	// Завершённый подбор остаётся активным до истечения TTL: участники видят совпадения
+	active, err = repo.GetActive(ctx, 42)
+	if err != nil || active == nil || active.SearchID != search.SearchID || active.Status != model.SearchStatusCompleted {
+		t.Fatalf("completed search must stay active: %+v %v", active, err)
 	}
-	newer, _, err := repo.CreateSearch(ctx, candidate())
-	if err != nil {
-		t.Fatal(err)
+	again, againCreated, err := repo.CreateSearch(ctx, candidate())
+	if err != nil || againCreated || again.SearchID != search.SearchID || again.Status != model.SearchStatusCompleted {
+		t.Fatalf("completed search replaced before TTL: %+v created=%v %v", again, againCreated, err)
 	}
 	if _, err := repo.SubmitResults(ctx, 10, 42, search.SearchID, []int64{2, 1}); !errors.Is(err, model.ErrResultAlreadySubmitted) {
 		t.Fatal(err)
 	}
-	active, err = repo.GetActive(ctx, 42)
-	if err != nil || active.SearchID != newer.SearchID {
-		t.Fatal("retry affected new search")
-	}
 	if _, err := repo.SubmitResults(ctx, 10, 42, search.SearchID, []int64{1}); !errors.Is(err, model.ErrResultAlreadySubmitted) {
 		t.Fatalf("changed result: %v", err)
+	}
+	// После TTL подбор и указатель истекают, и для матча создаётся новый подбор
+	server.FastForward(server.TTL(key) + time.Millisecond)
+	newer, newerCreated, err := repo.CreateSearch(ctx, candidate())
+	if err != nil || !newerCreated || newer.SearchID == search.SearchID {
+		t.Fatalf("new search after TTL: %+v created=%v %v", newer, newerCreated, err)
+	}
+	active, err = repo.GetActive(ctx, 42)
+	if err != nil || active.SearchID != newer.SearchID {
+		t.Fatal("new search is not active")
 	}
 	if _, err := repo.SubmitResults(ctx, 30, 42, newer.SearchID, []int64{}); !errors.Is(err, model.ErrNotFound) {
 		t.Fatalf("unauthorized: %v", err)

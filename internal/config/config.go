@@ -89,7 +89,7 @@ func Load() (*Config, error) {
 		},
 		Redis: RedisConfig{
 			Addr:               r.str("REDIS_ADDR", "localhost:6379"),
-			EventRepositoryTTL: r.positiveDuration("EVENT_SEARCH_TTL", 24*time.Hour),
+			EventRepositoryTTL: r.positiveDuration("EVENT_SEARCH_TTL", 48*time.Hour),
 			LocationPreviewTTL: r.positiveDuration("LOCATION_PREVIEW_TTL", 10*time.Minute),
 		},
 		Auth: AuthConfig{
