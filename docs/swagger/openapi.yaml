@@ -1053,8 +1053,10 @@ paths:
         и сразу возвращает SearchState: дополнительный GET после POST не нужен.
         Первый участник может оценивать карточки, не дожидаясь второго.
         Один активный подбор на матч, включая конкурентные запросы.
-        Повтор с тем же городом возвращает сохранённое состояние без Timepad;
-        другой город активного подбора даёт SEARCH_ALREADY_ACTIVE.
+        Если у матча уже есть активный подбор, он возвращается без Timepad независимо
+        от присланного города (в том числе пустого) — так второй участник попадает
+        в подбор, созданный партнёром. Новый подбор создаётся только в непустом городе,
+        иначе LOCATION_REQUIRED.
         TTL — 24 часа от создания без продления. Подбор состоит из одного раунда.
       security:
         - cookieAuth: []
@@ -1066,12 +1068,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: [city]
               properties:
                 city:
                   type: string
-                  minLength: 1
-                  description: Город встречи; после обрезки пробелов строка должна быть непустой.
+                  description: >-
+                    Город пользователя для нового подбора. Игнорируется, если у матча уже есть
+                    активный подбор. Пустой или отсутствующий город при отсутствии подбора даёт LOCATION_REQUIRED.
                   example: Москва
       responses:
         '201':
@@ -1081,7 +1083,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/SearchState'
         '200':
-          description: Активный подбор с тем же городом; тот же формат объекта с актуальным состоянием
+          description: Активный подбор матча (в его городе, независимо от присланного); тот же формат объекта с актуальным состоянием
           content:
             application/json:
               schema:
@@ -1095,7 +1097,7 @@ paths:
         '408':
           $ref: '#/components/responses/TimepadTimeout'
         '409':
-          description: Список подходящих событий пуст либо активный подбор имеет другой город
+          description: Подбора ещё нет, а город не указан, либо список подходящих событий пуст
           content:
             application/json:
               schema:
@@ -1106,11 +1108,11 @@ paths:
                     error:
                       code: NO_EVENTS
                       message: Нет подходящих событий
-                alreadyActive:
+                locationRequired:
                   value:
                     error:
-                      code: SEARCH_ALREADY_ACTIVE
-                      message: Для матча уже существует подбор в другом городе
+                      code: LOCATION_REQUIRED
+                      message: Сначала необходимо указать город
         '500':
           $ref: '#/components/responses/InternalServerError'
 

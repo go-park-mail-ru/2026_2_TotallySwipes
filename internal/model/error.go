@@ -44,8 +44,6 @@ var (
 	ErrGeocoderQuotaExceeded      = errors.New("geocoder quota exceeded")
 	ErrGeocoderUnavailable        = errors.New("geocoder unavailable")
 	ErrTimepadStatusCode          = errors.New("timepad status code")
-	ErrInvalidCity                = errors.New("invalid city")
 	ErrNoEvents                   = errors.New("no events")
-	ErrSearchAlreadyActive        = errors.New("search already active")
 	ErrInvalidEventResults        = errors.New("invalid event results")
 )

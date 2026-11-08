@@ -21,10 +21,8 @@ var domainErrors = []struct {
 	err error
 	api apiError
 }{
-	{model.ErrInvalidCity, apiError{http.StatusBadRequest, codeValidationError, "Некорректный город", nil}},
 	{model.ErrInvalidEventResults, apiError{http.StatusBadRequest, codeValidationError, "Некорректный список понравившихся событий", nil}},
 	{model.ErrNoEvents, apiError{http.StatusConflict, "NO_EVENTS", "Нет подходящих событий", nil}},
-	{model.ErrSearchAlreadyActive, apiError{http.StatusConflict, "SEARCH_ALREADY_ACTIVE", "Для матча уже существует подбор в другом городе", nil}},
 	{model.ErrResultAlreadySubmitted, apiError{http.StatusConflict, "RESULT_ALREADY_SUBMITTED", "Результат уже принят. Получите актуальное состояние подбора.", nil}},
 	{model.ErrSearchStateConflict, apiError{http.StatusConflict, "SEARCH_STATE_CONFLICT", "Подбор уже завершён или отменён", nil}},
 	{model.ErrTimepadTimeout, apiError{http.StatusRequestTimeout, "TIMEPAD_TIMEOUT", "Сервис подбора событий временно недоступен. Попробуйте позже.", nil}},

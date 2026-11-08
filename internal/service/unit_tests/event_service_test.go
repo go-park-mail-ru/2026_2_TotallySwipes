@@ -21,7 +21,7 @@ func eventSearchFixture() *model.PlaceSearch {
 
 func TestEventServiceCreate(t *testing.T) {
 	failure := errors.New("dependency failed")
-	for _, name := range []string{"new", "active", "active other city", "concurrent", "concurrent other city", "blank city", "access denied", "redis read error", "provider error", "empty", "save error"} {
+	for _, name := range []string{"new", "active", "active other city", "active blank city", "concurrent", "concurrent other city", "blank city", "access denied", "redis read error", "provider error", "empty", "save error"} {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			provider, matches, repo := NewMockEventProvider(ctrl), NewMockEventMatchRepository(ctrl), NewMockEventRepository(ctrl)
@@ -30,10 +30,14 @@ func TestEventServiceCreate(t *testing.T) {
 			city := " Москва "
 			existing := eventSearchFixture()
 			var wantErr error
-			if name == "blank city" {
+			wantCity := "Москва"
+			if name == "blank city" || name == "active blank city" {
 				city = " \t "
-				wantErr = model.ErrInvalidCity
-			} else {
+			}
+			if name == "blank city" {
+				wantErr = model.ErrLocationRequired
+			}
+			{
 				var accessErr error
 				if name == "access denied" {
 					accessErr = model.ErrNotFound
@@ -43,19 +47,20 @@ func TestEventServiceCreate(t *testing.T) {
 				if accessErr == nil {
 					var active *model.PlaceSearch
 					var readErr error
-					if name == "active" || name == "active other city" {
+					if name == "active" || name == "active other city" || name == "active blank city" {
 						active = existing
 					}
 					if name == "active other city" {
+						// активный подбор отдаётся как есть, даже если город другой
 						existing.City = "Казань"
-						wantErr = model.ErrSearchAlreadyActive
+						wantCity = "Казань"
 					}
 					if name == "redis read error" {
 						readErr = failure
 						wantErr = failure
 					}
 					read := repo.EXPECT().GetActive(ctx, int64(42)).After(access).Return(active, readErr)
-					if active == nil && readErr == nil {
+					if active == nil && readErr == nil && name != "blank city" {
 						page := &model.EventPage{Events: existing.Events}
 						var providerErr error
 						if name == "provider error" {
@@ -82,7 +87,7 @@ func TestEventServiceCreate(t *testing.T) {
 							}
 							if name == "concurrent other city" {
 								existing.City = "Казань"
-								wantErr = model.ErrSearchAlreadyActive
+								wantCity = "Казань"
 							}
 							repo.EXPECT().CreateSearch(ctx, gomock.Any()).After(get).DoAndReturn(func(_ context.Context, s *model.PlaceSearch) (*model.PlaceSearch, bool, error) {
 								if s.SearchID == uuid.Nil || s.MatchID != 42 || s.City != "Москва" || s.Participants[0].UserID != 10 || s.Participants[1].UserID != 20 || !reflect.DeepEqual(s.Events, page.Events) {
@@ -110,7 +115,7 @@ func TestEventServiceCreate(t *testing.T) {
 				}
 				return
 			}
-			if state == nil || state.City != "Москва" || state.Status != model.SearchStatusVoting || created != (name == "new") {
+			if state == nil || state.City != wantCity || state.Status != model.SearchStatusVoting || created != (name == "new") {
 				t.Fatalf("unexpected result: %+v created=%v", state, created)
 			}
 			if name != "new" && state.SearchID != existing.SearchID {

@@ -122,8 +122,10 @@ func readBody(body io.Reader) (*model.EventPage, error) {
 			imageURL = optionalString(item.PosterImage.DefaultURL)
 		}
 
+		var city string
 		var address *string
 		if item.Location != nil {
+			city = item.Location.City
 			if item.Location.Address != nil {
 				address = optionalString(*item.Location.Address)
 			}
@@ -136,7 +138,7 @@ func readBody(body io.Reader) (*model.EventPage, error) {
 			URL:      item.URL,
 			StartsAt: startsAt,
 			Location: model.EventLocation{
-				City:    item.Location.City,
+				City:    city,
 				Address: address,
 			},
 			Categories: categories,
@@ -160,22 +162,26 @@ func optionalString(value string) *string {
 
 func setQuery(query *url.Values, eventQuery *model.EventQuery) {
 
+	query.Set("fields", "location")
+
 	if eventQuery.City != nil {
-		query.Set("City", *eventQuery.City)
+		query.Set("cities", *eventQuery.City)
 	}
 
 	if eventQuery.Skip != nil {
-		query.Set("Skip", strconv.Itoa(*eventQuery.Skip))
+		query.Set("skip", strconv.Itoa(*eventQuery.Skip))
 	}
 
 	if eventQuery.Limit != nil {
-		query.Set("Limit", strconv.Itoa(*eventQuery.Limit))
+		query.Set("limit", strconv.Itoa(*eventQuery.Limit))
 	}
 
-	if eventQuery.CategoryIDs != nil {
+	if eventQuery.CategoryIDs != nil && len(*eventQuery.CategoryIDs) > 0 {
+		ids := make([]string, 0, len(*eventQuery.CategoryIDs))
 		for _, id := range *eventQuery.CategoryIDs {
-			query.Add("category_ids", strconv.FormatInt(id, 10))
+			ids = append(ids, strconv.FormatInt(id, 10))
 		}
+		query.Set("category_ids", strings.Join(ids, ","))
 	}
 }
 

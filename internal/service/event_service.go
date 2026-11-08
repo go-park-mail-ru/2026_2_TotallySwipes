@@ -41,11 +41,6 @@ func NewEventService(provider EventProvider, matchRepo EventMatchRepository, eve
 
 func (s *EventService) SearchEventsByCity(ctx context.Context, userID int64, matchID int64, city string) (*model.SearchEventsState, bool, error) {
 
-	city = strings.TrimSpace(city)
-	if city == "" {
-		return nil, false, model.ErrInvalidCity
-	}
-
 	participants, err := s.matchRepo.GetParticipants(ctx, userID, matchID)
 	if err != nil {
 		return nil, false, fmt.Errorf("get participants: %w", err)
@@ -66,11 +61,12 @@ func (s *EventService) SearchEventsByCity(ctx context.Context, userID int64, mat
 			return nil, false, fmt.Errorf("to search events state: %w", err)
 		}
 
-		if state.City != city {
-			return nil, false, model.ErrSearchAlreadyActive
-		}
-
 		return state, false, nil
+	}
+
+	city = strings.TrimSpace(city)
+	if city == "" {
+		return nil, false, model.ErrLocationRequired
 	}
 
 	now := time.Now()
@@ -131,9 +127,6 @@ func (s *EventService) SearchEventsByCity(ctx context.Context, userID int64, mat
 		return nil, false, fmt.Errorf("create search: %w", err)
 	}
 
-	if actual.City != city {
-		return nil, false, model.ErrSearchAlreadyActive
-	}
 
 	state, err := toSearchEventsState(actual, userID)
 
