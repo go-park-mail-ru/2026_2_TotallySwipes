@@ -680,7 +680,7 @@ paths:
         - cookieAuth: []
       summary: Предварительно определить местоположение по координатам
       description: >-
-        Определяет город и административный район или городской округ через геокодер,
+        Определяет город и административный район или городской округ через геокодер DaData,
         не изменяя сохранённое местоположение. Для деревни может возвращаться ближайший город.
         Поддерживается только Россия. Временный результат привязан к текущему пользователю
         и содержит исходные координаты запроса, а не координаты здания из ответа геокодера.
@@ -714,10 +714,14 @@ paths:
                 error:
                   code: LOCATION_NOT_FOUND
                   message: Не удалось определить местоположение
+        '408':
+          $ref: '#/components/responses/GeocoderTimeout'
         '429':
           $ref: '#/components/responses/GeocoderQuotaExceeded'
         '500':
           $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/GeocoderUnavailable'
 
   /api/v1/filters/me:
     get:
@@ -2116,6 +2120,26 @@ components:
             error:
               code: TIMEPAD_TIMEOUT
               message: Сервис подбора событий временно недоступен. Попробуйте позже.
+    GeocoderTimeout:
+      description: Истёк таймаут обращения к геокодеру; прежнее местоположение не меняется
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TestError'
+          example:
+            error:
+              code: GEOCODER_TIMEOUT
+              message: Сервис определения местоположения временно недоступен. Попробуйте позже.
+    GeocoderUnavailable:
+      description: Геокодер недоступен или вернул ошибку; прежнее местоположение не меняется
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TestError'
+          example:
+            error:
+              code: GEOCODER_UNAVAILABLE
+              message: Сервис определения местоположения временно недоступен. Попробуйте позже.
     GeocoderQuotaExceeded:
       description: Quota exceeded — превышен лимит запросов пользователя или исчерпана квота геокодера
       content:

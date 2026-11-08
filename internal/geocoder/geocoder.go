@@ -1,6 +1,7 @@
 package geocoder
 
 import (
+	"bytes"
 	"context"
 	"dating-app/internal/model"
 	"encoding/json"
@@ -9,66 +10,78 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
-	"strconv"
 	"strings"
 )
 
-type GeoQoder struct {
+const (
+	searchRadiusMeters = 1000
+	resultsCount = 10
+	errorBodyLimit = 512
+	federalCityType = "г"
+)
+
+type DaData struct {
 	client  *http.Client
 	baseURL string
 	apiKey  string
 }
 
-type reverseResponse struct {
-	Data []struct {
-		Attributes struct {
-			City     string `json:"city"`
-			District string `json:"district"`
-			Distance string `json:"distance"`
-		} `json:"attributes"`
-	} `json:"data"`
+type geolocateRequest struct {
+	Lat          float64 `json:"lat"`
+	Lon          float64 `json:"lon"`
+	Count        int     `json:"count"`
+	RadiusMeters int     `json:"radius_meters"`
 }
 
-func NewGeoQoder(client *http.Client, baseURL, apiKey string) *GeoQoder {
-	return &GeoQoder{client: client, baseURL: baseURL, apiKey: apiKey}
+type geolocateResponse struct {
+	Suggestions []struct {
+		Data struct {
+			City         string `json:"city"`
+			CityDistrict string `json:"city_district"`
+			CityArea     string `json:"city_area"`
+			Region       string `json:"region"`
+			RegionType   string `json:"region_type"`
+		} `json:"data"`
+	} `json:"suggestions"`
 }
 
-func (g *GeoQoder) Reverse(ctx context.Context, coordinates *model.Coordinates) (*model.ResolvedAddress, error) {
+func NewDaData(client *http.Client, baseURL, apiKey string) *DaData {
+	return &DaData{client: client, baseURL: baseURL, apiKey: apiKey}
+}
 
-	u, err := url.Parse(g.baseURL)
+func (g *DaData) Reverse(ctx context.Context, coordinates *model.Coordinates) (*model.ResolvedAddress, error) {
+	payload, err := json.Marshal(geolocateRequest{
+		Lat:          coordinates.Latitude,
+		Lon:          coordinates.Longitude,
+		Count:        resultsCount,
+		RadiusMeters: searchRadiusMeters,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("parse geocoder URL: %w", err)
+		return nil, fmt.Errorf("encode geocoder request: %w", err)
 	}
 
-	query := u.Query()
-	query.Set("radius", "200")
-	query.Set("lat", strconv.FormatFloat(coordinates.Latitude, 'f', -1, 64))
-	query.Set("lng", strconv.FormatFloat(coordinates.Longitude, 'f', -1, 64))
-	query.Set("token", g.apiKey)
-	u.RawQuery = query.Encode()
-
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, g.baseURL, bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("create geocoder request: %w", err)
 	}
-	request.Header.Set("Authorization", g.apiKey)
+	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Authorization", "Token "+g.apiKey)
 
 	resp, err := g.client.Do(request)
-
 	if err != nil {
 		return nil, geocoderRequestError(ctx, "call geocoder", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-
 		if resp.StatusCode == http.StatusTooManyRequests {
 			return nil, model.ErrGeocoderQuotaExceeded
 		}
 
-		return nil, fmt.Errorf("geocoder returned status %d", resp.StatusCode)
+		// 401/403 — неверный ключ, неподтверждённая почта или исчерпан дневной лимит DaData
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, errorBodyLimit))
+		return nil, fmt.Errorf("%w: status %d: %s", model.ErrGeocoderUnavailable, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	address, err := readBody(resp.Body)
@@ -78,42 +91,56 @@ func (g *GeoQoder) Reverse(ctx context.Context, coordinates *model.Coordinates) 
 	return address, nil
 }
 
-func readBody(body io.ReadCloser) (*model.ResolvedAddress, error) {
+func readBody(body io.Reader) (*model.ResolvedAddress, error) {
+	var data geolocateResponse
 
-	var data reverseResponse
-	b := json.NewDecoder(body)
-
-	if err := b.Decode(&data); err != nil {
-		return nil, fmt.Errorf("decode body: %w", err)
+	if err := json.NewDecoder(body).Decode(&data); err != nil {
+		return nil, fmt.Errorf("%w: decode body: %w", model.ErrGeocoderUnavailable, err)
 	}
 
-	if len(data.Data) == 0 {
+	if len(data.Suggestions) == 0 {
 		return nil, model.ErrLocationNotFound
 	}
 
-	attrs := data.Data[0].Attributes
-	city := strings.TrimSpace(attrs.City)
-	if city == "" {
-		return nil, model.ErrCityNotFound
+	// DaData сортирует адреса по удалённости, поэтому первый с городом - ближайший город
+	for _, s := range data.Suggestions {
+		city := strings.TrimSpace(s.Data.City)
+		if city == "" && s.Data.RegionType == federalCityType {
+			city = strings.TrimSpace(s.Data.Region)
+		}
+		if city == "" {
+			continue
+		}
+
+		address := &model.ResolvedAddress{City: city}
+
+		district := strings.TrimSpace(s.Data.CityDistrict)
+		if district == "" {
+			district = strings.TrimSpace(s.Data.CityArea)
+		}
+		if district != "" {
+			address.District = &district
+		}
+
+		return address, nil
 	}
 
-	address := &model.ResolvedAddress{
-		City:     city,
-		District: nil,
-	}
-
-	if district := strings.TrimSpace(attrs.District); district != "" {
-		address.District = &district
-	}
-
-	return address, nil
+	return nil, model.ErrCityNotFound
 }
 
 func geocoderRequestError(ctx context.Context, op string, err error) error {
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
 	var netErr net.Error
-	if !errors.Is(ctx.Err(), context.Canceled) &&
-		(errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout())) {
+	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
 		return fmt.Errorf("%s: %w: %w", op, model.ErrGeocoderTimeout, err)
 	}
-	return fmt.Errorf("%s: %w", op, err)
+
+	if errors.Is(err, model.ErrGeocoderUnavailable) {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	return fmt.Errorf("%s: %w: %w", op, model.ErrGeocoderUnavailable, err)
 }

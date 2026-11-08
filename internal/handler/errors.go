@@ -34,6 +34,7 @@ var domainErrors = []struct {
 	{model.ErrLocationNotFound, apiError{http.StatusUnprocessableEntity, "LOCATION_NOT_FOUND", "Не удалось определить местоположение", nil}},
 	{model.ErrCityNotFound, apiError{http.StatusUnprocessableEntity, "LOCATION_NOT_FOUND", "Не удалось определить город", nil}},
 	{model.ErrGeocoderTimeout, apiError{http.StatusRequestTimeout, "GEOCODER_TIMEOUT", "Сервис определения местоположения временно недоступен. Попробуйте позже.", nil}},
+	{model.ErrGeocoderUnavailable, apiError{http.StatusServiceUnavailable, "GEOCODER_UNAVAILABLE", "Сервис определения местоположения временно недоступен. Попробуйте позже.", nil}},
 	{model.ErrGeocoderQuotaExceeded, apiError{http.StatusTooManyRequests, "GEOCODER_QUOTA_EXCEEDED", "Quota exceeded", nil}},
 	{model.ErrInvalidCredentials, apiError{http.StatusUnauthorized, codeInvalidCredentials, "Неверная почта или пароль", nil}},
 	{model.ErrInvalidSession, apiError{http.StatusUnauthorized, codeUnauthorized, msgUnauthorized, nil}},

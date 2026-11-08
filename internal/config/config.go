@@ -126,7 +126,7 @@ func Load() (*Config, error) {
 		},
 		Geocoder: GeocoderConfig{
 			HTTPClientTimeout: r.positiveDuration("GEOCODER_HTTP_CLIENT_TIMEOUT", 5*time.Second),
-			BaseURL:           r.str("GEOCODER_BASE_URL", "https://api/v1/reverse"),
+			BaseURL:           r.str("GEOCODER_BASE_URL", "https://suggestions.dadata.ru/suggestions/api/4_1/rs/geolocate/address"),
 			APIKey:            r.required("GEOCODER_API_KEY"),
 		},
 	}

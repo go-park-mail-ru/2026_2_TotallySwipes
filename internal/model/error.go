@@ -42,6 +42,7 @@ var (
 	ErrCityNotFound               = errors.New("city not found")
 	ErrGeocoderTimeout            = errors.New("geocoder timeout")
 	ErrGeocoderQuotaExceeded      = errors.New("geocoder quota exceeded")
+	ErrGeocoderUnavailable        = errors.New("geocoder unavailable")
 	ErrTimepadStatusCode          = errors.New("timepad status code")
 	ErrInvalidCity                = errors.New("invalid city")
 	ErrNoEvents                   = errors.New("no events")

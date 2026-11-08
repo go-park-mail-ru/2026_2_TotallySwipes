@@ -122,7 +122,7 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 		Timeout: cfg.Timepad.HTTPClientTimeout,
 	}
 
-	reverseGeocoder := geocoder.NewGeoQoder(geocoderHTTPClient, cfg.Geocoder.BaseURL, cfg.Geocoder.APIKey)
+	reverseGeocoder := geocoder.NewDaData(geocoderHTTPClient, cfg.Geocoder.BaseURL, cfg.Geocoder.APIKey)
 	timepadProvider := timepad.NewTimepadProvider(timepadHTTPClient, cfg.Timepad.BaseURL, cfg.Timepad.APIKey)
 
 	compatibilitySvc := service.NewCompatibilityService()
