@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"dating-app/internal/model"
+	"errors"
 	"fmt"
 )
 
@@ -20,6 +21,14 @@ const upsertUserLocationQuery = `
         coordinates = EXCLUDED.coordinates,
         updated_at = CURRENT_TIMESTAMP
 		`
+
+const getUserLocationQuery = `
+ SELECT user_id, city, district,
+        ST_X(coordinates::geometry) AS longitude,
+        ST_Y(coordinates::geometry) AS latitude
+ FROM user_location
+ WHERE user_id = $1
+`
 
 type LocationRepository struct {
 	db *sql.DB
@@ -38,4 +47,21 @@ func (r *LocationRepository) Upsert(ctx context.Context, location *model.UserLoc
 	}
 
 	return nil
+}
+
+func (r *LocationRepository) GetLocation(ctx context.Context, userID int64) (*model.UserLocation, error) {
+
+	var location model.UserLocation
+	err := r.db.QueryRowContext(ctx, getUserLocationQuery, userID).Scan(&location.UserID, &location.City, &location.District, &location.Coordinates.Longitude, &location.Coordinates.Latitude)
+
+	if err != nil {
+
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+
+		return nil, fmt.Errorf("get location user_id=%d: %w", userID, err)
+	}
+
+	return &location, nil
 }

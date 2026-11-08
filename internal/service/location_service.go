@@ -9,6 +9,7 @@ import (
 
 type LocationRepository interface {
 	Upsert(ctx context.Context, location *model.UserLocation) error
+	GetLocation(ctx context.Context, userID int64) (*model.UserLocation, error)
 }
 
 type ReverseGeocoder interface {
@@ -85,4 +86,8 @@ func (s *LocationService) SaveLocation(ctx context.Context, userID int64, previe
 	}
 
 	return location, nil
+}
+
+func (s *LocationService) GetLocation(ctx context.Context, userID int64) (*model.UserLocation, error) {
+	return s.locationRepo.GetLocation(ctx, userID)
 }

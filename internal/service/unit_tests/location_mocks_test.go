@@ -41,6 +41,21 @@ func (m *MockLocationRepository) EXPECT() *MockLocationRepositoryMockRecorder {
 	return m.recorder
 }
 
+// GetLocation mocks base method.
+func (m *MockLocationRepository) GetLocation(ctx context.Context, userID int64) (*model.UserLocation, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLocation", ctx, userID)
+	ret0, _ := ret[0].(*model.UserLocation)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLocation indicates an expected call of GetLocation.
+func (mr *MockLocationRepositoryMockRecorder) GetLocation(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLocation", reflect.TypeOf((*MockLocationRepository)(nil).GetLocation), ctx, userID)
+}
+
 // Upsert mocks base method.
 func (m *MockLocationRepository) Upsert(ctx context.Context, location *model.UserLocation) error {
 	m.ctrl.T.Helper()

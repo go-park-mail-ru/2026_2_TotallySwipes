@@ -9,8 +9,8 @@ import (
 
 type LocationService interface {
 	GetLocationPreview(ctx context.Context, userID int64, coordinates *model.Coordinates) (*model.UserLocationPreview, error)
-
 	SaveLocation(ctx context.Context, userID int64, previewID string) (*model.UserLocation, error)
+	GetLocation(ctx context.Context, userID int64) (*model.UserLocation, error)
 }
 
 type LocationHandler struct {
@@ -69,5 +69,18 @@ func (h *LocationHandler) SaveLocation(w http.ResponseWriter, r *http.Request, u
 
 	resp := dto.NewLocationResponse(result)
 
+	writeJSON(r.Context(), w, http.StatusOK, resp)
+}
+
+func (h *LocationHandler) GetLocation(w http.ResponseWriter, r *http.Request, userID int64) {
+
+	result, err := h.svc.GetLocation(r.Context(), userID)
+
+	if err != nil {
+		writeServiceError(r.Context(), w, "get location", err)
+		return
+	}
+
+	resp := dto.NewLocationResponse(result)
 	writeJSON(r.Context(), w, http.StatusOK, resp)
 }

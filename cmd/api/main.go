@@ -212,6 +212,7 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 
 	api.Handle("/location/me/preview", authed(h.location.Preview)).Methods(http.MethodPost)
 	api.Handle("/location/me", authed(h.location.SaveLocation)).Methods(http.MethodPut)
+	api.Handle("/location/me", authed(h.location.GetLocation)).Methods(http.MethodGet)
 	api.Handle("/matches/{match_id}/search-places", authed(h.event.CreateSearch)).Methods(http.MethodPost)
 	api.Handle("/matches/{match_id}/place-searches/{search_id}", authed(h.event.GetSearch)).Methods(http.MethodGet)
 	api.Handle("/matches/{match_id}/place-searches/{search_id}/results", authed(h.event.Submit)).Methods(http.MethodPost)

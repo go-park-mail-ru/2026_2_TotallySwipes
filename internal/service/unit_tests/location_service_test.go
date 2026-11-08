@@ -10,6 +10,7 @@ import (
 
 	"dating-app/internal/model"
 	"dating-app/internal/service"
+
 	"github.com/google/uuid"
 	"go.uber.org/mock/gomock"
 )
@@ -136,6 +137,46 @@ func TestLocationServiceSaveLocation(t *testing.T) {
 				}
 			} else if !reflect.DeepEqual(got, want) {
 				t.Fatalf("got %+v, want %+v", got, want)
+			}
+		})
+	}
+}
+
+func TestLocationServiceGetLocation(t *testing.T) {
+	district := "Сергиево-Посадский городской округ"
+	saved := &model.UserLocation{
+		UserID: 42, City: "Хотьково", District: &district,
+		Coordinates: model.Coordinates{Latitude: 56.251234567, Longitude: 37.991234567},
+	}
+	withoutDistrict := &model.UserLocation{
+		UserID: 42, City: "Хотьково", Coordinates: saved.Coordinates,
+	}
+	failure := errors.New("database unavailable")
+	for _, tc := range []struct {
+		name    string
+		stored  *model.UserLocation
+		repoErr error
+	}{
+		{"stored", saved, nil},
+		{"without district", withoutDistrict, nil},
+		{"not set", nil, nil},
+		{"database failure", nil, failure},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			repo := NewMockLocationRepository(ctrl)
+			geo := NewMockReverseGeocoder(ctrl)
+			previews := NewMockLocationPreviewRepository(ctrl)
+			svc := service.NewLocationService(repo, geo, previews)
+			ctx := context.Background()
+			repo.EXPECT().GetLocation(ctx, int64(42)).Return(tc.stored, tc.repoErr).Times(1)
+
+			got, err := svc.GetLocation(ctx, 42)
+			if !errors.Is(err, tc.repoErr) {
+				t.Fatalf("error = %v, want %v", err, tc.repoErr)
+			}
+			if !reflect.DeepEqual(got, tc.stored) {
+				t.Fatalf("got %+v, want %+v", got, tc.stored)
 			}
 		})
 	}
