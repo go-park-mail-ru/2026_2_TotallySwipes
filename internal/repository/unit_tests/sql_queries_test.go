@@ -39,7 +39,8 @@ const feedSQL = `SELECT
 	LEFT JOIN LATERAL (
 	    SELECT * FROM profile_psycho WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
 	) AS ps ON true
-    LEFT JOIN user_location AS l ON l.user_id = p.user_id
+    JOIN user_location AS l ON l.user_id = p.user_id
+    JOIN user_location AS v_location ON v_location.user_id = $2 AND v_location.city = l.city
 		WHERE p.user_id > $1 AND p.user_id <> $2
 		  AND v.name IS NOT NULL AND v.birth_date IS NOT NULL AND v.sex IS NOT NULL
 		  AND v.dating_goal IS NOT NULL

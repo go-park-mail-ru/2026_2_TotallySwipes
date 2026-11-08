@@ -164,6 +164,11 @@ func setQuery(query *url.Values, eventQuery *model.EventQuery) {
 
 	query.Set("fields", "location")
 
+	query.Set("sort", "starts_at")
+	if eventQuery.StartsAtMin != nil {
+		query.Set("starts_at_min", eventQuery.StartsAtMin.Format(timepadTimeLayout))
+	}
+
 	if eventQuery.City != nil {
 		query.Set("cities", *eventQuery.City)
 	}

@@ -19,6 +19,40 @@ func eventSearchFixture() *model.PlaceSearch {
 		Participants: [2]model.ParticipantResult{{UserID: 10}, {UserID: 20}}}
 }
 
+func TestEventServiceCreateFallsBackToNow(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	provider, matches, repo := NewMockEventProvider(ctrl), NewMockEventMatchRepository(ctrl), NewMockEventRepository(ctrl)
+	svc := NewEventService(provider, matches, repo)
+	ctx := context.Background()
+	events := []model.Event{{ID: 1, Name: "a"}}
+
+	matches.EXPECT().GetParticipants(ctx, int64(10), int64(42)).Return([2]int64{10, 20}, nil)
+	repo.EXPECT().GetActive(ctx, int64(42)).Return(nil, nil)
+	var starts []time.Time
+	provider.EXPECT().GetEvents(ctx, gomock.Any()).MinTimes(1).MaxTimes(2).DoAndReturn(func(_ context.Context, q *model.EventQuery) (*model.EventPage, error) {
+		starts = append(starts, *q.StartsAtMin)
+		// на будущие даты событий нет, с текущего момента — есть
+		if q.StartsAtMin.After(time.Now()) {
+			return &model.EventPage{Total: 0, Events: []model.Event{}}, nil
+		}
+		return &model.EventPage{Total: 1, Events: events}, nil
+	})
+	repo.EXPECT().CreateSearch(ctx, gomock.Any()).DoAndReturn(func(_ context.Context, s *model.PlaceSearch) (*model.PlaceSearch, bool, error) {
+		return s, true, nil
+	})
+
+	state, _, err := svc.SearchEventsByCity(ctx, 10, 42, "Тула")
+	if err != nil {
+		t.Fatalf("small city must not end with NO_EVENTS: %v", err)
+	}
+	if len(state.Events) != 1 {
+		t.Fatalf("events = %+v", state.Events)
+	}
+	if last := starts[len(starts)-1]; last.After(time.Now()) {
+		t.Fatalf("fallback must search from now, got %v", last)
+	}
+}
+
 func TestEventServiceCreate(t *testing.T) {
 	failure := errors.New("dependency failed")
 	for _, name := range []string{"new", "active", "active other city", "active blank city", "concurrent", "concurrent other city", "blank city", "access denied", "redis read error", "provider error", "empty", "save error"} {
@@ -72,7 +106,7 @@ func TestEventServiceCreate(t *testing.T) {
 							wantErr = model.ErrNoEvents
 						}
 						get := provider.EXPECT().GetEvents(ctx, gomock.Any()).After(read).DoAndReturn(func(_ context.Context, q *model.EventQuery) (*model.EventPage, error) {
-							if q.City == nil || *q.City != "Москва" || q.Skip == nil || *q.Skip != 0 || q.Limit == nil || *q.Limit != 10 || q.StartsAtMin == nil || q.StartsAtMin.IsZero() {
+							if q.City == nil || *q.City != "Москва" || q.Skip == nil || *q.Skip != 0 || q.Limit == nil || *q.Limit != 10 || q.StartsAtMin == nil || q.StartsAtMin.Before(time.Now().Add(-time.Minute)) || q.StartsAtMin.After(time.Now().Add(14*24*time.Hour)) {
 								t.Fatalf("bad query: %+v", q)
 							}
 							wantCategories := []int64{374, 376, 456, 457, 458, 459, 460, 461, 463, 524, 525, 2335}
@@ -81,6 +115,9 @@ func TestEventServiceCreate(t *testing.T) {
 							}
 							return page, providerErr
 						})
+						if name == "empty" {
+							get.MinTimes(1).MaxTimes(2)
+						}
 						if providerErr == nil && len(page.Events) > 0 {
 							if name == "save error" {
 								wantErr = failure

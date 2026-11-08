@@ -4,11 +4,14 @@ import (
 	"context"
 	"dating-app/internal/model"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+const eventsMaxHoursAhead = 14 * 24
 
 type EventProvider interface {
 	GetEvents(ctx context.Context, eventQuery *model.EventQuery) (*model.EventPage, error)
@@ -70,6 +73,7 @@ func (s *EventService) SearchEventsByCity(ctx context.Context, userID int64, mat
 	}
 
 	now := time.Now()
+	startsAt := now.Add(time.Duration(rand.IntN(eventsMaxHoursAhead)) * time.Hour)
 	categoryIDs := []int64{
 		374,  // Кино
 		376,  // Спорт
@@ -94,13 +98,21 @@ func (s *EventService) SearchEventsByCity(ctx context.Context, userID int64, mat
 		Skip:        &skip,
 		Limit:       &limit,
 		CategoryIDs: &categoryIDs,
-		StartsAtMin: &now,
+		StartsAtMin: &startsAt,
 	}
 
 	page, err := s.provider.GetEvents(ctx, &eventQuery)
 
 	if err != nil {
 		return nil, false, fmt.Errorf("get events: %w", err)
+	}
+
+	if len(page.Events) == 0 && startsAt.After(now) {
+		startsAt = now
+		page, err = s.provider.GetEvents(ctx, &eventQuery)
+		if err != nil {
+			return nil, false, fmt.Errorf("get events: %w", err)
+		}
 	}
 
 	if len(page.Events) == 0 {

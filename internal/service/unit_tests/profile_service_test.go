@@ -515,17 +515,16 @@ func TestProfileService_GetMyProfile_ProfilePhotoOK(t *testing.T) {
 	}
 }
 
-// Временно отключён: город пока не обязателен для получения ленты.
-// func TestProfileServiceFeedRequiresLocation(t *testing.T) {
-// 	ctrl := gomock.NewController(t)
-// 	repo := NewMockProfileRepository(ctrl)
-// 	viewer := filledProfile(model.Profile{UserID: 7}, "Viewer")
-// 	viewer.City = nil
-// 	ctx := context.Background()
-// 	repo.EXPECT().GetByUserIDCurrentProfile(ctx, int64(7)).Return(&viewer, nil)
-// 	svc := NewProfileService(repo, NewMockCompatibilityService(ctrl), NewMockPhotoURLProvider(ctrl), nil)
-// 	page, err := svc.GetNextFeed(ctx, 7, 10, nil)
-// 	if page != nil || !errors.Is(err, model.ErrLocationRequired) {
-// 		t.Fatalf("page=%+v, err=%v; want LOCATION_REQUIRED", page, err)
-// 	}
-// }
+func TestProfileServiceFeedRequiresLocation(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := NewMockProfileRepository(ctrl)
+	viewer := filledProfile(model.Profile{UserID: 7}, "Viewer")
+	viewer.City = nil
+	ctx := context.Background()
+	repo.EXPECT().GetByUserIDCurrentProfile(ctx, int64(7)).Return(&viewer, nil)
+	svc := NewProfileService(repo, NewMockCompatibilityService(ctrl), NewMockPhotoURLProvider(ctrl), nil)
+	page, err := svc.GetNextFeed(ctx, 7, 10, nil)
+	if page != nil || !errors.Is(err, model.ErrLocationRequired) {
+		t.Fatalf("page=%+v, err=%v; want LOCATION_REQUIRED", page, err)
+	}
+}

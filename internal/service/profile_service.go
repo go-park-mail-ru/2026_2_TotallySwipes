@@ -178,9 +178,9 @@ func (s *ProfileService) GetNextFeed(ctx context.Context, userID int64, limit in
 	if len(userProfile.Missing()) > 0 {
 		return nil, fmt.Errorf("get feed user id=%d: profile incomplete: %w", userID, model.ErrProfileRequired)
 	}
-	// if userProfile.City == nil {
-	// 	return nil, fmt.Errorf("get feed: %w", model.ErrLocationRequired)
-	// }
+	if userProfile.City == nil {
+		return nil, fmt.Errorf("get feed: %w", model.ErrLocationRequired)
+	}
 	userVector, _ := feedBigFive(userProfile.CurrentPsycho)
 	candidates, nextCursor, err := s.profileRepo.GetCandidatesByCursorAndLimit(ctx, userID, limit, cursor)
 
