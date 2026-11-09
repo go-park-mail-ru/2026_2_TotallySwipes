@@ -48,6 +48,10 @@ const feedSQL = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
 				SELECT 1 FROM search_filter AS f WHERE f.user_id = $2
 					AND ((f.sex <> 'all' AND f.sex <> v.sex)
 					OR date_part('year', age($4::date, v.birth_date)) NOT BETWEEN f.age_from AND f.age_to))
+			AND NOT EXISTS (
+				SELECT 1 FROM swipe AS my_swipe
+				WHERE my_swipe.author_id = $2
+				AND my_swipe.target_profile_id = p.id)
     AND lower(btrim(l.city)) = lower(btrim(v_location.city))
     AND p.user_id > $1
     AND ($1 = 0 OR lower(btrim(cursor_location.city)) = lower(btrim(v_location.city)))
@@ -84,6 +88,10 @@ const feedOtherSQL = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
 				SELECT 1 FROM search_filter AS f WHERE f.user_id = $2
 					AND ((f.sex <> 'all' AND f.sex <> v.sex)
 					OR date_part('year', age($4::date, v.birth_date)) NOT BETWEEN f.age_from AND f.age_to))
+			AND NOT EXISTS (
+				SELECT 1 FROM swipe AS my_swipe
+				WHERE my_swipe.author_id = $2
+				AND my_swipe.target_profile_id = p.id)
     AND lower(btrim(l.city)) <> lower(btrim(v_location.city))
     AND ($1 = 0 OR lower(btrim(cursor_location.city)) = lower(btrim(v_location.city)) OR p.user_id > $1)
     ORDER BY p.user_id ASC LIMIT $3`

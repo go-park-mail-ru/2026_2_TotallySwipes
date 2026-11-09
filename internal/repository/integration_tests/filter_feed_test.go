@@ -115,8 +115,7 @@ func TestSearchFilterFeed(t *testing.T) {
 		}
 	}
 
-	// Исходящий лайк и лайк кандидата другому пользователю не означают liked_me.
-	setSwipe(viewer, female25, "like")
+	// Лайк кандидата другому пользователю не означает liked_me.
 	setSwipe(female25, male25, "like")
 	for _, tc := range []struct {
 		name, action string
@@ -196,6 +195,14 @@ func TestSearchFilterFeed(t *testing.T) {
 	page, next, err = profiles.GetCandidatesByCursorAndLimit(ctx, viewer, 10, nil)
 	if err != nil || len(page) != 4 || page[0].Profile.UserID != otherCity || next != nil {
 		t.Fatalf("changed city: %+v, %v, %v", page, next, err)
+	}
+	// Анкеты, которые зритель уже свайпнул, больше не попадают в ленту
+	setCity(viewer, city)
+	setSwipe(viewer, female25, "like")
+	setSwipe(viewer, female50, "super_like")
+	setSwipe(viewer, male25, "dislike")
+	if got, want := feedIDs(), []int64{otherCity}; !slices.Equal(got, want) {
+		t.Fatalf("feed after own swipes = %v, want %v", got, want)
 	}
 	if _, err := db.ExecContext(ctx, `DELETE FROM user_location WHERE user_id=$1`, viewer); err != nil {
 		t.Fatal(err)
