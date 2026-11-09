@@ -143,6 +143,53 @@ func TestMatchRepositoryGetMatches(t *testing.T) {
 		t.Fatalf("unexpected second match: %+v", m)
 	}
 
+	// The flag follows saved locations, including changes after the match was created.
+	for _, tc := range []struct {
+		name        string
+		viewerCity  string
+		partnerCity string
+		want        bool
+	}{
+		{"both missing", "", "", false},
+		{"viewer missing", "", "Москва", false},
+		{"partner missing", "Москва", "", false},
+		{"same city", "Москва", "Москва", true},
+		{"normalized city", " Москва ", "москва", true},
+		{"different cities", "Москва", "Казань", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for id, city := range map[int64]string{viewer: tc.viewerCity, first: tc.partnerCity} {
+				if _, err := db.ExecContext(ctx, `DELETE FROM user_location WHERE user_id=$1`, id); err != nil {
+					t.Fatal(err)
+				}
+				if city != "" {
+					if _, err := db.ExecContext(ctx, `INSERT INTO user_location (user_id, city, coordinates)
+						VALUES ($1, $2, ST_SetSRID(ST_MakePoint(37.6, 55.7), 4326)::geography)`, id, city); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			for _, id := range []int64{viewer, first} {
+				items, _, _, err := matches.GetMatches(ctx, id, 10, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				found := false
+				for _, item := range items {
+					if item.ID == firstMatch {
+						found = true
+						if item.CanMeetup != tc.want {
+							t.Fatalf("user %d can_meetup=%v, want %v", id, item.CanMeetup, tc.want)
+						}
+					}
+				}
+				if !found {
+					t.Fatal("match missing from results")
+				}
+			}
+		})
+	}
+
 	page, total, next, err := matches.GetMatches(ctx, viewer, 1, nil)
 	if err != nil {
 		t.Fatal(err)

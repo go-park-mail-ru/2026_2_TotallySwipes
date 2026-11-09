@@ -100,7 +100,7 @@ func TestMatchServiceGetMatches(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := tc.repo
 			repo.matches = append([]model.Match(nil), tc.repo.matches...)
-			svc := NewMatchService(&repo, tc.viewer, NewCompatibilityService(), matchPhotoURLs{})
+			svc := NewMatchService(&repo, tc.viewer, NewCompatibilityService(), matchPhotoURLs{}, &fakeMatchSearch{})
 			page, err := svc.GetMatches(context.Background(), tc.userID, tc.limit, tc.cursor)
 			if repo.calls != tc.wantCalls {
 				t.Fatalf("repository calls = %d, want %d", repo.calls, tc.wantCalls)
@@ -155,7 +155,7 @@ func TestMatchServiceMarkSeen(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := &fakeMatches{err: tc.repoErr}
-			svc := NewMatchService(repo, fakeMatchViewer{}, NewCompatibilityService(), matchPhotoURLs{})
+			svc := NewMatchService(repo, fakeMatchViewer{}, NewCompatibilityService(), matchPhotoURLs{}, &fakeMatchSearch{})
 			err := svc.MarkSeen(context.Background(), tc.userID, tc.matchID)
 			if repo.calls != tc.wantCalls || !errors.Is(err, tc.wantErr) || (tc.wantErr == nil) != (err == nil) {
 				t.Fatalf("calls = %d, error = %v; want %d, %v", repo.calls, err, tc.wantCalls, tc.wantErr)
@@ -179,7 +179,7 @@ func TestMatchServiceGetSummary(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := tc.repo
-			svc := NewMatchService(&repo, fakeMatchViewer{}, NewCompatibilityService(), matchPhotoURLs{})
+			svc := NewMatchService(&repo, fakeMatchViewer{}, NewCompatibilityService(), matchPhotoURLs{}, &fakeMatchSearch{})
 			got, err := svc.GetSummary(context.Background(), tc.userID)
 			if repo.calls != tc.wantCalls || !errors.Is(err, tc.wantErr) || (tc.wantErr == nil) != (err == nil) {
 				t.Fatalf("calls = %d, error = %v; want %d, %v", repo.calls, err, tc.wantCalls, tc.wantErr)
@@ -188,5 +188,40 @@ func TestMatchServiceGetSummary(t *testing.T) {
 				t.Fatalf("summary = %+v, want %+v", got, repo.summary)
 			}
 		})
+	}
+}
+
+type fakeMatchSearch struct {
+	ids    []int64
+	userID int64
+	result map[int64]bool
+	err    error
+}
+
+func (f *fakeMatchSearch) GetPartnerFinishedByMatchIDs(_ context.Context, userID int64, ids []int64) (map[int64]bool, error) {
+	f.ids, f.userID = ids, userID
+	return f.result, f.err
+}
+
+func TestMatchPartnerFinished(t *testing.T) {
+	failure := errors.New("redis unavailable")
+	for _, fail := range []bool{false, true} {
+		searches := &fakeMatchSearch{result: map[int64]bool{20: true}}
+		if fail {
+			searches.err = failure
+		}
+		repo := &fakeMatches{matches: []model.Match{{ID: 20}, {ID: 12}}}
+		svc := NewMatchService(repo, fakeMatchViewer{}, NewCompatibilityService(), matchPhotoURLs{}, searches)
+		page, err := svc.GetMatches(context.Background(), 7, 12, nil)
+		if searches.userID != 7 || !reflect.DeepEqual(searches.ids, []int64{20, 12}) {
+			t.Fatalf("wrong search arguments: %+v", searches)
+		}
+		if fail {
+			if !errors.Is(err, failure) || page != nil {
+				t.Fatalf("page=%v err=%v", page, err)
+			}
+		} else if err != nil || !page.Items[0].PartnerFinished || page.Items[1].PartnerFinished {
+			t.Fatalf("page=%+v err=%v", page, err)
+		}
 	}
 }

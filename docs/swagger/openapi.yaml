@@ -1508,7 +1508,7 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [match_id, user_id, name, age, photo_url, compatibility, is_new, created_at]
+                      required: [match_id, user_id, name, age, photo_url, compatibility, is_new, can_meetup, partner_finished, created_at]
                       properties:
                         match_id:
                           type: integer
@@ -1540,6 +1540,22 @@ paths:
                           nullable: true
                           description: Совместимость по Big Five. null, если кто-то из пары не прошёл тест.
                           example: 0.87
+                        partner_finished:
+                          type: boolean
+                          description: >-
+                            Партнёр отправил результат текущего подбора мест, даже если
+                            не выбрал ни одного события. false, если подбор отсутствует,
+                            истёк, отменён или партнёр ещё не отправил результат.
+                          example: true
+                        can_meetup:
+                          type: boolean
+                          description: >-
+                            У обоих участников сохранён одинаковый непустой город.
+                            Сравнение без учёта регистра и пробелов по краям; false,
+                            если город хотя бы одного участника отсутствует или пустой.
+                            Флаг для отображения подбора мест Timepad на фронте;
+                            сам по себе не является серверным запретом на подбор.
+                          example: true
                         is_new:
                           type: boolean
                           description: Текущий пользователь ещё не открывал этот мэтч (POST /api/v1/matches/{match_id}/seen).

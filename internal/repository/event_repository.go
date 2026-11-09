@@ -27,6 +27,106 @@ func activeSearchKey(matchID int64) string {
 
 const searchTransactionAttempts = 8
 
+func (r *EventRepository) GetPartnerFinishedByMatchIDs(ctx context.Context, userID int64, matchIDs []int64) (map[int64]bool, error) {
+
+	result := make(map[int64]bool, len(matchIDs))
+	keys := make([]string, 0, len(matchIDs))
+	ids := make([]int64, 0, len(matchIDs))
+
+	for _, id := range matchIDs {
+		if _, exists := result[id]; exists {
+			continue
+		}
+		result[id] = false
+		ids = append(ids, id)
+		keys = append(keys, activeSearchKey(id))
+	}
+
+	if len(keys) == 0 {
+		return result, nil
+	}
+
+	pointers, err := r.rdb.MGet(ctx, keys...).Result()
+	if err != nil {
+		return nil, fmt.Errorf("get active search IDs: %w", err)
+	}
+
+	searchKeys := make([]string, 0, len(keys))
+	searchIDs := make([]uuid.UUID, 0, len(keys))
+	activeMatchIDs := make([]int64, 0, len(keys))
+
+	for i, value := range pointers {
+
+		if value == nil {
+			continue
+		}
+
+		text, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid active search ID for match %d", ids[i])
+		}
+
+		id, err := uuid.Parse(text)
+		if err != nil {
+			return nil, fmt.Errorf("parse active search ID for match %d: %w", ids[i], err)
+		}
+
+		searchKeys = append(searchKeys, searchKey(id))
+		searchIDs = append(searchIDs, id)
+		activeMatchIDs = append(activeMatchIDs, ids[i])
+	}
+
+	if len(searchKeys) == 0 {
+		return result, nil
+	}
+
+	values, err := r.rdb.MGet(ctx, searchKeys...).Result()
+	if err != nil {
+		return nil, fmt.Errorf("get active searches: %w", err)
+	}
+
+	now := time.Now()
+	for i, value := range values {
+		if value == nil {
+			continue
+		}
+
+		text, ok := value.(string)
+
+		if !ok {
+			return nil, fmt.Errorf("invalid search data for match %d", activeMatchIDs[i])
+		}
+
+		var search model.PlaceSearch
+
+		if err := json.Unmarshal([]byte(text), &search); err != nil {
+			return nil, fmt.Errorf("decode search for match %d: %w", activeMatchIDs[i], err)
+		}
+
+		if search.MatchID != activeMatchIDs[i] || search.SearchID != searchIDs[i] {
+			return nil, fmt.Errorf("search identity mismatch for match %d", activeMatchIDs[i])
+		}
+
+		if !search.ExpiresAt.After(now) || search.Status == model.SearchStatusCancelled {
+			continue
+		}
+
+		current := -1
+		for j, participant := range search.Participants {
+			if participant.UserID == userID {
+				current = j
+				break
+			}
+		}
+
+		if current == -1 {
+			return nil, fmt.Errorf("search participant for match %d: %w", search.MatchID, model.ErrNotFound)
+		}
+		result[search.MatchID] = search.Participants[1-current].Submitted
+	}
+	return result, nil
+}
+
 func NewEventRepository(rdb *redis.Client, ttl time.Duration) *EventRepository {
 	return &EventRepository{rdb: rdb, ttl: ttl}
 }

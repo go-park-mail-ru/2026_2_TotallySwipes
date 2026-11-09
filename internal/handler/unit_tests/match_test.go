@@ -48,7 +48,7 @@ func TestMatchHandlerList(t *testing.T) {
 	t.Run("ok", func(t *testing.T) {
 		svc := &fakeMatchService{page: &model.MatchPage{
 			Items: []model.Match{
-				{ID: 5, UserID: 8, Name: &name, Age: &age, MainPhotoURL: &url, Compatibility: &compatibility, IsNew: true, CreatedAt: created},
+				{ID: 5, UserID: 8, Name: &name, Age: &age, MainPhotoURL: &url, Compatibility: &compatibility, IsNew: true, CanMeetup: true, CreatedAt: created},
 				{ID: 4, UserID: 9},
 			},
 			Total:      12,
@@ -71,9 +71,9 @@ func TestMatchHandlerList(t *testing.T) {
 			"total":       float64(12),
 			"items": []any{
 				map[string]any{"match_id": float64(5), "user_id": float64(8), "name": "Anna", "age": float64(25),
-					"photo_url": url, "compatibility": 0.87, "is_new": true, "created_at": "2026-10-18T12:00:00Z"},
+					"photo_url": url, "compatibility": 0.87, "is_new": true, "can_meetup": true, "partner_finished": false, "created_at": "2026-10-18T12:00:00Z"},
 				map[string]any{"match_id": float64(4), "user_id": float64(9), "name": nil, "age": nil,
-					"photo_url": nil, "compatibility": nil, "is_new": false, "created_at": "0001-01-01T00:00:00Z"},
+					"photo_url": nil, "compatibility": nil, "is_new": false, "can_meetup": false, "partner_finished": false, "created_at": "0001-01-01T00:00:00Z"},
 			},
 		}
 		if !reflect.DeepEqual(got, want) {

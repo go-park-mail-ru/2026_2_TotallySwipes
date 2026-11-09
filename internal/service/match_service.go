@@ -18,15 +18,20 @@ type MatchViewerRepository interface {
 	GetByUserIDCurrentProfile(ctx context.Context, userID int64) (*model.Profile, error)
 }
 
+type MatchSearchRepository interface {
+	GetPartnerFinishedByMatchIDs(ctx context.Context, userID int64, matchIDs []int64) (map[int64]bool, error)
+}
+
 type MatchService struct {
 	repo             MatchRepository
 	profileRepo      MatchViewerRepository
 	compatibilitySvc CompatibilityService
 	photoURLs        PhotoURLProvider
+	eventRepo        MatchSearchRepository
 }
 
-func NewMatchService(repo MatchRepository, profileRepo MatchViewerRepository, compatibilitySvc CompatibilityService, photoURLs PhotoURLProvider) *MatchService {
-	return &MatchService{repo: repo, profileRepo: profileRepo, compatibilitySvc: compatibilitySvc, photoURLs: photoURLs}
+func NewMatchService(repo MatchRepository, profileRepo MatchViewerRepository, compatibilitySvc CompatibilityService, photoURLs PhotoURLProvider, eventRepo MatchSearchRepository) *MatchService {
+	return &MatchService{repo: repo, profileRepo: profileRepo, compatibilitySvc: compatibilitySvc, photoURLs: photoURLs, eventRepo: eventRepo}
 }
 
 // GetMatches формирует страницу мэтчей с возрастом, главным фото и совместимостью при наличии обоих тестов.
@@ -49,9 +54,15 @@ func (s *MatchService) GetMatches(ctx context.Context, userID int64, limit int, 
 		return nil, fmt.Errorf("get matches user id=%d: %w", userID, err)
 	}
 
+	finishedPartners, err := s.eventRepo.GetPartnerFinishedByMatchIDs(ctx, userID, extractMatchIDs(matches))
+	if err != nil {
+		return nil, fmt.Errorf("get matches partner search statuses: %w", err)
+	}
+
 	now := time.Now()
 	for i := range matches {
 		m := &matches[i]
+		m.PartnerFinished = finishedPartners[m.ID]
 		if m.BirthDate != nil {
 			age := model.AgeAt(*m.BirthDate, now)
 			m.Age = &age
@@ -104,4 +115,12 @@ func (s *MatchService) GetSummary(ctx context.Context, userID int64) (*model.Mat
 func isCompleteBigFive(v model.BigFive) bool {
 	return v.Openness != nil && v.Conscientiousness != nil && v.Extraversion != nil &&
 		v.Agreeableness != nil && v.Neuroticism != nil
+}
+
+func extractMatchIDs(matches []model.Match) []int64 {
+	ids := make([]int64, len(matches))
+	for i, match := range matches {
+		ids[i] = match.ID
+	}
+	return ids
 }

@@ -19,15 +19,17 @@ type MatchPage struct {
 }
 
 type Match struct {
-	ID            int64
-	UserID        int64
-	Name          *string
-	BirthDate     *time.Time
-	Age           *int
-	PhotoKey      *string
-	MainPhotoURL  *string
-	Psycho        BigFive
-	Compatibility *float64
-	IsNew         bool
-	CreatedAt     time.Time
+	ID              int64
+	UserID          int64
+	Name            *string
+	BirthDate       *time.Time
+	Age             *int
+	PhotoKey        *string
+	MainPhotoURL    *string
+	Psycho          BigFive
+	Compatibility   *float64
+	IsNew           bool
+	PartnerFinished bool
+	CanMeetup       bool
+	CreatedAt       time.Time
 }

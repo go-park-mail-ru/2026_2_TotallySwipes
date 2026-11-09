@@ -82,3 +82,81 @@ func TestEventRepositoryReads(t *testing.T) {
 		})
 	}
 }
+
+func TestGetPartnerFinishedByMatchIDs(t *testing.T) {
+	for _, name := range []string{"partner finished", "only current finished", "second participant", "missing", "expired", "cancelled", "dangling", "redis error", "bad JSON", "outsider", "empty"} {
+		t.Run(name, func(t *testing.T) {
+			client, mock := redismock.NewClientMock()
+			t.Cleanup(func() {
+				if err := mock.ExpectationsWereMet(); err != nil {
+					t.Error(err)
+				}
+				_ = client.Close()
+			})
+			repo := repository.NewEventRepository(client, time.Hour)
+			ids := []int64{42, 43, 42}
+			state := model.PlaceSearch{
+				SearchID: uuid.New(), MatchID: 42, Status: model.SearchStatusVoting,
+				ExpiresAt:    time.Now().Add(time.Hour),
+				Participants: [2]model.ParticipantResult{{UserID: 1}, {UserID: 2, Submitted: true}},
+			}
+			userID := int64(1)
+			want, wantErr := false, false
+			switch name {
+			case "partner finished":
+				want = true
+			case "only current finished":
+				state.Participants[0].Submitted = true
+				state.Participants[1].Submitted = false
+			case "second participant":
+				userID = 2
+				state.Participants[0].Submitted = true
+				want = true
+			case "expired":
+				state.ExpiresAt = time.Now().Add(-time.Hour)
+			case "cancelled":
+				state.Status = model.SearchStatusCancelled
+			case "outsider":
+				userID = 99
+				wantErr = true
+			case "redis error", "bad JSON":
+				wantErr = true
+			case "empty":
+				ids = nil
+			}
+			if name != "empty" {
+				call := mock.ExpectMGet("place-search:active:42", "place-search:active:43")
+				switch name {
+				case "redis error":
+					call.SetErr(errors.New("redis unavailable"))
+				case "missing":
+					call.SetVal([]interface{}{nil, nil})
+				default:
+					call.SetVal([]interface{}{state.SearchID.String(), nil})
+					data, _ := json.Marshal(state)
+					var value interface{} = string(data)
+					if name == "bad JSON" {
+						value = "{"
+					}
+					if name == "dangling" {
+						value = nil
+					}
+					mock.ExpectMGet("place-search:" + state.SearchID.String()).SetVal([]interface{}{value})
+				}
+			}
+			got, err := repo.GetPartnerFinishedByMatchIDs(context.Background(), userID, ids)
+			if (err != nil) != wantErr {
+				t.Fatalf("error=%v wantErr=%v", err, wantErr)
+			}
+			if !wantErr {
+				expected := map[int64]bool{42: want, 43: false}
+				if name == "empty" {
+					expected = map[int64]bool{}
+				}
+				if !reflect.DeepEqual(got, expected) {
+					t.Fatalf("got=%v want=%v", got, expected)
+				}
+			}
+		})
+	}
+}

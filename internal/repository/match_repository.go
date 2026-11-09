@@ -47,7 +47,7 @@ func (r *MatchRepository) GetMatches(ctx context.Context, userID int64, limit in
 		var m model.Match
 		ps := &m.Psycho
 		if err := rows.Scan(&m.ID, &m.CreatedAt, &m.UserID, &m.Name, &m.BirthDate, &m.PhotoKey,
-			&ps.Openness, &ps.Conscientiousness, &ps.Extraversion, &ps.Agreeableness, &ps.Neuroticism, &m.IsNew); err != nil {
+			&ps.Openness, &ps.Conscientiousness, &ps.Extraversion, &ps.Agreeableness, &ps.Neuroticism, &m.IsNew, &m.CanMeetup); err != nil {
 			return nil, 0, nil, fmt.Errorf("matches: scan: %w", err)
 		}
 		matches = append(matches, m)
@@ -120,12 +120,16 @@ const countMatchesQuery = `
 const selectMatchesQuery = `
 		SELECT m.id, m.created_at, partner.user_id, v.name, v.birth_date, ph.storage_key,
 		       ps.openness, ps.conscientiousness, ps.extraversion, ps.agreeableness, ps.neuroticism,
-		       CASE WHEN m.first_user_id = $1 THEN m.first_user_seen_at ELSE m.second_user_seen_at END IS NULL
+		       CASE WHEN m.first_user_id = $1 THEN m.first_user_seen_at ELSE m.second_user_seen_at END IS NULL,
+		       COALESCE(NULLIF(lower(btrim(viewer_location.city)), '') =
+		                NULLIF(lower(btrim(partner_location.city)), ''), false) AS can_meetup
 		FROM match AS m
 		CROSS JOIN LATERAL (
 		    SELECT CASE WHEN m.first_user_id = $1 THEN m.second_user_id ELSE m.first_user_id END AS user_id
 		) AS partner
 		LEFT JOIN profile AS p ON p.user_id = partner.user_id
+		LEFT JOIN user_location AS viewer_location ON viewer_location.user_id = $1
+		LEFT JOIN user_location AS partner_location ON partner_location.user_id = partner.user_id
 		LEFT JOIN LATERAL (
 		    SELECT name, birth_date FROM profile_version WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
 		) AS v ON true

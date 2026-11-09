@@ -131,7 +131,7 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 	psychoTestSvc := service.NewPsychoTestService(psychoTestRepo, profileRepo, compatibilitySvc, psychoTest)
 	filterSvc := service.NewFilterService(filterRepo)
 	swipeSvc := service.NewSwipeService(swipeRepo, profileRepo)
-	matchSvc := service.NewMatchService(matchRepo, profileRepo, compatibilitySvc, minioURLProvider)
+	matchSvc := service.NewMatchService(matchRepo, profileRepo, compatibilitySvc, minioURLProvider, eventRepo)
 	locationSvc := service.NewLocationService(locationRepo, reverseGeocoder, previewsRepo)
 	eventSvc := service.NewEventService(timepadProvider, matchRepo, eventRepo)
 
