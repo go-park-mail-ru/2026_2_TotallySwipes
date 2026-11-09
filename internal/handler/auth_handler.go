@@ -2,12 +2,19 @@ package handler
 
 import (
 	"context"
+	"crypto/rand"
 	"dating-app/internal/handler/dto"
 	"dating-app/internal/model"
+	"encoding/base64"
 	"errors"
 	"log/slog"
 	"net/http"
 	"time"
+)
+
+const (
+	csrfTokenCookie = "csrf_token"
+	csrfTokenSize   = 32
 )
 
 const (
@@ -141,4 +148,41 @@ func (h *AuthHandler) sessionCookie(name, path, value string, expires time.Time)
 		Secure:   h.cookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	}
+}
+
+func (h *AuthHandler) CSRF(w http.ResponseWriter, r *http.Request) {
+
+	w.Header().Set("Cache-Control", "no-store")
+
+	var token string
+
+	if cookie, err := r.Cookie(csrfTokenCookie); err == nil {
+
+		decoded, err := base64.RawURLEncoding.DecodeString(cookie.Value)
+		if err == nil && len(decoded) == csrfTokenSize {
+			token = cookie.Value
+		}
+	}
+
+	if token == "" {
+
+		randomBytes := make([]byte, csrfTokenSize)
+		if _, err := rand.Read(randomBytes); err != nil {
+			writeServiceError(r.Context(), w, "generate csrf token", err)
+			return
+		}
+
+		token = base64.RawURLEncoding.EncodeToString(randomBytes)
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     csrfTokenCookie,
+		Value:    token,
+		Path:     "/",
+		Secure:   h.cookieSecure,
+		HttpOnly: false,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	writeJSON(r.Context(), w, http.StatusOK, dto.CSRFResponse{CSRFToken: token})
 }

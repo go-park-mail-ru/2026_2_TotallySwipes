@@ -6,6 +6,44 @@ info:
 
 paths:
 
+  /api/v1/auth/csrf:
+    get:
+      summary: Получить CSRF-токен
+      description: |-
+        Возвращает случайный токен, который клиент должен передавать в заголовке X-CSRF-Token
+      security: []
+      responses:
+        '200':
+          description: CSRF-токен выдан или повторно использован из cookie.
+          headers:
+            Set-Cookie:
+              description: >-
+                Cookie csrf_token с Path=/ и SameSite=Lax, без HttpOnly и Domain.
+                В HTTPS-окружении устанавливается Secure. Cookie является сессионной
+                (без Expires и Max-Age). Значение совпадает с csrf_token в JSON.
+              schema:
+                type: string
+                example: csrf_token=abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG; Path=/; Secure; SameSite=Lax
+            Cache-Control:
+              description: Ответ с токеном нельзя кэшировать.
+              schema:
+                type: string
+                enum: [no-store]
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [csrf_token]
+                properties:
+                  csrf_token:
+                    type: string
+                    minLength: 1
+                    description: Непрозрачный случайный токен для заголовка X-CSRF-Token.
+                    example: abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/v1/auth/register:
     post:
       summary: Зарегистрировать пользователя
@@ -40,6 +78,8 @@ paths:
                   description: Не короче 8 символов, хотя бы одна буква и одна цифра. Пробелы не обрезаются.
                   example: qwerty123
       responses:
+        '403':
+          $ref: '#/components/responses/CSRFInvalid'
         '201':
           description: >-
             Пользователь зарегистрирован, сессия открыта. Если открыть сессию не удалось,
@@ -107,6 +147,8 @@ paths:
                     Пробелы не обрезаются, регистр не меняется.
                   example: qwerty123
       responses:
+        '403':
+          $ref: '#/components/responses/CSRFInvalid'
         '400':
           $ref: '#/components/responses/ValidationError'
         '200':
@@ -151,6 +193,8 @@ paths:
         когда защищённая ручка ответила 401. Если сессия отсутствует, истекла
         или отозвана, необходимо войти заново.
       responses:
+        '403':
+          $ref: '#/components/responses/CSRFInvalid'
         '204':
           description: Сессия обновлена. Тело ответа отсутствует.
           headers:
@@ -189,6 +233,8 @@ paths:
       summary: Завершить текущую сессию пользователя
       description: Отзывает текущую сессию. Повторный запрос, включая запрос без действующей сессии, также возвращает 204.
       responses:
+        '403':
+          $ref: '#/components/responses/CSRFInvalid'
         '204':
           description: Сессия завершена. Тело ответа отсутствует.
           headers:
@@ -257,10 +303,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TestError'
-              example:
-                error:
-                  code: PROFILE_REQUIRED
-                  message: Сначала необходимо заполнить анкету
+              examples:
+                profileRequired:
+                  value:
+                    error:
+                      code: PROFILE_REQUIRED
+                      message: Сначала необходимо заполнить анкету
+                csrfInvalid:
+                  value:
+                    error:
+                      code: CSRF_INVALID
+                      message: Отсутствует или неверный CSRF-токен
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -299,6 +352,8 @@ paths:
                 - question_id: '2'
                   value: 2
       responses:
+        '403':
+          $ref: '#/components/responses/CSRFInvalid'
         '201':
           description: Ответы и рассчитанные показатели сохранены.
           content:
@@ -446,6 +501,8 @@ paths:
               birth_date: '2003-05-01'
               sex: female
       responses:
+        '403':
+          $ref: '#/components/responses/CSRFInvalid'
         '200':
           description: Анкета после изменения
           content:
@@ -482,6 +539,8 @@ paths:
                   format: binary
                   description: JPEG, PNG или WebP, не больше 5 МБ.
       responses:
+        '403':
+          $ref: '#/components/responses/CSRFInvalid'
         '201':
           description: Актуальный список фото
           content:
@@ -538,6 +597,8 @@ paths:
             example:
               photo_ids: [12, 7, 9]
       responses:
+        '403':
+          $ref: '#/components/responses/CSRFInvalid'
         '200':
           description: Актуальный список фото в новом порядке
           content:
@@ -570,6 +631,8 @@ paths:
             format: int64
             minimum: 1
       responses:
+        '403':
+          $ref: '#/components/responses/CSRFInvalid'
         '200':
           description: Актуальный список фото
           content:
@@ -649,6 +712,8 @@ paths:
             schema:
               $ref: '#/components/schemas/LocationConfirmRequest'
       responses:
+        '403':
+          $ref: '#/components/responses/CSRFInvalid'
         '200':
           description: Сохранённое местоположение; location не равен null
           content:
@@ -692,6 +757,8 @@ paths:
             schema:
               $ref: '#/components/schemas/LocationCoordinates'
       responses:
+        '403':
+          $ref: '#/components/responses/CSRFInvalid'
         '200':
           description: Адрес для подтверждения и временный идентификатор результата
           content:
@@ -760,6 +827,8 @@ paths:
               age_from: 20
               age_to: 30
       responses:
+        '403':
+          $ref: '#/components/responses/CSRFInvalid'
         '200':
           description: Сохранённый фильтр
           content:
@@ -1008,7 +1077,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: В анкете текущего пользователя не заполнены обязательные поля
+          description: Отсутствует или неверный CSRF-токен либо в анкете не заполнены обязательные поля.
           content:
             application/json:
               schema:
@@ -1078,6 +1147,8 @@ paths:
                     активный подбор. Пустой или отсутствующий город при отсутствии подбора даёт LOCATION_REQUIRED.
                   example: Москва
       responses:
+        '403':
+          $ref: '#/components/responses/CSRFInvalid'
         '201':
           description: Создан подбор; объект сразу содержит общий набор карточек, status — voting
           content:
@@ -1198,6 +1269,8 @@ paths:
             example:
               liked_event_ids: [4180718]
       responses:
+        '403':
+          $ref: '#/components/responses/CSRFInvalid'
         '200':
           description: Первый результат принят; актуальное состояние для отправителя
           content:
@@ -1543,6 +1616,8 @@ paths:
             format: int64
             minimum: 1
       responses:
+        '403':
+          $ref: '#/components/responses/CSRFInvalid'
         '204':
           description: Мэтч отмечен просмотренным
         '400':
@@ -2104,6 +2179,19 @@ components:
                     type: string
                     enum: [MISSING_ANSWER, DUPLICATE_QUESTION, QUESTION_NOT_IN_TEST, VALUE_OUT_OF_RANGE]
   responses:
+    CSRFInvalid:
+      description: >-
+        Cookie csrf_token или заголовок X-CSRF-Token отсутствует, пустой либо их
+        значения не совпадают. Получите токен через GET /api/v1/auth/csrf и передавайте
+        его в X-CSRF-Token вместе с cookie при изменяющих запросах.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TestError'
+          example:
+            error:
+              code: CSRF_INVALID
+              message: Отсутствует или неверный CSRF-токен
     PlaceSearchNotFound:
       description: Матч или подбор не существует, недоступен пользователю, истёк или утрачен
       content:

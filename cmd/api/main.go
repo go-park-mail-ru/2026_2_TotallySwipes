@@ -149,6 +149,7 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 	}
 
 	var root http.Handler = newRouter(cfg, issuer, h)
+	root = middleware.CSRF(root)
 	root = middleware.Recovery(root)
 	root = middleware.CORS(cfg.HTTP.CORSOrigins)(root)
 	root = middleware.Logging(root)
@@ -187,6 +188,7 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 	authRouter.HandleFunc("/login", h.auth.Login).Methods(http.MethodPost)
 	authRouter.HandleFunc("/logout", h.auth.Logout).Methods(http.MethodPost)
 	authRouter.HandleFunc("/refresh", h.auth.Refresh).Methods(http.MethodPost)
+	authRouter.HandleFunc("/csrf", h.auth.CSRF).Methods(http.MethodGet)
 
 	api.Handle("/feed", authed(h.feed.Get)).Methods(http.MethodGet)
 	api.Handle("/feed/swipe", authed(h.swipe.Swipe)).Methods(http.MethodPost)
