@@ -89,7 +89,7 @@ func TestSearchFilterFeed(t *testing.T) {
 		}
 		var ids []int64
 		for _, p := range page {
-			if p.Profile.City == nil || *p.Profile.City != city {
+			if p.Profile.City == nil {
 				t.Fatalf("wrong candidate city: %+v", p.Profile)
 			}
 			if slices.Contains(candidates, p.Profile.UserID) {
@@ -99,7 +99,7 @@ func TestSearchFilterFeed(t *testing.T) {
 		return ids
 	}
 
-	if got, want := feedIDs(), candidates[:3]; !slices.Equal(got, want) {
+	if got, want := feedIDs(), []int64{female25, male25, female50, otherCity}; !slices.Equal(got, want) {
 		t.Fatalf("feed with default filter = %v, want %v", got, want)
 	}
 
@@ -131,7 +131,7 @@ func TestSearchFilterFeed(t *testing.T) {
 			if tc.action != "" {
 				setSwipe(female25, viewer, tc.action)
 			}
-			cursor := female25 - 1
+			cursor := viewer
 			page, next, err := profiles.GetCandidatesByCursorAndLimit(ctx, viewer, 1, &cursor)
 			if err != nil {
 				t.Fatal(err)
@@ -149,9 +149,9 @@ func TestSearchFilterFeed(t *testing.T) {
 		filter model.SearchFilter
 		want   []int64
 	}{
-		{model.SearchFilter{Sex: model.SearchSexFemale, AgeFrom: 20, AgeTo: 30}, []int64{female25}},
-		{model.SearchFilter{Sex: model.SearchSexAll, AgeFrom: 25, AgeTo: 25}, []int64{female25, male25}},
-		{model.SearchFilter{Sex: model.SearchSexFemale, AgeFrom: 18, AgeTo: 100}, []int64{female25, female50}},
+		{model.SearchFilter{Sex: model.SearchSexFemale, AgeFrom: 20, AgeTo: 30}, []int64{female25, otherCity}},
+		{model.SearchFilter{Sex: model.SearchSexAll, AgeFrom: 25, AgeTo: 25}, []int64{female25, male25, otherCity}},
+		{model.SearchFilter{Sex: model.SearchSexFemale, AgeFrom: 18, AgeTo: 100}, []int64{female25, female50, otherCity}},
 	} {
 		if err := filters.Upsert(ctx, viewer, &tc.filter); err != nil {
 			t.Fatal(err)
@@ -169,27 +169,32 @@ func TestSearchFilterFeed(t *testing.T) {
 	}
 	// Кандидаты другого города/без локации созданы раньше: они не должны занимать LIMIT.
 	var cursor *int64
-	for i, wantID := range candidates[:3] {
+	for i, wantID := range []int64{female25, male25, female50, otherCity} {
 		page, next, err := profiles.GetCandidatesByCursorAndLimit(ctx, viewer, 1, cursor)
 		if err != nil || len(page) != 1 || page[0].Profile.UserID != wantID {
 			t.Fatalf("page %d: %+v, %v", i, page, err)
 		}
-		if i < 2 && (next == nil || *next != wantID) {
+		if i < 3 && (next == nil || *next != wantID) {
 			t.Fatalf("page %d cursor: %v", i, next)
 		}
-		if i == 2 && next != nil {
+		if i == 3 && next != nil {
 			t.Fatalf("last page cursor: %v", next)
 		}
 		cursor = next
 	}
-	after := female50
+	after := otherCity
 	page, next, err := profiles.GetCandidatesByCursorAndLimit(ctx, viewer, 1, &after)
 	if err != nil || len(page) != 0 || next != nil {
 		t.Fatalf("empty page: %+v, %v, %v", page, next, err)
 	}
+	// A page crossing the city boundary must be filled without duplicates.
+	mixed, mixedNext, err := profiles.GetCandidatesByCursorAndLimit(ctx, viewer, 4, nil)
+	if err != nil || len(mixed) != 4 || mixedNext != nil || mixed[3].Profile.UserID != otherCity {
+		t.Fatalf("mixed page: %+v, %v, %v", mixed, mixedNext, err)
+	}
 	setCity(viewer, city+"-other")
 	page, next, err = profiles.GetCandidatesByCursorAndLimit(ctx, viewer, 10, nil)
-	if err != nil || len(page) != 1 || page[0].Profile.UserID != otherCity || next != nil {
+	if err != nil || len(page) != 4 || page[0].Profile.UserID != otherCity || next != nil {
 		t.Fatalf("changed city: %+v, %v, %v", page, next, err)
 	}
 	if _, err := db.ExecContext(ctx, `DELETE FROM user_location WHERE user_id=$1`, viewer); err != nil {

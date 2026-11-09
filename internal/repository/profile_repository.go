@@ -64,7 +64,7 @@ const profileSelect = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
 			LEFT JOIN user_location AS l ON l.user_id = p.user_id
 			WHERE p.user_id = $1`
 
-const feedSelect = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
+const feedSelectBase = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
 	       EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id), l.city,
 	       v.id, v.recorded_at, v.name, v.birth_date, v.sex, v.dating_goal, v.about_me,
 	       v.education, v.work, v.smoking, v.alcohol, v.height,
@@ -84,8 +84,9 @@ const feedSelect = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
 				SELECT * FROM profile_psycho WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
 			) AS ps ON true
 			JOIN user_location AS l ON l.user_id = p.user_id
-			JOIN user_location AS v_location ON v_location.user_id = $2 AND v_location.city = l.city
-			WHERE p.user_id > $1 AND p.user_id <> $2
+			JOIN user_location AS v_location ON v_location.user_id = $2
+            LEFT JOIN user_location AS cursor_location ON cursor_location.user_id = $1
+            WHERE p.user_id <> $2
 			AND v.name IS NOT NULL AND v.birth_date IS NOT NULL AND v.sex IS NOT NULL
 			AND v.dating_goal IS NOT NULL
 			AND EXISTS (SELECT 1 FROM photo WHERE profile_id = p.id)
@@ -93,8 +94,18 @@ const feedSelect = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
 			AND NOT EXISTS (
 				SELECT 1 FROM search_filter AS f WHERE f.user_id = $2
 					AND ((f.sex <> 'all' AND f.sex <> v.sex)
-					OR date_part('year', age($4::date, v.birth_date)) NOT BETWEEN f.age_from AND f.age_to))
-			ORDER BY p.user_id ASC LIMIT $3`
+					OR date_part('year', age($4::date, v.birth_date)) NOT BETWEEN f.age_from AND f.age_to))`
+
+const feedSameCitySQL = feedSelectBase + `
+    AND lower(btrim(l.city)) = lower(btrim(v_location.city))
+    AND p.user_id > $1
+    AND ($1 = 0 OR lower(btrim(cursor_location.city)) = lower(btrim(v_location.city)))
+    ORDER BY p.user_id ASC LIMIT $3`
+
+const feedOtherCitiesSQL = feedSelectBase + `
+    AND lower(btrim(l.city)) <> lower(btrim(v_location.city))
+    AND ($1 = 0 OR lower(btrim(cursor_location.city)) = lower(btrim(v_location.city)) OR p.user_id > $1)
+    ORDER BY p.user_id ASC LIMIT $3`
 
 type ProfileRepo struct {
 	db *sql.DB
@@ -409,24 +420,18 @@ func (r *ProfileRepo) GetCandidatesByCursorAndLimit(ctx context.Context, userID 
 	}
 	defer tx.Rollback()
 
-	rows, err := tx.QueryContext(ctx, feedSelect, afterID, userID, limit+1, time.Now().Format(time.DateOnly))
-	if err != nil {
-		return nil, nil, fmt.Errorf("feed: select profiles: %w", err)
-	}
-	defer rows.Close()
-
-	candidates := make([]model.FeedCandidate, 0)
-	for rows.Next() {
-		candidate, err := scanCandidate(rows)
-
-		if err != nil {
-			return nil, nil, fmt.Errorf("feed: scan profile: %w", err)
+	candidates := make([]model.FeedCandidate, 0, limit+1)
+	date := time.Now().Format(time.DateOnly)
+	for _, query := range []string{feedSameCitySQL, feedOtherCitiesSQL} {
+		remaining := limit + 1 - len(candidates)
+		if remaining == 0 {
+			break
 		}
-		candidates = append(candidates, *candidate)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("feed: read profiles: %w", err)
+		batch, err := readFeedBatch(ctx, tx, afterID, userID, remaining, date, query)
+		if err != nil {
+			return nil, nil, err
+		}
+		candidates = append(candidates, batch...)
 	}
 
 	var nextCursor *int64
@@ -667,3 +672,27 @@ func loadPhotos(ctx context.Context, tx *sql.Tx, profileID int64) ([]model.Photo
 const selectMatchedProfileIDQuery = `
 		SELECT id FROM match
 		WHERE first_user_id = LEAST($1::bigint, $2::bigint) AND second_user_id = GREATEST($1::bigint, $2::bigint)`
+
+func readFeedBatch(ctx context.Context, tx *sql.Tx, afterID, userID int64, limit int, date string, query string) ([]model.FeedCandidate, error) {
+
+	rows, err := tx.QueryContext(ctx, query, afterID, userID, limit, date)
+	if err != nil {
+		return nil, fmt.Errorf("feed: select profiles: %w", err)
+	}
+	defer rows.Close()
+
+	candidates := make([]model.FeedCandidate, 0)
+	for rows.Next() {
+		candidate, err := scanCandidate(rows)
+		if err != nil {
+			return nil, fmt.Errorf("feed: scan profile: %w", err)
+		}
+		candidates = append(candidates, *candidate)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("feed: read profiles: %w", err)
+	}
+
+	return candidates, nil
+}

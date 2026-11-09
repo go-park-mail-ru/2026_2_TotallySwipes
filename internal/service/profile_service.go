@@ -191,7 +191,7 @@ func (s *ProfileService) GetNextFeed(ctx context.Context, userID int64, limit in
 	page := &model.FeedPage{Items: make([]model.FeedItem, 0, len(candidates)), NextCursor: nextCursor}
 	for _, candidate := range candidates {
 		profile := candidate.Profile
-		// Страховка от расхождения SQL-фильтра с Missing
+
 		if missing := profile.Missing(); len(missing) > 0 {
 			slog.Warn("feed: incomplete profile passed SQL filter", "user_id", profile.UserID, "missing", missing)
 			continue

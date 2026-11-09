@@ -17,40 +17,76 @@ const profileSelectSQL = `SELECT
 	) AS ps ON true
     LEFT JOIN user_location AS l ON l.user_id = p.user_id`
 
-const feedSQL = `SELECT 
-	p.id, p.user_id, p.created_at, p.updated_at,
+const feedSQL = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
 	       EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id), l.city,
 	       v.id, v.recorded_at, v.name, v.birth_date, v.sex, v.dating_goal, v.about_me,
 	       v.education, v.work, v.smoking, v.alcohol, v.height,
 	       ps.id, ps.recorded_at,
-	       ps.openness, ps.conscientiousness, ps.extraversion, ps.agreeableness, ps.neuroticism, 
-	EXISTS (
-		SELECT 1
-		FROM swipe s
-		JOIN profile viewer ON viewer.id = s.target_profile_id
-		WHERE s.author_id = p.user_id
-		AND viewer.user_id = $2
-		AND s.action IN ('like', 'super_like')
-	) AS liked_me
-	FROM profile AS p
-	LEFT JOIN LATERAL (
-	    SELECT * FROM profile_version WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
-	) AS v ON true
-	LEFT JOIN LATERAL (
-	    SELECT * FROM profile_psycho WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
-	) AS ps ON true
-    JOIN user_location AS l ON l.user_id = p.user_id
-    JOIN user_location AS v_location ON v_location.user_id = $2 AND v_location.city = l.city
-		WHERE p.user_id > $1 AND p.user_id <> $2
-		  AND v.name IS NOT NULL AND v.birth_date IS NOT NULL AND v.sex IS NOT NULL
-		  AND v.dating_goal IS NOT NULL
-		  AND EXISTS (SELECT 1 FROM photo WHERE profile_id = p.id)
-		  AND EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id)
-		  AND NOT EXISTS (
-		      SELECT 1 FROM search_filter AS f WHERE f.user_id = $2
-		        AND ((f.sex <> 'all' AND f.sex <> v.sex)
-		          OR date_part('year', age($4::date, v.birth_date)) NOT BETWEEN f.age_from AND f.age_to))
-		ORDER BY p.user_id ASC LIMIT $3`
+	       ps.openness, ps.conscientiousness, ps.extraversion, ps.agreeableness, ps.neuroticism,  EXISTS (
+				SELECT 1
+				FROM swipe s
+				JOIN profile viewer ON viewer.id = s.target_profile_id
+				WHERE s.author_id = p.user_id
+				AND viewer.user_id = $2
+				AND s.action IN ('like', 'super_like')
+			) AS liked_me FROM profile AS p
+			LEFT JOIN LATERAL (
+				SELECT * FROM profile_version WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
+			) AS v ON true
+			LEFT JOIN LATERAL (
+				SELECT * FROM profile_psycho WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
+			) AS ps ON true
+			JOIN user_location AS l ON l.user_id = p.user_id
+			JOIN user_location AS v_location ON v_location.user_id = $2
+            LEFT JOIN user_location AS cursor_location ON cursor_location.user_id = $1
+            WHERE p.user_id <> $2
+			AND v.name IS NOT NULL AND v.birth_date IS NOT NULL AND v.sex IS NOT NULL
+			AND v.dating_goal IS NOT NULL
+			AND EXISTS (SELECT 1 FROM photo WHERE profile_id = p.id)
+			AND EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id)
+			AND NOT EXISTS (
+				SELECT 1 FROM search_filter AS f WHERE f.user_id = $2
+					AND ((f.sex <> 'all' AND f.sex <> v.sex)
+					OR date_part('year', age($4::date, v.birth_date)) NOT BETWEEN f.age_from AND f.age_to))
+    AND lower(btrim(l.city)) = lower(btrim(v_location.city))
+    AND p.user_id > $1
+    AND ($1 = 0 OR lower(btrim(cursor_location.city)) = lower(btrim(v_location.city)))
+    ORDER BY p.user_id ASC LIMIT $3`
+
+const feedOtherSQL = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
+	       EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id), l.city,
+	       v.id, v.recorded_at, v.name, v.birth_date, v.sex, v.dating_goal, v.about_me,
+	       v.education, v.work, v.smoking, v.alcohol, v.height,
+	       ps.id, ps.recorded_at,
+	       ps.openness, ps.conscientiousness, ps.extraversion, ps.agreeableness, ps.neuroticism,  EXISTS (
+				SELECT 1
+				FROM swipe s
+				JOIN profile viewer ON viewer.id = s.target_profile_id
+				WHERE s.author_id = p.user_id
+				AND viewer.user_id = $2
+				AND s.action IN ('like', 'super_like')
+			) AS liked_me FROM profile AS p
+			LEFT JOIN LATERAL (
+				SELECT * FROM profile_version WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
+			) AS v ON true
+			LEFT JOIN LATERAL (
+				SELECT * FROM profile_psycho WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
+			) AS ps ON true
+			JOIN user_location AS l ON l.user_id = p.user_id
+			JOIN user_location AS v_location ON v_location.user_id = $2
+            LEFT JOIN user_location AS cursor_location ON cursor_location.user_id = $1
+            WHERE p.user_id <> $2
+			AND v.name IS NOT NULL AND v.birth_date IS NOT NULL AND v.sex IS NOT NULL
+			AND v.dating_goal IS NOT NULL
+			AND EXISTS (SELECT 1 FROM photo WHERE profile_id = p.id)
+			AND EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id)
+			AND NOT EXISTS (
+				SELECT 1 FROM search_filter AS f WHERE f.user_id = $2
+					AND ((f.sex <> 'all' AND f.sex <> v.sex)
+					OR date_part('year', age($4::date, v.birth_date)) NOT BETWEEN f.age_from AND f.age_to))
+    AND lower(btrim(l.city)) <> lower(btrim(v_location.city))
+    AND ($1 = 0 OR lower(btrim(cursor_location.city)) = lower(btrim(v_location.city)) OR p.user_id > $1)
+    ORDER BY p.user_id ASC LIMIT $3`
 
 const lockProfileSQL = `SELECT id FROM profile WHERE user_id = $1 FOR UPDATE`
 

@@ -57,10 +57,15 @@ func TestProfileRepo_Feed(t *testing.T) {
 		name, failAt string
 		cursor       *int64
 		count        int
+		fallback     int
 		wantErr      error
 	}{
 		{name: "empty"}, {name: "single result", count: 1}, {name: "full final page", count: 2},
 		{name: "next page", cursor: &cursor, count: 3},
+		{name: "fill from other cities", count: 2, fallback: 1},
+		{name: "fallback lookahead", count: 3, fallback: 2},
+		{name: "no local candidates", count: 2, fallback: 2},
+		{name: "fallback error", failAt: "fallback", wantErr: failure},
 		{name: "begin error", failAt: "begin", wantErr: failure},
 		{name: "query error", failAt: "query", wantErr: failure},
 		{name: "iteration error", count: 2, failAt: "rows", wantErr: failure},
@@ -92,7 +97,7 @@ func TestProfileRepo_Feed(t *testing.T) {
 					query.WillReturnError(failure)
 				} else {
 					rows := sqlmock.NewRows(append(append([]string{}, profileRowColumns...), "liked_me"))
-					for i := 0; i < tc.count; i++ {
+					for i := 0; i < tc.count-tc.fallback; i++ {
 						values := profileValues(int64(7+i), int64(101+i), true)
 						values[6] = int64(11 + i)
 						if tc.failAt == "scan" {
@@ -104,6 +109,20 @@ func TestProfileRepo_Feed(t *testing.T) {
 						rows.RowError(1, failure)
 					}
 					query.WillReturnRows(rows).RowsWillBeClosed()
+					if tc.failAt != "rows" && tc.failAt != "scan" && tc.count-tc.fallback < 3 {
+						fallbackRows := sqlmock.NewRows(append(append([]string{}, profileRowColumns...), "liked_me"))
+						for i := tc.count - tc.fallback; i < tc.count; i++ {
+							values := profileValues(int64(7+i), int64(101+i), true)
+							values[6] = int64(11 + i)
+							fallbackRows.AddRow(append(values, i%2 == 0)...)
+						}
+						query := mock.ExpectQuery(feedOtherSQL).WithArgs(after, int64(42), 3-tc.count+tc.fallback, date)
+						if tc.failAt == "fallback" {
+							query.WillReturnError(failure)
+						} else {
+							query.WillReturnRows(fallbackRows).RowsWillBeClosed()
+						}
+					}
 					if tc.failAt != "rows" && tc.failAt != "scan" && tc.count > 0 {
 						var versionIDs, profileIDs idSetArgument
 						tagsRows := sqlmock.NewRows([]string{"profile_version_id", "id", "name"})
