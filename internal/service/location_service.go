@@ -31,6 +31,7 @@ func NewLocationService(repo LocationRepository, geocoder ReverseGeocoder, previ
 	return &LocationService{locationRepo: repo, geocoder: geocoder, previewRepo: previews}
 }
 
+// GetLocationPreview проверяет координаты, определяет адрес и сохраняет предпросмотр для пользователя
 func (s *LocationService) GetLocationPreview(ctx context.Context, userID int64, coordinates *model.Coordinates) (*model.UserLocationPreview, error) {
 
 	if coordinates == nil {
@@ -64,6 +65,7 @@ func (s *LocationService) GetLocationPreview(ctx context.Context, userID int64, 
 	return preview, nil
 }
 
+// SaveLocation сохраняет локацию из доступного пользователю предпросмотра
 func (s *LocationService) SaveLocation(ctx context.Context, userID int64, previewID string) (*model.UserLocation, error) {
 
 	preview, err := s.previewRepo.Get(ctx, userID, previewID)
@@ -88,6 +90,7 @@ func (s *LocationService) SaveLocation(ctx context.Context, userID int64, previe
 	return location, nil
 }
 
+// GetLocation возвращает сохранённую локацию пользователя
 func (s *LocationService) GetLocation(ctx context.Context, userID int64) (*model.UserLocation, error) {
 	return s.locationRepo.GetLocation(ctx, userID)
 }

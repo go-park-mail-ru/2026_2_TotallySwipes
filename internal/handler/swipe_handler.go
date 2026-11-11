@@ -19,6 +19,7 @@ func NewSwipeHandler(svc SwipeService) *SwipeHandler {
 	return &SwipeHandler{svc: svc}
 }
 
+// Swipe - POST /feed/swipe: сохраняет реакцию на анкету и создаёт мэтч при взаимной симпатии
 func (h *SwipeHandler) Swipe(w http.ResponseWriter, r *http.Request, userID int64) {
 
 	var req dto.SwipeActionRequest

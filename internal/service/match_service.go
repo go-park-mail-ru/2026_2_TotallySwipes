@@ -44,6 +44,7 @@ func (s *MatchService) GetMatches(ctx context.Context, userID int64, limit int, 
 	if err != nil && !errors.Is(err, model.ErrNotFound) {
 		return nil, fmt.Errorf("get matches viewer profile: %w", err)
 	}
+
 	var viewerVector *model.BigFive
 	if viewer != nil {
 		viewerVector, _ = feedBigFive(viewer.CurrentPsycho)
@@ -63,22 +64,27 @@ func (s *MatchService) GetMatches(ctx context.Context, userID int64, limit int, 
 	for i := range matches {
 		m := &matches[i]
 		m.PartnerFinished = finishedPartners[m.ID]
+
 		if m.BirthDate != nil {
 			age := model.AgeAt(*m.BirthDate, now)
 			m.Age = &age
 		}
+
 		if m.PhotoKey != nil {
 			url, err := s.photoURLs.GetPhotoURL(ctx, *m.PhotoKey)
 			if err != nil {
 				return nil, fmt.Errorf("get matches photo match id=%d: %w", m.ID, err)
 			}
+
 			m.MainPhotoURL = &url
 		}
+
 		if viewerVector != nil && isCompleteBigFive(m.Psycho) {
 			compatibility, err := s.compatibilitySvc.CalculateDistance(*viewerVector, m.Psycho)
 			if err != nil {
 				return nil, fmt.Errorf("get matches compatibility match id=%d: %w", m.ID, err)
 			}
+
 			m.Compatibility = &compatibility
 		}
 	}
@@ -91,6 +97,7 @@ func (s *MatchService) MarkSeen(ctx context.Context, userID, matchID int64) erro
 	if userID <= 0 || matchID <= 0 {
 		return fmt.Errorf("%w: invalid user ID or match ID", model.ErrInvalidMatchesRequest)
 	}
+
 	if err := s.repo.MarkSeen(ctx, userID, matchID); err != nil {
 		if errors.Is(err, model.ErrNotFound) {
 			return fmt.Errorf("mark match id=%d seen: %w", matchID, model.ErrMatchNotFound)
@@ -105,6 +112,7 @@ func (s *MatchService) GetSummary(ctx context.Context, userID int64) (*model.Mat
 	if userID <= 0 {
 		return nil, fmt.Errorf("%w: invalid user ID", model.ErrInvalidMatchesRequest)
 	}
+
 	summary, err := s.repo.GetSummary(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get matches summary: %w", err)

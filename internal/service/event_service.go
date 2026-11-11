@@ -42,6 +42,7 @@ func NewEventService(provider EventProvider, matchRepo EventMatchRepository, eve
 	return &EventService{provider: provider, matchRepo: matchRepo, eventRepo: eventRepo}
 }
 
+// SearchEventsByCity проверяет участие в мэтче и возвращает активный подбор или создаёт новый по городу; bool сообщает о создании
 func (s *EventService) SearchEventsByCity(ctx context.Context, userID int64, matchID int64, city string) (*model.SearchEventsState, bool, error) {
 
 	participants, err := s.matchRepo.GetParticipants(ctx, userID, matchID)
@@ -149,6 +150,7 @@ func (s *EventService) SearchEventsByCity(ctx context.Context, userID int64, mat
 	return state, created, nil
 }
 
+// GetSearchEvents возвращает состояние подбора для пользователя, проверяя участие в мэтче и принадлежность подбора
 func (s *EventService) GetSearchEvents(ctx context.Context, userID, matchID int64, searchID uuid.UUID) (*model.SearchEventsState, error) {
 
 	_, err := s.matchRepo.GetParticipants(ctx, userID, matchID)
@@ -176,6 +178,7 @@ func (s *EventService) GetSearchEvents(ctx context.Context, userID, matchID int6
 	return state, nil
 }
 
+// SubmitResults проверяет выбранные мероприятия, сохраняет ответ участника и возвращает обновлённое состояние подбора
 func (s *EventService) SubmitResults(ctx context.Context, userID, matchID int64, searchID uuid.UUID, likedEventsIDs []int64) (*model.SearchEventsState, error) {
 
 	searchState, err := s.GetSearchEvents(ctx, userID, matchID, searchID)

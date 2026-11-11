@@ -32,3 +32,7 @@ local-up:
 
 local-down:
 	docker compose -f docker-compose.local.yml down
+
+.PHONY: test-integration
+test-integration:
+	bash scripts/integration/run.sh

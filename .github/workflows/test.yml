@@ -25,8 +25,8 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Test
-        run: go test -race -covermode=atomic -coverpkg=./internal/... -coverprofile=coverage.out ./...
+      - name: Unit tests
+        run: go test -race -covermode=atomic -coverpkg=./internal/... -coverprofile=coverage.out $(go list ./... | grep /unit_tests$)
 
       - name: Coverage report
         run: |

@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.6
+    platform: linux/amd64
+    environment:
+      POSTGRES_USER: integration
+      POSTGRES_PASSWORD: integration
+      POSTGRES_DB: integration
+    ports: ["127.0.0.1::5432"]
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U integration -d integration"]
+      interval: 1s
+      timeout: 3s
+      retries: 60
+  redis:
+    image: redis:8-alpine
+    ports: ["127.0.0.1::6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 3s
+      retries: 30

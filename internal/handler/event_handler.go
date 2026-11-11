@@ -25,6 +25,7 @@ func NewEventHandler(svc EventService) *EventHandler {
 	return &EventHandler{svc: svc}
 }
 
+// CreateSearch - POST /matches/{match_id}/search-places: создаёт подбор мероприятий или возвращает активный
 func (h *EventHandler) CreateSearch(w http.ResponseWriter, r *http.Request, userID int64) {
 	matchID, err := strconv.ParseInt(mux.Vars(r)["match_id"], 10, 64)
 
@@ -55,6 +56,7 @@ func (h *EventHandler) CreateSearch(w http.ResponseWriter, r *http.Request, user
 	writeJSON(r.Context(), w, http.StatusOK, resp)
 }
 
+// GetSearch - GET /matches/{match_id}/place-searches/{search_id}: состояние подбора для участника мэтча
 func (h *EventHandler) GetSearch(w http.ResponseWriter, r *http.Request, userID int64) {
 
 	matchID, err := strconv.ParseInt(mux.Vars(r)["match_id"], 10, 64)
@@ -80,6 +82,7 @@ func (h *EventHandler) GetSearch(w http.ResponseWriter, r *http.Request, userID 
 	writeJSON(r.Context(), w, http.StatusOK, resp)
 }
 
+// Submit - POST /matches/{match_id}/place-searches/{search_id}/results: сохраняет выбранные мероприятия и возвращает состояние подбора
 func (h *EventHandler) Submit(w http.ResponseWriter, r *http.Request, userID int64) {
 	matchID, err := strconv.ParseInt(mux.Vars(r)["match_id"], 10, 64)
 	if err != nil || matchID <= 0 {

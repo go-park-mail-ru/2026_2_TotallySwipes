@@ -16,9 +16,11 @@ import (
 	"dating-app/internal/logging"
 	"dating-app/internal/middleware"
 	"dating-app/internal/psychotest"
-	"dating-app/internal/repository"
+	"dating-app/internal/repository/postgres"
+	redisrepo "dating-app/internal/repository/redis"
 	"dating-app/internal/service"
-	"dating-app/internal/storage"
+	pgstorage "dating-app/internal/storage/postgres"
+	redisstorage "dating-app/internal/storage/redis"
 	"dating-app/internal/storage/s3"
 	"dating-app/internal/timepad"
 )
@@ -77,14 +79,14 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
 	defer cancel()
 
-	tracer := storage.NewTracer(logger)
-	db, err := storage.OpenPostgres(ctx, cfg.Database.URL, tracer)
+	tracer := pgstorage.NewTracer(logger)
+	db, err := pgstorage.OpenPostgres(ctx, cfg.Database.URL, tracer)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	rdb, err := storage.OpenRedis(ctx, cfg.Redis.Addr)
+	rdb, err := redisstorage.OpenRedis(ctx, cfg.Redis.Addr)
 	if err != nil {
 		return err
 	}
@@ -97,20 +99,19 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 		return err
 	}
 
-	userRepo := repository.NewUserRepository(db)
-	profileRepo := repository.NewProfileRepository(db)
-	filterRepo := repository.NewFilterRepository(db)
-	swipeRepo := repository.NewSwipeRepository(db)
-	matchRepo := repository.NewMatchRepository(db)
-	psychoTestRepo := repository.NewPsychoTestRepository(db)
-	sessionRepo := repository.NewSessionRepository(rdb)
-	previewsRepo := repository.NewLocationPreviewRepository(rdb, cfg.Redis.LocationPreviewTTL)
-	locationRepo := repository.NewLocationRepository(db)
+	userRepo := postgres.NewUserRepository(db)
+	profileRepo := postgres.NewProfileRepository(db)
+	filterRepo := postgres.NewFilterRepository(db)
+	swipeRepo := postgres.NewSwipeRepository(db)
+	matchRepo := postgres.NewMatchRepository(db)
+	psychoTestRepo := postgres.NewPsychoTestRepository(db)
+	locationRepo := postgres.NewLocationRepository(db)
 
-	eventRepo := repository.NewEventRepository(rdb, cfg.Redis.EventRepositoryTTL)
+	sessionRepo := redisrepo.NewSessionRepository(rdb)
+	previewsRepo := redisrepo.NewLocationPreviewRepository(rdb, cfg.Redis.LocationPreviewTTL)
+	eventRepo := redisrepo.NewEventRepository(rdb, cfg.Redis.EventRepositoryTTL)
 
 	issuer := auth.NewJWTIssuer(cfg.Auth.JWTSecret, cfg.Auth.JWTAccessTTL)
-	// photoStorage := storage.NewLocalPhotoStorage(cfg.PhotoDir)
 	// urlProvider := service.NewLocalPhotoURLProvider(cfg.HTTP.PublicURL)
 	// Фото отдаёт сам API: порт MinIO снаружи закрыт.
 	minioURLProvider := s3.NewProxyURLProvider(cfg.HTTP.PublicURL)

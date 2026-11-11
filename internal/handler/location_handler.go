@@ -21,6 +21,7 @@ func NewLocationHandler(svc LocationService) *LocationHandler {
 	return &LocationHandler{svc: svc}
 }
 
+// Preview - POST /location/me/preview: определяет адрес по координатам и возвращает предпросмотр
 func (h *LocationHandler) Preview(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req dto.LocationPreviewRequest
 
@@ -46,6 +47,7 @@ func (h *LocationHandler) Preview(w http.ResponseWriter, r *http.Request, userID
 	writeJSON(r.Context(), w, http.StatusOK, resp)
 }
 
+// SaveLocation - PUT /location/me: сохраняет локацию из подтверждённого предпросмотра
 func (h *LocationHandler) SaveLocation(w http.ResponseWriter, r *http.Request, userID int64) {
 	var req dto.LocationConfirmRequest
 
@@ -72,6 +74,7 @@ func (h *LocationHandler) SaveLocation(w http.ResponseWriter, r *http.Request, u
 	writeJSON(r.Context(), w, http.StatusOK, resp)
 }
 
+// GetLocation - GET /location/me: сохранённая локация текущего пользователя
 func (h *LocationHandler) GetLocation(w http.ResponseWriter, r *http.Request, userID int64) {
 
 	result, err := h.svc.GetLocation(r.Context(), userID)

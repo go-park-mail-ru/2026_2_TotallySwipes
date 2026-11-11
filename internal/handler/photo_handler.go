@@ -41,6 +41,5 @@ func (h *PhotoHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	// ServeContent берёт Content-Type по расширению и поддерживает Range/If-Modified-Since.
 	http.ServeContent(w, r, path.Base(key), modTime, body)
 }

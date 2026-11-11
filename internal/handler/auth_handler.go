@@ -2,10 +2,9 @@ package handler
 
 import (
 	"context"
-	"crypto/rand"
+	"dating-app/internal/auth"
 	"dating-app/internal/handler/dto"
 	"dating-app/internal/model"
-	"encoding/base64"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -14,7 +13,6 @@ import (
 
 const (
 	csrfTokenCookie = "csrf_token"
-	csrfTokenSize   = 32
 )
 
 const (
@@ -150,6 +148,7 @@ func (h *AuthHandler) sessionCookie(name, path, value string, expires time.Time)
 	}
 }
 
+// CSRF - GET /auth/csrf: выдаёт CSRF-токен и устанавливает cookie
 func (h *AuthHandler) CSRF(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Cache-Control", "no-store")
@@ -158,21 +157,18 @@ func (h *AuthHandler) CSRF(w http.ResponseWriter, r *http.Request) {
 
 	if cookie, err := r.Cookie(csrfTokenCookie); err == nil {
 
-		decoded, err := base64.RawURLEncoding.DecodeString(cookie.Value)
-		if err == nil && len(decoded) == csrfTokenSize {
+		if auth.ValidCSRFTokenFormat(cookie.Value) {
 			token = cookie.Value
 		}
 	}
 
 	if token == "" {
-
-		randomBytes := make([]byte, csrfTokenSize)
-		if _, err := rand.Read(randomBytes); err != nil {
+		t, err := auth.NewCSRFToken()
+		if err != nil {
 			writeServiceError(r.Context(), w, "generate csrf token", err)
 			return
 		}
-
-		token = base64.RawURLEncoding.EncodeToString(randomBytes)
+		token = t
 	}
 
 	http.SetCookie(w, &http.Cookie{
