@@ -75,6 +75,7 @@ type Profile struct {
 	CurrentVersion  ProfileVersion
 	CurrentPsycho   *ProfilePsycho
 	HasSearchFilter bool
+	City            *string
 
 	Tags   []Tag
 	Photos []Photo
@@ -240,4 +241,5 @@ type ProfileShort struct {
 	Age          *int
 	MainPhotoURL *string
 	Missing      []string
+	City         *string
 }

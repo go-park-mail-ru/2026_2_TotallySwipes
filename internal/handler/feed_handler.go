@@ -23,14 +23,14 @@ func NewFeedHandler(svc FeedService) *FeedHandler {
 func (h *FeedHandler) Get(w http.ResponseWriter, r *http.Request, userID int64) {
 	query, errs := dto.ParseFeedQuery(r.URL.Query())
 	if len(errs) > 0 {
-		writeError(w, http.StatusBadRequest, codeValidationError, "Некорректные параметры ленты", errs)
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, "Некорректные параметры ленты", errs)
 		return
 	}
 
 	page, err := h.svc.GetNextFeed(r.Context(), userID, query.Limit, query.Cursor)
 	if err != nil {
-		writeServiceError(w, "get feed", err)
+		writeServiceError(r.Context(), w, "get feed", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.NewFeedResponse(page))
+	writeJSON(r.Context(), w, http.StatusOK, dto.NewFeedResponse(page))
 }

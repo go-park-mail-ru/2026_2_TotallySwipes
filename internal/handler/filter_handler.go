@@ -24,10 +24,10 @@ func NewFilterHandler(svc FilterService) *FilterHandler {
 func (h *FilterHandler) Get(w http.ResponseWriter, r *http.Request, userID int64) {
 	f, err := h.svc.Get(r.Context(), userID)
 	if err != nil {
-		writeServiceError(w, "get filter", err)
+		writeServiceError(r.Context(), w, "get filter", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.NewFilterResponse(f))
+	writeJSON(r.Context(), w, http.StatusOK, dto.NewFilterResponse(f))
 }
 
 // Set - PUT /filters/me: заменяет фильтр ленты целиком
@@ -38,14 +38,14 @@ func (h *FilterHandler) Set(w http.ResponseWriter, r *http.Request, userID int64
 	}
 	filter, errs := req.ToModel()
 	if len(errs) > 0 {
-		writeError(w, http.StatusBadRequest, codeValidationError, msgInvalidData, errs)
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, msgInvalidData, errs)
 		return
 	}
 
 	f, err := h.svc.Set(r.Context(), userID, filter)
 	if err != nil {
-		writeServiceError(w, "set filter", err)
+		writeServiceError(r.Context(), w, "set filter", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.NewFilterResponse(f))
+	writeJSON(r.Context(), w, http.StatusOK, dto.NewFilterResponse(f))
 }

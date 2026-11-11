@@ -13,6 +13,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+const (
+	csrfTokenSize = 32
+)
+
 var ErrInvalidToken = errors.New("invalid token")
 
 type accessClaims struct {
@@ -89,4 +93,13 @@ func randomString(n int, encode func([]byte) string) (string, error) {
 		return "", fmt.Errorf("read random: %w", err)
 	}
 	return encode(b), nil
+}
+
+func NewCSRFToken() (string, error) {
+	return randomString(csrfTokenSize, base64.RawURLEncoding.EncodeToString)
+}
+
+func ValidCSRFTokenFormat(token string) bool {
+	decoded, err := base64.RawURLEncoding.DecodeString(token)
+	return err == nil && len(decoded) == csrfTokenSize
 }

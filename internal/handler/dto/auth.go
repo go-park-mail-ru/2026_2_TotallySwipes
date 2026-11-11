@@ -12,6 +12,10 @@ type AuthResponse struct {
 	Missing []string `json:"missing"`
 }
 
+type CSRFResponse struct {
+	CSRFToken string `json:"csrf_token"`
+}
+
 func NewAuthResponse(res model.AuthResult) AuthResponse {
 	missing := res.Missing
 	if missing == nil {

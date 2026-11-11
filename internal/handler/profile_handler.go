@@ -26,6 +26,7 @@ type ProfileService interface {
 	AddPhoto(ctx context.Context, userID int64, upload model.PhotoUpload) ([]model.Photo, error)
 	DeletePhoto(ctx context.Context, userID, photoID int64) ([]model.Photo, error)
 	ReorderPhotos(ctx context.Context, userID int64, photoIDs []int64) ([]model.Photo, error)
+	GetMatchedProfile(ctx context.Context, viewerID, targetID int64) (*model.MatchedProfile, error)
 }
 
 type ProfileHandler struct {
@@ -40,20 +41,20 @@ func NewProfileHandler(svc ProfileService) *ProfileHandler {
 func (h *ProfileHandler) ShortProfile(w http.ResponseWriter, r *http.Request, userID int64) {
 	short, err := h.svc.GetShortProfile(r.Context(), userID)
 	if err != nil {
-		writeServiceError(w, "get short profile", err)
+		writeServiceError(r.Context(), w, "get short profile", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.NewProfileShortResponse(short))
+	writeJSON(r.Context(), w, http.StatusOK, dto.NewProfileShortResponse(short))
 }
 
 // Get - GET /profile/me: анкета целиком и список незаполненных обязательных полей
 func (h *ProfileHandler) Get(w http.ResponseWriter, r *http.Request, userID int64) {
 	profile, err := h.svc.GetMyProfile(r.Context(), userID)
 	if err != nil {
-		writeServiceError(w, "get my profile", err)
+		writeServiceError(r.Context(), w, "get my profile", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.NewProfileResponse(profile, time.Now()))
+	writeJSON(r.Context(), w, http.StatusOK, dto.NewProfileResponse(profile, time.Now()))
 }
 
 // Update - PATCH /profile/me: меняет присланные поля, каждый вызов - новая версия анкеты
@@ -64,16 +65,16 @@ func (h *ProfileHandler) Update(w http.ResponseWriter, r *http.Request, userID i
 	}
 	patch, errs := req.ToPatch()
 	if len(errs) > 0 {
-		writeError(w, http.StatusBadRequest, codeValidationError, msgInvalidData, errs)
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, msgInvalidData, errs)
 		return
 	}
 
 	profile, err := h.svc.UpdateProfile(r.Context(), userID, patch)
 	if err != nil {
-		writeServiceError(w, "update profile", err)
+		writeServiceError(r.Context(), w, "update profile", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.NewProfileResponse(profile, time.Now()))
+	writeJSON(r.Context(), w, http.StatusOK, dto.NewProfileResponse(profile, time.Now()))
 }
 
 // AddPhoto - POST /profile/me/photos: одно фото в части photo, добавляется в конец
@@ -85,26 +86,26 @@ func (h *ProfileHandler) AddPhoto(w http.ResponseWriter, r *http.Request, userID
 
 	photos, err := h.svc.AddPhoto(r.Context(), userID, upload)
 	if err != nil {
-		writeServiceError(w, "add photo", err)
+		writeServiceError(r.Context(), w, "add photo", err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, dto.NewPhotosResponse(photos))
+	writeJSON(r.Context(), w, http.StatusCreated, dto.NewPhotosResponse(photos))
 }
 
 // DeletePhoto - DELETE /profile/me/photos/{photo_id}: следующие фото сдвигаются на его место
 func (h *ProfileHandler) DeletePhoto(w http.ResponseWriter, r *http.Request, userID int64) {
 	photoID, err := strconv.ParseInt(mux.Vars(r)["photo_id"], 10, 64)
 	if err != nil || photoID <= 0 {
-		writeError(w, http.StatusBadRequest, codeValidationError, "Некорректный photo_id", nil)
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, "Некорректный photo_id", nil)
 		return
 	}
 
 	photos, err := h.svc.DeletePhoto(r.Context(), userID, photoID)
 	if err != nil {
-		writeServiceError(w, "delete photo", err)
+		writeServiceError(r.Context(), w, "delete photo", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.NewPhotosResponse(photos))
+	writeJSON(r.Context(), w, http.StatusOK, dto.NewPhotosResponse(photos))
 }
 
 // ReorderPhotos - PUT /profile/me/photos/order: задаёт порядок всех фото, первое становится главным
@@ -114,16 +115,16 @@ func (h *ProfileHandler) ReorderPhotos(w http.ResponseWriter, r *http.Request, u
 		return
 	}
 	if errs := req.Validate(); len(errs) > 0 {
-		writeError(w, http.StatusBadRequest, codeValidationError, msgInvalidData, errs)
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, msgInvalidData, errs)
 		return
 	}
 
 	photos, err := h.svc.ReorderPhotos(r.Context(), userID, req.PhotoIDs)
 	if err != nil {
-		writeServiceError(w, "reorder photos", err)
+		writeServiceError(r.Context(), w, "reorder photos", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.NewPhotosResponse(photos))
+	writeJSON(r.Context(), w, http.StatusOK, dto.NewPhotosResponse(photos))
 }
 
 // readPhotoUpload читает один файл из части photo; при ошибке сам отвечает клиенту
@@ -131,24 +132,24 @@ func readPhotoUpload(w http.ResponseWriter, r *http.Request) (model.PhotoUpload,
 	r.Body = http.MaxBytesReader(w, r.Body, photoUploadMaxBody)
 	if err := r.ParseMultipartForm(photoUploadMaxMemory); err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			writeError(w, http.StatusRequestEntityTooLarge, codePayloadTooLarge, "Слишком большой запрос", nil)
+			writeError(r.Context(), w, http.StatusRequestEntityTooLarge, codePayloadTooLarge, "Слишком большой запрос", nil)
 			return model.PhotoUpload{}, false
 		}
-		writeError(w, http.StatusBadRequest, codeValidationError, "Ожидается multipart/form-data", nil)
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, "Ожидается multipart/form-data", nil)
 		return model.PhotoUpload{}, false
 	}
 	defer r.MultipartForm.RemoveAll()
 
 	files := r.MultipartForm.File["photo"]
 	if len(files) != 1 {
-		writeError(w, http.StatusBadRequest, codeValidationError, msgInvalidData,
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, msgInvalidData,
 			map[string]string{"photo": "нужно передать ровно один файл"})
 		return model.PhotoUpload{}, false
 	}
 
 	f, err := files[0].Open()
 	if err != nil {
-		writeError(w, http.StatusBadRequest, codeValidationError, msgInvalidData,
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, msgInvalidData,
 			map[string]string{"photo": validate.ErrPhotoFormat.Error()})
 		return model.PhotoUpload{}, false
 	}
@@ -156,15 +157,31 @@ func readPhotoUpload(w http.ResponseWriter, r *http.Request) (model.PhotoUpload,
 
 	data, err := io.ReadAll(io.LimitReader(f, validate.PhotoMaxSize+1))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, codeValidationError, msgInvalidData,
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, msgInvalidData,
 			map[string]string{"photo": validate.ErrPhotoFormat.Error()})
 		return model.PhotoUpload{}, false
 	}
 
 	upload := model.PhotoUpload{Data: data, Ext: validate.PhotoExt(data)}
 	if err := validate.ValidatePhoto(upload); err != nil {
-		writeError(w, http.StatusBadRequest, codeValidationError, msgInvalidData, map[string]string{"photo": err.Error()})
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, msgInvalidData, map[string]string{"photo": err.Error()})
 		return model.PhotoUpload{}, false
 	}
 	return upload, true
+}
+
+// GetByUserID - GET /profiles/{user_id}: анкета собеседника, доступна только при мэтче
+func (h *ProfileHandler) GetByUserID(w http.ResponseWriter, r *http.Request, userID int64) {
+	targetID, err := strconv.ParseInt(mux.Vars(r)["user_id"], 10, 64)
+	if err != nil || targetID <= 0 {
+		writeError(r.Context(), w, http.StatusBadRequest, codeValidationError, "Некорректный user_id", nil)
+		return
+	}
+
+	profile, err := h.svc.GetMatchedProfile(r.Context(), userID, targetID)
+	if err != nil {
+		writeServiceError(r.Context(), w, "get matched profile", err)
+		return
+	}
+	writeJSON(r.Context(), w, http.StatusOK, dto.NewMatchedProfileResponse(profile))
 }

@@ -1,0 +1,30 @@
+name: totallyswipes-photo-smoke
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: photo_test
+      POSTGRES_PASSWORD: photo_test
+      POSTGRES_DB: photo_test
+    ports: ["127.0.0.1:25432:5432"]
+    tmpfs: [/var/lib/postgresql]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U photo_test -d photo_test"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+  redis:
+    image: redis:8-alpine
+    ports: ["127.0.0.1:26379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+  minio:
+    image: dhi.io/minio:latest
+    environment:
+      MINIO_ROOT_USER: photo_test
+      MINIO_ROOT_PASSWORD: photo-test-password
+    ports: ["127.0.0.1:29000:9000"]
+    command: ["server", "/data", "--address", ":9000"]

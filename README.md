@@ -18,11 +18,17 @@
 
 ## Бэкенд: команды Makefile
 
-Перед первым запуском скопировать `local.env.example` → `local.env` и `docker.env.example` → `docker.env`.
+Перед первым запуском скопировать `.env.example` → `.env`. Compose, контейнер API и Makefile читают настройки из `.env`. Запуск: `docker compose up --build -d` или `make up-all`. Переменные окружения терминала имеют приоритет при подстановке `${...}` в Compose; не экспортируйте отличающиеся значения тех же настроек.
 
-* `make run` - приложение на хосте (`go run ./cmd/api`), берёт конфиг из `local.env` (Postgres по `localhost`)
+На сервере workflow создаёт `.env` из GitHub Actions secret `DOCKER_ENV` (имя секрета сохранено) и добавляет `API_IMAGE`. Новые параметры деплоя нужно добавлять в этот secret.
+
+В `.env.example` приведены заглушки всех настроек. Замените пароли, JWT-секрет, токены Timepad и геокодера, а также URL геокодера реальными значениями. Заглушки внешних API не обеспечивают работу интеграций; `COOKIE_SECURE=false` предназначен для локального HTTP, для HTTPS задайте `true`.
+
+Для запуска API на хосте через `make run` в `.env` укажите адреса опубликованных портов: `localhost` вместо `postgres` в `DATABASE_URL`, `localhost:6379` в `REDIS_ADDR` и `localhost:9000` в `MINIO_ENDPOINT`, а также доступные на хосте `PHOTO_DIR` и `LOG_DIR`. Для запуска API в Compose используйте имена сервисов из `.env.example`.
+
+* `make run` - приложение на хосте (`go run ./cmd/api`), берёт конфиг из `.env` (Postgres по `localhost`)
 * `make up` - поднять только Postgres в докере, для локальной разработки (используется вместе с `make run`)
-* `make up-all` - поднять всё в докере (`docker compose up --build`): Postgres + приложение, конфиг из `docker.env` (Postgres по имени сервиса)
+* `make up-all` - поднять всё в докере (`docker compose up --build`): Postgres + приложение, конфиг из `.env` (Postgres по имени сервиса)
 * `make migrate-up` / `make migrate-down` - накатить/откатить миграции через `migrate/migrate` в докере
 * `make migrate-create name=...` - создать новую пару файлов миграции в `db/migrations/`
 * `make test` - прогнать тесты (`go test ./...`)
@@ -34,3 +40,17 @@
 3. Название PR соответствует названию задачи.
 4. В описании PR можно либо краткое описание что сделали, либо просто Ctrl+C Ctrl+V самой задачи
 5. Для того, чтобы залить в ветку `main` нужен аппрув [Глеба](https://t.me/Shadow_Nair)
+### Интеграционные тесты
+
+`make test-integration` поднимает отдельные PostgreSQL/PostGIS и Redis через Docker
+Compose, применяет все миграции и запускает тесты с `-tags=integration -race`.
+Нужны Go и работающий Docker с Compose. Порты назначаются автоматически;
+каждый запуск получает отдельный Compose project. Контейнеры и данные удаляются
+при завершении, включая ошибку тестов. Рабочие базы приложения не используются.
+Redis-тесты работают с настоящим сервером, без miniredis и моков.
+
+Обычный `go test ./...` не включает интеграционные тесты. Workflow запускает
+только пакеты `unit_tests`; их результаты формируют отчёт покрытия.
+При ручном запуске с тегом нужны `TEST_HISTORY_DATABASE_URL` (PostGIS со всеми
+миграциями) и `TEST_REDIS_ADDR`. Используйте только выделенную тестовую среду:
+Redis-тесты очищают БД 15, PostgreSQL-тестам нужна пустая база с миграциями.

@@ -60,7 +60,11 @@ func CORS(allowOrigins []string) func(http.Handler) http.Handler {
 			headers := r.Header.Get("Access-Control-Request-Headers")
 			if headers != "" {
 				for _, header := range strings.Split(headers, ",") {
-					if !strings.EqualFold(strings.TrimSpace(header), "Content-Type") {
+
+					header = strings.TrimSpace(header)
+
+					if !strings.EqualFold(header, "Content-Type") &&
+						!strings.EqualFold(header, "X-CSRF-Token") {
 						http.Error(w, "Header not allowed", http.StatusForbidden)
 						return
 					}
@@ -68,7 +72,7 @@ func CORS(allowOrigins []string) func(http.Handler) http.Handler {
 			}
 
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
 			w.Header().Set("Access-Control-Max-Age", "600")
 			w.WriteHeader(http.StatusNoContent)
 

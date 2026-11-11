@@ -70,7 +70,7 @@ jobs:
         run: |
           ssh server 'mkdir -p ~/app'
           rsync -az --delete --exclude=/db/data/ docker-compose.yml db server:~/app/
-          printf '%s\nAPI_IMAGE=%s\n' "$DOCKER_ENV" "$API_IMAGE" | ssh server 'umask 077 && cat > ~/app/docker.env'
+          printf '%s\nAPI_IMAGE=%s\n' "$DOCKER_ENV" "$API_IMAGE" | ssh server 'umask 077 && cat > ~/app/.env'
 
       - name: Deploy
         env:
@@ -80,7 +80,7 @@ jobs:
           ssh server bash -s <<'EOF'
           set -euo pipefail
           cd ~/app
-          set -a && . ./docker.env && set +a
+          set -a && . ./.env && set +a
 
           docker compose pull api
           docker logout ghcr.io
@@ -95,8 +95,15 @@ jobs:
           docker image prune -f
 
           docker compose ps
+          health_url="http://127.0.0.1:${PORT:-8080}/health"
+          health_curl_args=()
+          if [ -n "${TLS_CERT_FILE:-}" ]; then
+            health_url="https://127.0.0.1:${PORT:-8080}/health"
+            # Local probe uses an IP address rather than the certificate's domain.
+            health_curl_args=(--insecure)
+          fi
           for i in $(seq 1 15); do
-            curl -fsS "http://127.0.0.1:${PORT:-8080}/health" && exit 0
+            curl -fsS "${health_curl_args[@]}" "$health_url" && exit 0
             sleep 2
           done
           echo "API не ответил на /health" >&2

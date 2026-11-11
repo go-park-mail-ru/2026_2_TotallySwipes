@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -12,12 +11,18 @@ import (
 
 	"dating-app/internal/auth"
 	"dating-app/internal/config"
+	"dating-app/internal/geocoder"
 	"dating-app/internal/handler"
+	"dating-app/internal/logging"
 	"dating-app/internal/middleware"
 	"dating-app/internal/psychotest"
-	"dating-app/internal/repository"
+	"dating-app/internal/repository/postgres"
+	redisrepo "dating-app/internal/repository/redis"
 	"dating-app/internal/service"
-	"dating-app/internal/storage"
+	pgstorage "dating-app/internal/storage/postgres"
+	redisstorage "dating-app/internal/storage/redis"
+	"dating-app/internal/storage/s3"
+	"dating-app/internal/timepad"
 )
 
 const connectTimeout = 5 * time.Second
@@ -26,23 +31,45 @@ type handlers struct {
 	auth       *handler.AuthHandler
 	feed       *handler.FeedHandler
 	filter     *handler.FilterHandler
+	match      *handler.MatchHandler
 	profile    *handler.ProfileHandler
 	psychoTest *handler.PsychoTestHandler
 	swipe      *handler.SwipeHandler
+	location   *handler.LocationHandler
+	event      *handler.EventHandler
+	photo      *handler.PhotoHandler
 }
 
 func main() {
-	if err := run(); err != nil {
-		slog.Error("server stopped", "error", err)
+	if err := start(); err != nil {
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func start() error {
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("invalid configuration: %w", err)
+		slog.Error("load config", "error", err)
+		return err
 	}
+
+	logger, logFile, err := logging.New(cfg.LogDir)
+	if err != nil {
+		slog.Error("init logger", "error", err)
+		return err
+	}
+	defer logFile.Close()
+
+	slog.SetDefault(logger)
+
+	if err := run(cfg, logger); err != nil {
+		logger.Error("server stopped", "error", err)
+		return err
+	}
+	return nil
+}
+
+func run(cfg *config.Config, logger *slog.Logger) error {
 
 	psychoTest, err := psychotest.Load()
 	if err != nil {
@@ -52,49 +79,82 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
 	defer cancel()
 
-	db, err := storage.OpenPostgres(ctx, cfg.Database.URL)
+	tracer := pgstorage.NewTracer(logger)
+	db, err := pgstorage.OpenPostgres(ctx, cfg.Database.URL, tracer)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	rdb, err := storage.OpenRedis(ctx, cfg.Redis.Addr)
+	rdb, err := redisstorage.OpenRedis(ctx, cfg.Redis.Addr)
 	if err != nil {
 		return err
 	}
 	defer rdb.Close()
 
-	userRepo := repository.NewUserRepository(db)
-	profileRepo := repository.NewProfileRepository(db)
-	filterRepo := repository.NewFilterRepository(db)
-	swipeRepo := repository.NewSwipeRepository(db)
-	psychoTestRepo := repository.NewPsychoTestRepository(db)
-	sessionRepo := repository.NewSessionRepository(rdb)
+	minioCtx, cancelMinIO := context.WithTimeout(context.Background(), connectTimeout)
+	minioStorage, err := s3.OpenMinIOStorage(minioCtx, cfg.MinIO)
+	cancelMinIO()
+	if err != nil {
+		return err
+	}
+
+	userRepo := postgres.NewUserRepository(db)
+	profileRepo := postgres.NewProfileRepository(db)
+	filterRepo := postgres.NewFilterRepository(db)
+	swipeRepo := postgres.NewSwipeRepository(db)
+	matchRepo := postgres.NewMatchRepository(db)
+	psychoTestRepo := postgres.NewPsychoTestRepository(db)
+	locationRepo := postgres.NewLocationRepository(db)
+
+	sessionRepo := redisrepo.NewSessionRepository(rdb)
+	previewsRepo := redisrepo.NewLocationPreviewRepository(rdb, cfg.Redis.LocationPreviewTTL)
+	eventRepo := redisrepo.NewEventRepository(rdb, cfg.Redis.EventRepositoryTTL)
 
 	issuer := auth.NewJWTIssuer(cfg.Auth.JWTSecret, cfg.Auth.JWTAccessTTL)
-	photoStorage := storage.NewLocalPhotoStorage(cfg.PhotoDir)
-	urlProvider := service.NewLocalPhotoURLProvider(cfg.HTTP.PublicURL)
+	// urlProvider := service.NewLocalPhotoURLProvider(cfg.HTTP.PublicURL)
+	// Фото отдаёт сам API: порт MinIO снаружи закрыт.
+	minioURLProvider := s3.NewProxyURLProvider(cfg.HTTP.PublicURL)
+
+	geocoderHTTPClient := &http.Client{
+		Timeout: cfg.Geocoder.HTTPClientTimeout,
+	}
+	timepadHTTPClient := &http.Client{
+		Timeout: cfg.Timepad.HTTPClientTimeout,
+	}
+
+	reverseGeocoder := geocoder.NewDaData(geocoderHTTPClient, cfg.Geocoder.BaseURL, cfg.Geocoder.APIKey)
+	timepadProvider := timepad.NewTimepadProvider(timepadHTTPClient, cfg.Timepad.BaseURL, cfg.Timepad.APIKey)
 
 	compatibilitySvc := service.NewCompatibilityService()
-	profileSvc := service.NewProfileService(profileRepo, compatibilitySvc, urlProvider, photoStorage)
+	profileSvc := service.NewProfileService(profileRepo, compatibilitySvc, minioURLProvider, minioStorage)
 	authSvc := service.NewAuthService(userRepo, profileSvc, sessionRepo, auth.BcryptHasher{}, issuer, cfg.Auth.JWTRefreshTTL)
 	psychoTestSvc := service.NewPsychoTestService(psychoTestRepo, profileRepo, compatibilitySvc, psychoTest)
 	filterSvc := service.NewFilterService(filterRepo)
 	swipeSvc := service.NewSwipeService(swipeRepo, profileRepo)
+	matchSvc := service.NewMatchService(matchRepo, profileRepo, compatibilitySvc, minioURLProvider, eventRepo)
+	locationSvc := service.NewLocationService(locationRepo, reverseGeocoder, previewsRepo)
+	eventSvc := service.NewEventService(timepadProvider, matchRepo, eventRepo)
 
 	h := handlers{
 		auth:       handler.NewAuthHandler(authSvc, cfg.Auth.CookieSecure),
 		feed:       handler.NewFeedHandler(profileSvc),
 		filter:     handler.NewFilterHandler(filterSvc),
+		match:      handler.NewMatchHandler(matchSvc),
 		profile:    handler.NewProfileHandler(profileSvc),
 		psychoTest: handler.NewPsychoTestHandler(psychoTestSvc),
 		swipe:      handler.NewSwipeHandler(swipeSvc),
+		location:   handler.NewLocationHandler(locationSvc),
+		event:      handler.NewEventHandler(eventSvc),
+		photo:      handler.NewPhotoHandler(minioStorage),
 	}
 
 	var root http.Handler = newRouter(cfg, issuer, h)
+	root = middleware.CSRF(root)
 	root = middleware.Recovery(root)
 	root = middleware.CORS(cfg.HTTP.CORSOrigins)(root)
 	root = middleware.Logging(root)
+	root = middleware.RequestID(root)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.HTTP.Port,
@@ -106,6 +166,9 @@ func run() error {
 	}
 
 	slog.Info("starting server", "port", cfg.HTTP.Port)
+	if cfg.TLS.CertFile != "" {
+		return srv.ListenAndServeTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+	}
 	return srv.ListenAndServe()
 }
 
@@ -115,6 +178,7 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 
 	files := http.FileServer(http.Dir(cfg.PhotoDir))
 	r.PathPrefix("/cats/").Handler(http.StripPrefix("/cats/", files)).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc(s3.PhotoRoutePrefix+"{key:.+}", h.photo.Get).Methods(http.MethodGet, http.MethodHead)
 
 	api := r.PathPrefix("/api/v1").Subrouter()
 	requireAuth := middleware.Auth(issuer)
@@ -125,9 +189,14 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 	authRouter.HandleFunc("/login", h.auth.Login).Methods(http.MethodPost)
 	authRouter.HandleFunc("/logout", h.auth.Logout).Methods(http.MethodPost)
 	authRouter.HandleFunc("/refresh", h.auth.Refresh).Methods(http.MethodPost)
+	authRouter.HandleFunc("/csrf", h.auth.CSRF).Methods(http.MethodGet)
 
 	api.Handle("/feed", authed(h.feed.Get)).Methods(http.MethodGet)
 	api.Handle("/feed/swipe", authed(h.swipe.Swipe)).Methods(http.MethodPost)
+
+	api.Handle("/matches", authed(h.match.List)).Methods(http.MethodGet)
+	api.Handle("/matches/summary", authed(h.match.Summary)).Methods(http.MethodGet)
+	api.Handle("/matches/{match_id}/seen", authed(h.match.MarkSeen)).Methods(http.MethodPost)
 
 	api.Handle("/filters/me", authed(h.filter.Get)).Methods(http.MethodGet)
 	api.Handle("/filters/me", authed(h.filter.Set)).Methods(http.MethodPut)
@@ -138,10 +207,18 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 	api.Handle("/profile/me/photos", authed(h.profile.AddPhoto)).Methods(http.MethodPost)
 	api.Handle("/profile/me/photos/order", authed(h.profile.ReorderPhotos)).Methods(http.MethodPut)
 	api.Handle("/profile/me/photos/{photo_id}", authed(h.profile.DeletePhoto)).Methods(http.MethodDelete)
+	api.Handle("/profiles/{user_id}", authed(h.profile.GetByUserID)).Methods(http.MethodGet)
 
 	api.Handle("/tests/current", authed(h.psychoTest.Current)).Methods(http.MethodGet)
 	api.Handle("/tests/results/me", authed(h.psychoTest.MyResult)).Methods(http.MethodGet)
 	api.Handle("/tests/{test_id}/results", authed(h.psychoTest.Submit)).Methods(http.MethodPost)
+
+	api.Handle("/location/me/preview", authed(h.location.Preview)).Methods(http.MethodPost)
+	api.Handle("/location/me", authed(h.location.SaveLocation)).Methods(http.MethodPut)
+	api.Handle("/location/me", authed(h.location.GetLocation)).Methods(http.MethodGet)
+	api.Handle("/matches/{match_id}/search-places", authed(h.event.CreateSearch)).Methods(http.MethodPost)
+	api.Handle("/matches/{match_id}/place-searches/{search_id}", authed(h.event.GetSearch)).Methods(http.MethodGet)
+	api.Handle("/matches/{match_id}/place-searches/{search_id}/results", authed(h.event.Submit)).Methods(http.MethodPost)
 
 	return r
 }

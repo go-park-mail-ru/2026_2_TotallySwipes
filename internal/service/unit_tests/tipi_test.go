@@ -36,6 +36,7 @@ func TestCalculateBigFiveTIPI(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			// Arrange
 			definition := model.Test{ID: 42, Methodology: model.MethodologyTIPI}
 			answers := model.TestAnswers{TestID: 42}
 			for i := 1; i <= 7; i++ {
@@ -52,7 +53,9 @@ func TestCalculateBigFiveTIPI(t *testing.T) {
 				tc.mutate(&definition, &answers)
 			}
 			svc := &CompatibilityServiceImpl{}
+			// Act
 			got, err := svc.CalculateBigFive(&definition, &answers)
+			// Assert
 			if tc.wantErr {
 				if err == nil || got != nil {
 					t.Fatalf("got=%v err=%v", got, err)
