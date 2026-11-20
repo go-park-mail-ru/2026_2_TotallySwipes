@@ -1,0 +1,326 @@
+syntax="proto3";
+
+package totallyswipes.profile.v1;
+
+option go_package = "dating-app/gen/go/profile/v1;profilepb";
+
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+
+message Date {
+  int32 year = 1;
+  int32 month = 2;
+  int32 day = 3;
+}
+
+message Photo {
+  int64 id = 1;
+  string url = 2;
+}
+
+message Profile {
+  int64 user_id = 1;
+  optional string name = 2;
+  Date birth_date = 3;
+  optional int32 age = 4;
+  optional string sex = 5;
+  optional string dating_goal = 6;
+  optional string about_me = 7;
+  optional string education = 8;
+  optional string work = 9;
+  optional string smoking = 10;
+  optional string alcohol = 11;
+  optional int32 height = 12;
+  repeated string tags = 13;
+  repeated Photo photos = 14;
+  repeated string missing = 15;
+  optional string city = 16;
+}
+
+message ProfileFields {
+  optional string name = 1;
+  Date birth_date = 2;
+  optional string sex = 3;
+  optional string dating_goal = 4;
+  optional string about_me = 5;
+  optional string education = 6;
+  optional string work = 7;
+  optional string smoking = 8;
+  optional string alcohol = 9;
+  optional int32 height = 10;
+  repeated string tags = 11;
+}
+
+message GetMyProfileRequest {
+  int64 user_id = 1;
+}
+message GetMyProfileResponse {
+  Profile profile = 1;
+}
+
+message UpdateProfileRequest {
+  int64 user_id = 1;
+  ProfileFields fields = 2;
+
+  google.protobuf.FieldMask update_mask = 3;
+}
+
+message UpdateProfileResponse {
+  Profile profile = 1;
+}
+
+message GetShortProfileRequest {
+  int64 user_id = 1;
+}
+
+message GetShortProfileResponse {
+  int64 user_id = 1;
+  optional string name = 2;
+  optional int32 age = 3;
+  optional string photo_url = 4;
+  repeated string missing = 5;
+  optional string city = 6;
+}
+
+message AddPhotoRequest {
+  int64 user_id = 1;
+  bytes data = 2;
+  string ext = 3;
+}
+
+message AddPhotoResponse {
+  repeated Photo photos = 1;
+}
+
+message GetPhotoRequest {
+  string key = 1;
+}
+
+message GetPhotoResponse {
+  bytes data = 1;
+  string filename = 2;
+  google.protobuf.Timestamp last_modified = 3;
+}
+
+message DeletePhotoRequest {
+  int64 user_id = 1;
+  int64 photo_id = 2;
+}
+
+message DeletePhotoResponse {
+  repeated Photo photos = 1;
+}
+
+message ReorderPhotosRequest {
+  int64 user_id = 1;
+  repeated int64 photo_ids = 2;
+}
+
+message ReorderPhotosResponse {
+  repeated Photo photos = 1;
+}
+
+message TestQuestion {
+  int64 id = 1;
+  string body = 2;
+}
+
+message TestAnswerOption {
+  int32 value = 1;
+  string label = 2;
+}
+
+message Test {
+  int64 test_id = 1;
+  string title = 2;
+  string instructions = 3;
+  repeated TestAnswerOption answer_options = 4;
+  repeated TestQuestion questions = 5;
+}
+
+message TestAnswer {
+  int64 question_id = 1;
+  optional int32 value = 2;
+}
+
+message BigFive {
+  optional double openness = 1;
+  optional double conscientiousness = 2;
+  optional double extraversion = 3;
+  optional double agreeableness = 4;
+  optional double neuroticism = 5;
+}
+
+message TestResult {
+  int64 result_id = 1;
+  int64 test_id = 2;
+  int32 revision = 3;
+  google.protobuf.Timestamp completed_at = 4;
+  BigFive big_five = 5;
+  string personality_type = 6;
+  string about_personality_type = 7;
+}
+
+message GetCurrentTestRequest {}
+
+message GetCurrentTestResponse {
+  Test test = 1;
+}
+
+message SubmitTestAnswersRequest {
+  int64 user_id = 1;
+  int64 test_id = 2;
+  repeated TestAnswer answers = 3;
+}
+
+message SubmitTestAnswersResponse {
+  TestResult result = 1;
+}
+
+message GetMyTestResultRequest {
+  int64 user_id = 1;
+}
+
+message GetMyTestResultResponse {
+  TestResult result = 1;
+}
+
+message Coordinates {
+  optional double latitude = 1;
+  optional double longitude = 2;
+}
+
+message Location {
+  string city = 1;
+  optional string district = 2;
+  Coordinates coordinates = 3;
+}
+
+message PreviewLocationRequest {
+  int64 user_id = 1;
+  Coordinates coordinates = 2;
+}
+
+message PreviewLocationResponse {
+  string preview_id = 1;
+  string city = 2;
+  optional string district = 3;
+}
+
+message SaveLocationRequest {
+  int64 user_id = 1;
+  string preview_id = 2;
+}
+
+message SaveLocationResponse {
+  Location location = 1;
+}
+
+message GetLocationRequest {
+  int64 user_id = 1;
+}
+
+message GetLocationResponse {
+  Location location = 1;
+}
+
+message SearchFilter {
+  optional string sex = 1;
+  optional int32 age_from = 2;
+  optional int32 age_to = 3;
+}
+
+message GetSearchFilterRequest {
+  int64 user_id = 1;
+}
+
+message GetSearchFilterResponse {
+  SearchFilter filter = 1;
+}
+
+message SetSearchFilterRequest {
+  int64 user_id = 1;
+  SearchFilter filter = 2;
+}
+
+message SetSearchFilterResponse {
+  SearchFilter filter = 1;
+}
+
+
+message ProfileWithBigFive {
+  Profile profile = 1;
+  BigFive big_five = 2;
+}
+
+message SearchCandidatesRequest {
+  int64 user_id = 1;
+  int32 limit = 2;
+  optional string cursor = 3;
+}
+
+message SearchCandidatesResponse {
+  repeated ProfileWithBigFive candidates = 1;
+  optional string next_cursor = 2;
+}
+
+message MatchFilter {
+    optional string name = 1;
+    optional int32 age_from = 2;
+    optional int32 age_to = 3;
+    optional string sex = 4;
+}
+
+message GetProfilesBatchRequest {
+    repeated int64 user_ids = 1;
+    MatchFilter filter = 2;
+}
+
+message GetProfilesBatchResponse {
+  repeated ProfileWithBigFive profiles = 1;
+}
+
+message ProfileChatSummary {
+  int64 user_id = 1;
+  optional string name = 2;
+  optional string photo_url = 3;
+  repeated string tags = 4;
+}
+
+message GetProfileChatSummariesRequest {
+  repeated int64 user_ids = 1;
+}
+
+message GetProfileChatSummariesResponse {
+  repeated ProfileChatSummary profiles = 1;
+  repeated int64 unavailable_user_ids = 2;
+}
+
+service ProfileService {
+    rpc GetMyProfile(GetMyProfileRequest) returns (GetMyProfileResponse);
+    rpc UpdateProfile(UpdateProfileRequest) returns (UpdateProfileResponse);
+    rpc GetShortProfile(GetShortProfileRequest) returns (GetShortProfileResponse);
+
+    rpc AddPhoto(AddPhotoRequest) returns (AddPhotoResponse);
+    rpc GetPhoto(GetPhotoRequest) returns (GetPhotoResponse);
+    rpc DeletePhoto(DeletePhotoRequest) returns (DeletePhotoResponse);
+    rpc ReorderPhotos(ReorderPhotosRequest) returns (ReorderPhotosResponse);
+
+    rpc GetSearchFilter(GetSearchFilterRequest) returns (GetSearchFilterResponse);
+    rpc SetSearchFilter(SetSearchFilterRequest) returns (SetSearchFilterResponse);
+
+    rpc GetCurrentTest(GetCurrentTestRequest) returns (GetCurrentTestResponse);
+    rpc SubmitTestAnswers(SubmitTestAnswersRequest) returns (SubmitTestAnswersResponse);
+    rpc GetMyTestResult(GetMyTestResultRequest) returns (GetMyTestResultResponse);
+
+
+    rpc PreviewLocation(PreviewLocationRequest) returns (PreviewLocationResponse);
+    rpc SaveLocation(SaveLocationRequest) returns (SaveLocationResponse);
+    rpc GetLocation(GetLocationRequest) returns (GetLocationResponse);
+
+    rpc SearchCandidates(SearchCandidatesRequest) returns (SearchCandidatesResponse);
+    rpc GetProfilesBatch(GetProfilesBatchRequest) returns (GetProfilesBatchResponse);
+
+    rpc GetProfileChatSummaries(GetProfileChatSummariesRequest) returns (GetProfileChatSummariesResponse);
+}

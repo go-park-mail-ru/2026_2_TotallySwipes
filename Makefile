@@ -36,3 +36,15 @@ local-down:
 .PHONY: test-integration
 test-integration:
 	bash scripts/integration/run.sh
+
+
+PROTO_FILES := $(shell find api/proto -type f -name '*.proto' | sort)
+.PHONY: proto
+proto:
+	protoc \
+		--proto_path=api/proto \
+		--go_out=. \
+		--go_opt=module=dating-app \
+		--go-grpc_out=. \
+		--go-grpc_opt=module=dating-app \
+		$(PROTO_FILES)

@@ -151,11 +151,10 @@ func run(cfg *config.Config, logger *slog.Logger) error {
 
 	var root http.Handler = newRouter(cfg, issuer, h)
 	root = middleware.CSRF(root)
-	root = middleware.Recovery(root)
 	root = middleware.CORS(cfg.HTTP.CORSOrigins)(root)
 	root = middleware.Logging(root)
 	root = middleware.RequestID(root)
-
+	root = middleware.Recovery(root)
 	srv := &http.Server{
 		Addr:              ":" + cfg.HTTP.Port,
 		Handler:           root,

@@ -1,0 +1,194 @@
+syntax = "proto3";
+
+package totallyswipes.match.v1;
+
+option go_package = "dating-app/gen/go/match/v1;matchpb";
+
+import "google/protobuf/timestamp.proto";
+import "profile/v1/profile.proto";
+
+service MatchService {
+  rpc GetMatches(GetMatchesRequest) returns (GetMatchesResponse);
+  rpc GetSummary(GetSummaryRequest) returns (GetSummaryResponse);
+  rpc MarkSeen(MarkSeenRequest) returns (MarkSeenResponse);
+
+  rpc GetNextFeed(GetNextFeedRequest) returns (GetNextFeedResponse);
+  rpc Swipe(SwipeRequest) returns (SwipeResponse);
+  rpc GetMatchedProfile(GetMatchedProfileRequest) returns (GetMatchedProfileResponse);
+
+  rpc SearchEventsByCity(SearchEventsByCityRequest) returns (SearchEventsByCityResponse);
+  rpc GetSearchEvents(GetSearchEventsRequest) returns (GetSearchEventsResponse);
+  rpc SubmitResults(SubmitResultsRequest) returns (SubmitResultsResponse);
+}
+
+message GetMatchesRequest {
+  int64 user_id = 1;
+  optional int32 limit = 2;
+  optional int64 cursor = 3;
+
+  totallyswipes.profile.v1.MatchFilter filter = 4;
+}
+
+message GetMatchesResponse {
+  repeated MatchItem items = 1;
+
+  int64 total = 2;
+  optional int64 next_cursor = 3;
+}
+
+message MatchItem {
+  int64 match_id = 1;
+  int64 user_id = 2;
+  optional string name = 3;
+  optional int32 age = 4;
+  optional string photo_url = 5;
+  optional double compatibility = 6;
+  bool is_new = 7;
+  bool partner_finished = 8;
+  bool can_meetup = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+message GetSummaryRequest {
+  int64 user_id = 1;
+}
+
+message GetSummaryResponse {
+  int64 total = 1;
+  int64 new_count = 2;
+  bool has_new = 3;
+}
+
+message MarkSeenRequest {
+  int64 user_id = 1;
+  int64 match_id = 2;
+}
+
+message MarkSeenResponse {}
+
+
+message GetNextFeedRequest {
+  int64 user_id = 1;
+  optional int32 limit = 2;
+  optional int64 cursor = 3;
+}
+
+message GetNextFeedResponse {
+  repeated FeedItem items = 1;
+  optional int64 next_cursor = 2;
+}
+
+message FeedItem {
+  int64 user_id = 1;
+  string name = 2;
+  int32 age = 3;
+  string dating_goal = 4;
+  optional double compatibility = 5;
+  optional string about_me = 6;
+  optional string education = 7;
+  optional string work = 8;
+  optional string smoking = 9;
+  optional string alcohol = 10;
+  optional int32 height = 11;
+  repeated string tags = 12;
+  repeated totallyswipes.profile.v1.Photo photos = 13;
+  bool liked_me = 14;
+  optional string city = 15;
+}
+
+enum SwipeAction {
+  SWIPE_ACTION_UNSPECIFIED = 0;
+  SWIPE_ACTION_LIKE = 1;
+  SWIPE_ACTION_DISLIKE = 2;
+  SWIPE_ACTION_SUPER_LIKE = 3;
+}
+
+message SwipeRequest {
+  int64 user_id = 1;
+  int64 target_user_id = 2;
+  SwipeAction action = 3;
+}
+
+message SwipeResponse {}
+
+message GetMatchedProfileRequest {
+  int64 user_id = 1;
+  int64 target_user_id = 2;
+}
+
+message GetMatchedProfileResponse {
+  int64 match_id = 1;
+  FeedItem item = 2;
+}
+
+message SearchEventsByCityRequest {
+  int64 user_id = 1;
+  int64 match_id = 2;
+  string city = 3;
+}
+
+message SearchEventsByCityResponse {
+  SearchEventsState state = 1;
+  bool created = 2;
+}
+
+message GetSearchEventsRequest {
+  int64 user_id = 1;
+  int64 match_id = 2;
+  string search_id = 3;
+}
+
+message GetSearchEventsResponse {
+  SearchEventsState state = 1;
+}
+
+message SubmitResultsRequest {
+  int64 user_id = 1;
+  int64 match_id = 2;
+  string search_id = 3;
+  repeated int64 liked_event_ids = 4;
+}
+
+message SubmitResultsResponse {
+  SearchEventsState state = 1;
+}
+
+enum SearchStatus {
+  SEARCH_STATUS_UNSPECIFIED = 0;
+  SEARCH_STATUS_VOTING = 1;
+  SEARCH_STATUS_WAITING_PARTNER = 2;
+  SEARCH_STATUS_COMPLETED = 3;
+  SEARCH_STATUS_CANCELLED = 4;
+}
+
+message SearchEventsState {
+  string search_id = 1;
+  google.protobuf.Timestamp expires_at = 2;
+  string city = 3;
+  SearchStatus status = 4;
+  repeated Event events = 5;
+  repeated int64 current_user_liked_event_ids = 6;
+  bool current_user_finished = 7;
+  bool partner_finished = 8;
+  repeated Event matches = 9;
+}
+
+message Event {
+  int64 id = 1;
+  string name = 2;
+  google.protobuf.Timestamp starts_at = 3;
+  optional string image_url = 4;
+  string url = 5;
+  EventLocation location = 6;
+  repeated EventCategory categories = 7;
+}
+
+message EventLocation {
+  string city = 1;
+  optional string address = 2;
+}
+
+message EventCategory {
+  int64 id = 1;
+  string name = 2;
+}

@@ -1,0 +1,60 @@
+syntax="proto3";
+
+package totallyswipes.auth.v1;
+
+option go_package = "dating-app/gen/go/auth/v1;authpb";
+
+import "google/protobuf/timestamp.proto";
+
+
+service AuthService {
+    rpc Register(RegisterRequest) returns (RegisterResponse);
+    rpc Login(LoginRequest) returns (LoginResponse);
+    rpc Refresh(RefreshRequest) returns (RefreshResponse);
+    rpc Logout(LogoutRequest) returns (LogoutResponse); 
+}
+
+message Tokens {
+    string access_token = 1;
+    google.protobuf.Timestamp access_expires_at = 2;
+
+    string refresh_token = 3;
+    google.protobuf.Timestamp refresh_expires_at = 4;
+}
+
+message RegisterRequest {
+    string email = 1;
+    string password = 2;
+}
+
+message RegisterResponse {
+    int64 user_id = 1;
+    repeated string missing = 2;
+
+    Tokens tokens = 3;
+}
+
+message LoginRequest {
+    string email = 1;
+    string password =2 ;
+}
+
+message LoginResponse {
+    int64 user_id = 1;
+    repeated string missing = 2;
+    Tokens tokens = 3;
+}
+
+message RefreshRequest {
+    string refresh_token = 1;
+}
+
+message RefreshResponse {
+  Tokens tokens = 1;
+}
+
+message LogoutRequest {
+    string refresh_token = 1;
+}
+
+message LogoutResponse{}

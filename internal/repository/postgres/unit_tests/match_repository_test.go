@@ -7,6 +7,7 @@ import (
 
 	"dating-app/internal/model"
 	postgres "dating-app/internal/repository/postgres"
+
 	"github.com/DATA-DOG/go-sqlmock"
 )
 

@@ -28,7 +28,7 @@ func TestLocationServicePreviewInvalidCoordinates(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
-			// Никакие зависимости не должны вызываться при неверных координатах.
+
 			svc := service.NewLocationService(NewMockLocationRepository(ctrl), NewMockReverseGeocoder(ctrl), NewMockLocationPreviewRepository(ctrl))
 			got, err := svc.GetLocationPreview(context.Background(), 42, tc.coordinates)
 			if got != nil || !errors.Is(err, model.ErrInvalidCoordinates) {
