@@ -1846,7 +1846,111 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-        
+
+/api/v1/chats/{chat_id}/messages/{message_id}/media:
+  get:
+    tags:
+      - Chats
+    summary: Получить медиафайл сообщения
+    description: >-
+      Возвращает голосовое или видеосообщение (кружок)
+      в бинарном формате. Тип файла определяется
+      заголовком Content-Type. Доступ разрешён только
+      участникам чата. Пользователь определяется по
+      cookie access_token. Сообщение должно принадлежать
+      указанному чату.
+
+    security:
+      - cookieAuth: []
+
+    parameters:
+      - name: chat_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+        example: 42
+
+      - name: message_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+        example: 781
+
+    responses:
+      '200':
+        description: Медиафайл успешно получен
+        headers:
+          Content-Disposition:
+            schema:
+              type: string
+            example: inline
+          Cache-Control:
+            schema:
+              type: string
+            example: private, no-store
+          Accept-Ranges:
+            description: Поддержка запросов диапазонов байтов
+            schema:
+              type: string
+              enum: [bytes]
+        content:
+          audio/ogg:
+            schema:
+              type: string
+              format: binary
+          video/mp4:
+            schema:
+              type: string
+              format: binary
+
+      '206':
+        description: Частичное содержимое медиафайла
+        headers:
+          Content-Range:
+            schema:
+              type: string
+            example: bytes 0-1023/4096
+        content:
+          audio/ogg:
+            schema:
+              type: string
+              format: binary
+          video/mp4:
+            schema:
+              type: string
+              format: binary
+
+      '400':
+        $ref: '#/components/responses/ValidationError'
+
+      '401':
+        $ref: '#/components/responses/Unauthorized'
+
+      '404':
+        description: >-
+          Чат, сообщение или медиафайл не найден
+          либо недоступен пользователю.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestError'
+            example:
+              error:
+                code: MEDIA_NOT_FOUND
+                message: Медиафайл не найден
+
+      '416':
+        description: Запрошенный диапазон байтов недопустим
+
+      '500':
+        $ref: '#/components/responses/InternalServerError'
+
 
 /api/v1/chats/{chat_id}/messages/media:
   post:
