@@ -1847,279 +1847,180 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
 
-/api/v1/chats/{chat_id}/messages/{message_id}/media:
-  get:
-    tags:
-      - Chats
-    summary: Получить медиафайл сообщения
-    description: >-
-      Возвращает голосовое или видеосообщение (кружок)
-      в бинарном формате. Тип файла определяется
-      заголовком Content-Type. Доступ разрешён только
-      участникам чата. Пользователь определяется по
-      cookie access_token. Сообщение должно принадлежать
-      указанному чату.
-
-    security:
-      - cookieAuth: []
-
-    parameters:
-      - name: chat_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          format: int64
-          minimum: 1
-        example: 42
-
-      - name: message_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          format: int64
-          minimum: 1
-        example: 781
-
-    responses:
-      '200':
-        description: Медиафайл успешно получен
-        headers:
-          Content-Disposition:
-            schema:
-              type: string
-            example: inline
-          Cache-Control:
-            schema:
-              type: string
-            example: private, no-store
-          Accept-Ranges:
-            description: Поддержка запросов диапазонов байтов
-            schema:
-              type: string
-              enum: [bytes]
-        content:
-          audio/ogg:
-            schema:
-              type: string
-              format: binary
-          video/mp4:
-            schema:
-              type: string
-              format: binary
-
-      '206':
-        description: Частичное содержимое медиафайла
-        headers:
-          Content-Range:
-            schema:
-              type: string
-            example: bytes 0-1023/4096
-        content:
-          audio/ogg:
-            schema:
-              type: string
-              format: binary
-          video/mp4:
-            schema:
-              type: string
-              format: binary
-
-      '400':
-        $ref: '#/components/responses/ValidationError'
-
-      '401':
-        $ref: '#/components/responses/Unauthorized'
-
-      '404':
-        description: >-
-          Чат, сообщение или медиафайл не найден
-          либо недоступен пользователю.
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TestError'
-            example:
-              error:
-                code: MEDIA_NOT_FOUND
-                message: Медиафайл не найден
-
-      '416':
-        description: Запрошенный диапазон байтов недопустим
-
-      '500':
-        $ref: '#/components/responses/InternalServerError'
-
-
-/api/v1/chats/{chat_id}/messages/media:
-  post:
-    tags:
-      - Chats
-    summary: Отправить голосовое или видеосообщение
-    description: >-
-      Загружает голосовое сообщение или видеосообщение
-      (кружок) в MinIO и создаёт сообщение в чате.
-      Доступно только участникам чата.
-      Пользователь определяется по cookie access_token.
-      client_message_id обеспечивает идемпотентность:
-      повторная отправка того же сообщения не создаёт
-      дубликат. При повторе с отличающимися данными
-      возвращается 409.
-
-    security:
-      - cookieAuth: []
-
-    parameters:
-      - name: chat_id
-        in: path
-        required: true
-        description: Идентификатор чата
-        schema:
-          type: integer
-          format: int64
-          minimum: 1
-        example: 42
-
-    requestBody:
-      required: true
-      content:
-        multipart/form-data:
+  /api/v1/chats/{chat_id}/messages/media:
+    post:
+      tags: [Chat]
+      summary: Отправить голосовое сообщение или видеокружок
+      description: >-
+        Планируемый API. Один запрос загружает файл в MinIO и создаёт сообщение;
+        отдельная команда message.send не нужна. Сервер проверяет участие и право
+        переписки через Matching. seq назначается после загрузки файла в транзакции
+        сохранения сообщения; откат отменяет изменение счётчика.
+        После commit message.created отправляется обоим участникам во все подключения,
+        chat.updated и chats.summary.updated — пользователям с изменившимся состоянием.
+        Ключ идемпотентности — (chat_id, sender_id, client_message_id).
+        Повтор с тем же типом и файлом возвращает существующее сообщение, с другими
+        данными — 409. При потере ответа повторять с прежним client_message_id.
+        При подтверждённом откате SQL загруженный объект удаляется; при неизвестном
+        результате commit сначала проверяется сохранение сообщения по ключу идемпотентности.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ChatId'
+        - name: X-CSRF-Token
+          in: header
+          required: true
           schema:
-            type: object
-            additionalProperties: false
-            required:
-              - file
-              - type
-              - client_message_id
-            properties:
-              file:
-                type: string
-                format: binary
-                description: >-
-                  Медиафайл. Для voice — audio/ogg,
-                  для video_note — video/mp4.
-
-              type:
-                type: string
-                enum:
-                  - voice
-                  - video_note
-                description: Тип медиафайла
-
-              client_message_id:
-                type: string
-                format: uuid
-                description: >-
-                  UUID, генерируемый клиентом один раз
-                  для логической отправки сообщения.
-                  Не изменяется при повторных запросах.
-                example: 550e8400-e29b-41d4-a716-446655440000
-
-          encoding:
-            file:
-              contentType: audio/ogg, video/mp4
-
-    responses:
-      '201':
-        description: Медиафайл загружен, сообщение создано
+            type: string
+      requestBody:
+        required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
               type: object
-              required:
-                - id
-                - chat_id
-                - type
-                - client_message_id
-                - media_url
-                - created_at
+              additionalProperties: false
+              required: [file, type, client_message_id]
               properties:
-                id:
-                  type: integer
-                  format: int64
-                  example: 781
-                chat_id:
-                  type: integer
-                  format: int64
-                  example: 42
+                file:
+                  type: string
+                  format: binary
+                  description: Аудио для voice или видео для video_note; формат проверяет сервер. Допустимые кодеки и лимиты закрепляются перед реализацией.
                 type:
                   type: string
                   enum: [voice, video_note]
                 client_message_id:
                   type: string
-                  format: uuid
-                media_url:
-                  type: string
-                  description: >-
-                    Защищённый API-путь для получения
-                    медиафайла. Не является прямым
-                    URL объекта MinIO.
-                  example: /api/v1/chats/42/messages/781/media
-                created_at:
-                  type: string
-                  format: date-time
-                  example: '2026-11-22T11:00:00Z'
+                  minLength: 1
+                  maxLength: 128
+                  pattern: '\S'
+                  description: ID логической отправки; сохраняется при повторах. Рекомендуется UUID.
+      responses:
+        '201':
+          description: Сообщение сохранено. Ответ и событие могут прийти в любом порядке; клиент объединяет их по message_id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessage'
+        '200':
+          description: Идемпотентный повтор; возвращается существующее сообщение без повторного создания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessage'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Некорректный CSRF-токен или запрещена переписка.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              examples:
+                messaging:
+                  value:
+                    error: {code: MESSAGING_NOT_ALLOWED, message: Отправка сообщений недоступна}
+                csrf:
+                  value:
+                    error: {code: CSRF_INVALID, message: Некорректный CSRF-токен}
+        '404':
+          $ref: '#/components/responses/ChatNotFound'
+        '409':
+          description: Ключ идемпотентности использован с другими данными.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error: {code: IDEMPOTENCY_CONFLICT, message: ID сообщения уже использован}
+        '413':
+          description: Файл превышает допустимый размер.
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          description: Ошибка загрузки в MinIO или сохранения в SQL. Повторять с прежним client_message_id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error: {code: MEDIA_SEND_FAILED, message: 'Не удалось отправить голосовое или видео. Попробуйте ещё раз.'}
 
-      '200':
-        description: >-
-          Сообщение с таким client_message_id уже
-          создано. Возвращается существующее сообщение.
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - id
-                - chat_id
-                - type
-                - client_message_id
-                - media_url
-                - created_at
-              properties:
-                id:
-                  type: integer
-                  format: int64
-                chat_id:
-                  type: integer
-                  format: int64
-                type:
-                  type: string
-                  enum: [voice, video_note]
-                client_message_id:
-                  type: string
-                  format: uuid
-                media_url:
-                  type: string
-                created_at:
-                  type: string
-                  format: date-time
+  /api/v1/chats/{chat_id}/messages/{message_id}/media:
+    get:
+      tags: [Chat]
+      summary: Получить медиафайл сообщения
+      description: >-
+        Планируемый API. Проверяет авторизацию, участие в чате, принадлежность сообщения
+        этому чату, наличие медиа и отсутствие deleted_at. По storage_key из SQL получает
+        объект MinIO и возвращает байты с фактическим Content-Type. Ключ и адрес MinIO
+        клиенту не раскрываются. Поддерживает один диапазон Range для перемотки.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ChatId'
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+          example: '781'
+        - name: Range
+          in: header
+          schema:
+            type: string
+          example: bytes=0-1023
+      responses:
+        '200':
+          description: Файл целиком; Content-Type соответствует проверенному формату файла.
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: ['private, no-store']}
+            Accept-Ranges:
+              schema: {type: string, enum: [bytes]}
+          content:
+            'audio/*':
+              schema: {type: string, format: binary}
+            'video/*':
+              schema: {type: string, format: binary}
+        '206':
+          description: Запрошенный диапазон; Content-Type соответствует проверенному формату файла.
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: ['private, no-store']}
+            Accept-Ranges:
+              schema: {type: string, enum: [bytes]}
+            Content-Range:
+              schema: {type: string}
+              example: bytes 0-1023/4096
+          content:
+            'audio/*':
+              schema: {type: string, format: binary}
+            'video/*':
+              schema: {type: string, format: binary}
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Чат недоступен, сообщение отсутствует, удалено или не содержит медиа; либо объект отсутствует.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error: {code: MEDIA_NOT_FOUND, message: Медиафайл не найден}
+        '416':
+          description: Диапазон недопустим.
+          headers:
+            Content-Range:
+              schema: {type: string}
+              example: bytes */4096
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
-      '400':
-        $ref: '#/components/responses/ValidationError'
-
-      '401':
-        $ref: '#/components/responses/Unauthorized'
-
-      '403':
-        $ref: '#/components/responses/CSRFInvalid'
-
-      '404':
-        description: Чат не найден или недоступен
-
-      '409':
-        description: >-
-          client_message_id уже использован
-          для сообщения с другими данными.
-
-      '413':
-        description: Медиафайл превышает допустимый размер
-
-      '415':
-        description: Неподдерживаемый формат медиафайла
-
-      '500':
-        $ref: '#/components/responses/InternalServerError'
 
 components:
   parameters:
@@ -2288,7 +2189,7 @@ components:
     ChatAttachment:
       type: object
       nullable: true
-      required: [attachment_id, duration_seconds]
+      required: [url, duration_seconds]
       properties:
         url:
           type: string
@@ -2296,7 +2197,7 @@ components:
         duration_seconds:
           type: number
           minimum: 0
-      description: Метаданные; бинарный файл загружается отдельным HTTP-запросом с проверкой доступа.
+      description: Медиа сообщения — защищённый URL и длительность, определённая сервером. storage_key не раскрывается; у текста и удалённого сообщения attachment равен null.
     ChatMessage:
       type: object
       required: [message_id, seq, sender_id, type, text, attachment, created_at, edited_at, deleted_at, version]
@@ -2332,7 +2233,7 @@ components:
           type: string
           format: date-time
           nullable: true
-          description: При удалении сохраняется позиция сообщения, text и attachment возвращаются null; правила удаления ещё согласуются.
+          description: При удалении сохраняется позиция сообщения, text и attachment возвращаются null; содержимое в БД сохраняется, но API его скрывает.
         version:
           type: integer
           format: int64

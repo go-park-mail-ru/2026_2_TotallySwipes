@@ -2,7 +2,9 @@
 
 ER: [диаграмма Mermaid](er.md). Типы и ограничения: [SQL-миграции](../migrations/), включая [swipe](../migrations/000005_swipe.up.sql) и [user_location](../migrations/000006_user_location.up.sql).
 
-Суррогатные идентификаторы `id` генерируются через `GENERATED ALWAYS AS IDENTITY`. В `swipe` первичный ключ составной, а в `user_location` ключ `user_id` одновременно ссылается на пользователя; новые идентификаторы для этих таблиц не генерируются.
+Актуально по миграцию [000008_chat_reports](../migrations/000008_chat_reports.up.sql). Описана схема БД;
+
+Суррогатные идентификаторы `id` генерируются через `GENERATED ALWAYS AS IDENTITY`. В `swipe`, `chat_member`, `user_block`, `report_message` первичный ключ составной; `chat_sequence` использует ключ чата, а в `user_location` ключ `user_id` одновременно ссылается на пользователя; новые идентификаторы для этих таблиц не генерируются.
 За описанные ниже межтабличные проверки отвечает backend, кроме явно указанных ограничений и триггеров БД.
 
 В `user_answer` и `profile_tag` отсутствует `updated_at`, поскольку строки не редактируются. Триггеры `user_answer_no_update` и `profile_tag_no_update` запрещают любой `UPDATE`, включая изменение ключей и `created_at`, с SQLSTATE `23514`. Функция `reject_history_update` также используется для запрета обновления `profile_version`.
@@ -33,6 +35,7 @@ ER: [диаграмма Mermaid](er.md). Типы и ограничения: [SQ
 | `id` | Идентификатор пользователя. |
 | `email` | Адрес электронной почты для входа. |
 | `password_hash` | Хеш пароля для проверки при входе. |
+| `is_disabled` | Модераторский бан: скрывает аккаунт из поиска и запрещает создание WebSocket; проверяет backend. |
 | `created_at` | Время создания записи. |
 | `updated_at` | Время последнего обновления записи. |
 
@@ -41,6 +44,7 @@ ER: [диаграмма Mermaid](er.md). Типы и ограничения: [SQ
 | `id`            | bigint | PK, NOT NULL     |
 | `email`         | text   | NOT NULL, UNIQUE |
 | `password_hash` | text   | NOT NULL         |
+| `is_disabled` | boolean | NOT NULL, DEFAULT false |
 | `created_at` | timestamptz | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
 | `updated_at` | timestamptz | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
 
@@ -745,74 +749,25 @@ name ~ '[^[:space:]]'
 
 ## 12. report
 
-Назначение: Жалоба одного пользователя на другого с указанием причины.
+Жалоба пользователя на другого пользователя. Миграция `000008` убирает уникальность тройки автор/адресат/категория: повторные жалобы на разные случаи разрешены.
 
-| Поле | Пояснение |
-| --- | --- |
-| `id` | Идентификатор жалобы. |
-| `author_id` | Пользователь, подавший жалобу. |
-| `reported_user_id` | Пользователь, на которого подана жалоба. |
-| `report_type_id` | Причина жалобы из таблицы `report_type`. |
-| `created_at` | Время создания записи. |
-| `updated_at` | Время последнего обновления записи. |
+| Поле | Тип и ограничения | Назначение |
+| --- | --- | --- |
+| `id` | bigint, identity, PK, > 0 | ID жалобы |
+| `author_id` | bigint, NOT NULL, > 0 | Внешний ID автора, без FK к Auth |
+| `reported_user_id` | bigint, NOT NULL, > 0 | Внешний ID адресата, отличается от автора |
+| `report_type_id` | bigint, NOT NULL, FK → report_type.id | Категория; ON DELETE/UPDATE RESTRICT |
+| `body` | text, 1–10000 символов, не только пробелы | Текст жалобы |
+| `status` | text, NOT NULL, DEFAULT pending | pending / accepted / rejected |
+| `reviewed_by` | bigint, NULL или > 0 | Внешний ID модератора, без FK |
+| `reviewed_at` | timestamptz, NULL | Время решения |
+| `created_at`, `updated_at` | timestamptz, NOT NULL, DEFAULT CURRENT_TIMESTAMP | Времена записи |
 
-| Атрибут            | Тип    | Ограничения                    |
-| ------------------ | ------ | ------------------------------ |
-| `id`               | bigint | PK, NOT NULL                   |
-| `author_id`        | bigint | NOT NULL, FK -> user.id        |
-| `reported_user_id` | bigint | NOT NULL, FK -> user.id        |
-| `report_type_id`   | bigint | NOT NULL, FK -> report_type.id |
-| `created_at` | timestamptz | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
-| `updated_at` | timestamptz | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
+У `pending` оба поля рассмотрения NULL; у `accepted`/`rejected` оба заполнены, время конечно и находится между created_at и updated_at. Backend проверяет полномочия модератора. Исторические жалобы могут иметь NULL body: `CHECK (body IS NOT NULL) NOT VALID` требует текст для новых и обновляемых строк, не проверяя старые.
 
-UNIQUE:
+Жалоба не удаляется каскадно при удалении пользователя. Связанные сообщения вынесены в `report_message`; жалоба может быть без сообщений. Индексы очереди `(status, created_at, id)` и адресата `(reported_user_id, created_at)`.
 
-```
-(author_id, reported_user_id, report_type_id)
-```
-
-CHECK:
-
-```
-id > 0
-author_id <> reported_user_id
-```
-
-FK:
-
-```
-report.author_id -> user.id
-ON DELETE CASCADE
-ON UPDATE RESTRICT
-```
-
-```
-report.reported_user_id -> user.id
-ON DELETE CASCADE
-ON UPDATE RESTRICT
-```
-
-```
-report.report_type_id -> report_type.id
-ON DELETE RESTRICT
-ON UPDATE RESTRICT
-```
-
-Кандидатные ключи:
-
-```
-{id}
-{author_id, reported_user_id, report_type_id}
-```
-
-Функциональные зависимости: `{id} -> R`; `{author_id, reported_user_id, report_type_id} -> R`.
-
-Нормальные формы (при указанных выше ФЗ):
-
-- **1НФ:** одна строка содержит одного автора, одного адресата и одну причину.
-- **2НФ:** временные поля зависят от всей тройки `(author_id, reported_user_id, report_type_id)`; любая её часть может повторяться.
-- **3НФ:** имена пользователей и описание причины вынесены в связанные таблицы.
-- **НФБК:** все детерминанты приведённых нетривиальных ФЗ — перечисленные кандидатные ключи.
+Кандидатный ключ `{id}`, ФЗ `{id} -> R`. При этой модели 1НФ–3НФ и НФБК: категория и пользователи не дублируются, неключевые атрибуты не определяют друг друга. Ограничение состояния рассмотрения не задаёт ФЗ между конкретными значениями времени и модератора.
 
 ---
 
@@ -1093,63 +1048,30 @@ ON UPDATE RESTRICT
 
 ## 17. message
 
-Назначение: Сообщение пользователя в переписке, связанной с конкретной парой match.
+Сообщение в `chat`; прежнее поле `match_id` удалено миграцией `000008`.
 
-| Поле | Пояснение |
-| --- | --- |
-| `id` | Идентификатор сообщения. |
-| `match_id` | Пара пользователей, в переписке которой отправлено сообщение. |
-| `sender_id` | Пользователь, отправивший сообщение. |
-| `body` | Текст сообщения. |
-| `created_at` | Время создания записи. |
-| `updated_at` | Время последнего обновления записи. |
+| Поле | Тип и ограничения | Назначение |
+| --- | --- | --- |
+| `id` | bigint, identity, PK, > 0 | ID сообщения |
+| `chat_id` | bigint, NOT NULL, FK → chat.id, DELETE RESTRICT | Чат |
+| `sender_id` | bigint, NULL для system | Автор; составной FK `(chat_id, sender_id)` → chat_member, DELETE RESTRICT |
+| `seq` | bigint, NOT NULL, > 0 | Порядок в чате; UNIQUE(chat_id, seq) |
+| `client_message_id` | text, NULL или 1–128 символов, не только пробелы | Идемпотентность клиентской отправки |
+| `type` | text, NOT NULL, DEFAULT text | text / voice / video_note / system |
+| `body` | text, NULL или 1–10000 символов, не только пробелы | Текст |
+| `storage_key` | text, DEFAULT NULL, 1–1024 символа при заполнении | Ключ объекта MinIO, не URL |
+| `duration_seconds` | double precision, NULL или конечное > 0 | Длительность медиа |
+| `edited_at`, `deleted_at` | timestamptz, NULL | Конечные времена изменения/удаления между created_at и updated_at |
+| `version` | bigint, NOT NULL, DEFAULT 1, > 0 | Версия сообщения для клиента |
+| `created_at`, `updated_at` | timestamptz, NOT NULL, DEFAULT CURRENT_TIMESTAMP | Времена записи |
 
-| Атрибут     | Тип    | Ограничения              |
-| ----------- | ------ | ------------------------ |
-| `id`        | bigint | PK, NOT NULL             |
-| `match_id`  | bigint | NOT NULL, FK -> match.id |
-| `sender_id` | bigint | NOT NULL, FK -> user.id  |
-| `body`      | text   | NOT NULL                 |
-| `created_at` | timestamptz | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
-| `updated_at` | timestamptz | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
+Для text/system обязателен body, storage_key и duration_seconds равны NULL. Для voice/video_note body равен NULL, ключ и длительность обязательны. Только system имеет NULL sender_id, client_message_id у него также NULL. У старых сообщений client_message_id отсутствует; для новых клиентских отправок его требует API.
 
-CHECK:
+`UNIQUE(chat_id, sender_id, client_message_id)` исключает повторы при ненулевом ключе. Полный набор кандидатных ключей для всей таблицы: `{id}`, `{chat_id, seq}`; nullable тройка — условный ключ клиентских отправок. ФЗ обоих кандидатных ключей определяют R. При этих ФЗ таблица в 1НФ–3НФ и НФБК.
 
-```
-id > 0
-char_length(body) BETWEEN 1 AND 10000
-body ~ '[^[:space:]]'
-```
+Удаление логическое: текст и storage_key остаются в БД; API возвращает tombstone с text/attachment = NULL и запрещает GET медиа. Индекс `(chat_id, seq) WHERE deleted_at IS NULL` помогает выборке неудалённых сообщений.
 
-FK:
-
-```
-message.match_id -> match.id
-ON DELETE CASCADE
-ON UPDATE RESTRICT
-```
-
-```
-message.sender_id -> user.id
-ON DELETE CASCADE
-ON UPDATE RESTRICT
-```
-
-Требование к backend при реализации сообщений: в транзакции заблокировать строку `match`, проверить, что отправитель совпадает с `first_user_id` или `second_user_id`, и что `access_to_message = true`.
-Кандидатные ключи:
-
-```
-{id}
-```
-
-Функциональные зависимости: `{id} -> R`.
-
-Нормальные формы (при указанных выше ФЗ):
-
-- **1НФ:** одна строка содержит одно сообщение.
-- **2НФ:** единственный ключ `id` одноатрибутный.
-- **3НФ:** данные отправителя и пары хранятся в `user` и `match`; одна пара или отправитель не определяют текст сообщения.
-- **НФБК:** все детерминанты приведённых нетривиальных ФЗ — перечисленные кандидатные ключи.
+Backend проверяет право переписки через Matching. После загрузки медиа обновляет `chat_sequence` и вставляет сообщение в одной транзакции; публикация события — после commit. Порядок задаёт seq, не время. SQL обеспечивает принадлежность автора чату, но не проверяет бизнес-право отправки.
 
 ---
 
@@ -1266,6 +1188,57 @@ UUID генерирует backend, расширение определяется
 | `position` | Порядок отображения фотографий профиля |
 | `created_at`, `updated_at` | Временные поля метаданных |
 
+Медиа чатов хранится в MinIO отдельно от метаданных `message.storage_key`. Предлагаемый формат ключа — `chats/<chat_id>/<uuid>.<extension>`; bucket закрепляется конфигурацией Chat. UUID создаёт сервер, формат проверяется; клиент получает только `/api/v1/chats/{chat_id}/messages/{message_id}/media`. Файл загружается перед SQL-транзакцией; при подтверждённом откате удаляется, при неизвестном исходе commit сначала проверяется запись сообщения. Публичное кеширование фотографий на приватные медиа чатов не распространяется.
+
+## 21. chat
+
+| Поле | Тип и ограничения | Назначение |
+| --- | --- | --- |
+| `id` | bigint, identity, PK | ID чата |
+| `match_id` | bigint, NOT NULL, UNIQUE, > 0 | Внешний ID Matching, **без FK** |
+| `created_at` | timestamptz, NOT NULL, DEFAULT CURRENT_TIMESTAMP, конечное | Время создания |
+
+Ключи `{id}`, `{match_id}`; каждый определяет R, 1НФ–3НФ/НФБК. Удаление мэтча не удаляет историю чата; право отправки проверяет Matching. Новый match_id создаёт новый чат. Миграция создаёт чаты и для существующих пустых мэтчей.
+
+## 22. chat_member
+
+| Поле | Тип и ограничения | Назначение |
+| --- | --- | --- |
+| `chat_id` | bigint, PK, FK → chat.id, DELETE RESTRICT | Чат |
+| `user_id` | bigint, PK, > 0, без FK | Внешний ID Auth |
+| `seen_at` | timestamptz, NULL или конечное | NULL — пользователь ещё не открывал чат |
+| `last_read_seq` | bigint, NOT NULL, DEFAULT 0, >= 0 | Прочитанная позиция включительно |
+
+Ключ `{chat_id, user_id}` определяет R. Состояние относится ко всей паре, 1НФ–3НФ/НФБК. Backend создаёт ровно двух участников мэтча в одной транзакции; SQL не ограничивает их число. Backend продвигает last_read_seq только вперёд и не выше существующего seq. Индекс `(user_id, chat_id)`. Новизна чата независима от `match.first_user_seen_at`/`second_user_seen_at` (вкладка симпатий).
+
+## 23. chat_sequence
+
+| Поле | Тип и ограничения | Назначение |
+| --- | --- | --- |
+| `chat_id` | bigint, PK, FK → chat.id, DELETE CASCADE | Чат |
+| `last_seq` | bigint, NOT NULL, DEFAULT 0, >= 0 | Последняя назначенная позиция |
+
+Технический счётчик, а не отдельная бизнес-сущность. `UPDATE ... RETURNING last_seq` сериализует отправки в чат; изменение и INSERT message фиксируются вместе. Счётчик и MAX(message.seq) согласует backend; это явно поддерживаемые избыточные данные для конкурентной записи. Ключ `{chat_id} -> R`, 1НФ–3НФ/НФБК внутри отношения.
+
+## 24. user_block
+
+| Поле | Тип и ограничения | Назначение |
+| --- | --- | --- |
+| `blocker_id` | bigint, PK, > 0, без FK | Кто заблокировал |
+| `blocked_user_id` | bigint, PK, > 0, без FK | Кого заблокировал |
+| `created_at` | timestamptz, NOT NULL, DEFAULT CURRENT_TIMESTAMP, конечное | Время блокировки |
+
+Matching владеет направленной блокировкой; CHECK запрещает блокировать себя. Наличие строки в любом направлении запрещает переписку пары. Разблокировка удаляет только собственную строку. Индекс `(blocked_user_id, blocker_id)`. Ключ `{blocker_id, blocked_user_id} -> R`; время зависит от всей пары, 1НФ–3НФ/НФБК. Отдельна от `user.is_disabled`.
+
+## 25. report_message
+
+| Поле | Тип и ограничения | Назначение |
+| --- | --- | --- |
+| `report_id` | bigint, PK, FK → report.id, DELETE CASCADE | Жалоба |
+| `message_id` | bigint, PK, FK → message.id, DELETE RESTRICT | Сообщение, указанное в жалобе |
+
+Ключ `{report_id, message_id}`; других полей нет, 1НФ–3НФ/НФБК. Один репорт может ссылаться на несколько сообщений, одно сообщение — на несколько репортов. Индекс по message_id. Доступ автора к сообщениям и связь с адресатом жалобы проверяет backend.
+
 ## Порядок миграций в dev
 
 - `000001_init` создаёт схему, включая `personality_type`, историю тегов и защитные триггеры.
@@ -1275,5 +1248,8 @@ UUID генерирует backend, расширение определяется
 
 - `000005_swipe` удаляет `profile_like` без переноса данных и создаёт `swipe` для текущего действия автора по отношению к профилю.
 - `000006_user_location` подключает PostGIS, создаёт `user_location` без пространственного индекса по координатам.
+
+- `000007_match_seen` добавляет время просмотра мэтча каждым участником.
+- `000008_chat_reports` добавляет бан аккаунта, чаты, участников, счётчик seq, блокировки и ссылки жалоб на сообщения; переносит сообщения в чаты и расширяет жалобы.
 
 Психологический тест в БД не хранится: см. `internal/psychotest/tipi.json`.

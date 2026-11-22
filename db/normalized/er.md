@@ -31,6 +31,7 @@ erDiagram
         bigint id PK
         text email UK
         text password_hash
+        boolean is_disabled "DEFAULT false"
         timestamptz created_at
         timestamptz updated_at
     }
@@ -128,9 +129,13 @@ erDiagram
 
     report {
         bigint id PK
-        bigint author_id FK, UK "U1"
-        bigint reported_user_id FK, UK "U1"
-        bigint report_type_id FK, UK "U1"
+        bigint author_id "External Auth ID"
+        bigint reported_user_id "External Auth ID"
+        bigint report_type_id FK
+        text body "Required for new rows"
+        text status "pending, accepted, rejected"
+        bigint reviewed_by "NULL or external Auth ID"
+        timestamptz reviewed_at "NULL"
         timestamptz created_at
         timestamptz updated_at
     }
@@ -181,13 +186,45 @@ erDiagram
         timestamptz updated_at
     }
 
+    chat {
+        bigint id PK
+        bigint match_id UK "External Matching ID, no FK"
+        timestamptz created_at
+    }
+    chat_member {
+        bigint chat_id PK, FK
+        bigint user_id PK "External Auth ID"
+        timestamptz seen_at "NULL"
+        bigint last_read_seq "DEFAULT 0"
+    }
+    chat_sequence {
+        bigint chat_id PK, FK
+        bigint last_seq "DEFAULT 0"
+    }
     message {
         bigint id PK
-        bigint match_id FK
-        bigint sender_id FK
-        text body
+        bigint chat_id FK, UK "U1 seq; U2 sender and client ID; composite sender FK"
+        bigint sender_id FK, UK "U2; NULL only for system; composite FK"
+        bigint seq UK "U1"
+        text client_message_id UK "U2; NULL allowed"
+        text type "text, voice, video_note, system"
+        text body "NULL for media"
+        text storage_key "NULL for text and system"
+        float duration_seconds "NULL for text and system"
+        timestamptz edited_at "NULL"
+        timestamptz deleted_at "NULL"
+        bigint version
         timestamptz created_at
         timestamptz updated_at
+    }
+    user_block {
+        bigint blocker_id PK "External Auth ID"
+        bigint blocked_user_id PK "External Auth ID"
+        timestamptz created_at
+    }
+    report_message {
+        bigint report_id PK, FK
+        bigint message_id PK, FK
     }
 
     user ||..o| profile : "user_id"
@@ -199,8 +236,6 @@ erDiagram
     plan ||..o{ subscription : "plan_id"
     profile_version ||--o{ profile_tag : "profile_version_id"
     tag ||--o{ profile_tag : "tag_id"
-    user ||..o{ report : "author_id"
-    user ||..o{ report : "reported_user_id"
     report_type ||..o{ report : "report_type_id"
     profile ||..o{ photo : "profile_id"
     user ||..o{ photo_comment : "author_id"
@@ -210,6 +245,23 @@ erDiagram
     user ||--o| user_location : "user_id"
     user ||..o{ match : "first_user_id"
     user ||..o{ match : "second_user_id"
-    match ||..o{ message : "match_id"
-    user ||..o{ message : "sender_id"
+    chat ||--o{ chat_member : "chat_id RESTRICT"
+    chat ||--o| chat_sequence : "chat_id CASCADE"
+    chat ||..o{ message : "chat_id RESTRICT"
+    chat_member o|..o{ message : "chat_id + sender_id RESTRICT"
+    report ||--o{ report_message : "report_id CASCADE"
+    message ||--o{ report_message : "message_id RESTRICT"
 ```
+
+## Логические ссылки между сервисами (не SQL FK)
+
+```mermaid
+flowchart LR
+    chat[Chat: chat.match_id] -.-> match[Matching: match.id]
+    member[Chat: chat_member.user_id] -.-> auth[Auth: user.id]
+    block[Matching: user_block.blocker_id / blocked_user_id] -.-> auth
+    report[Chat: report.author_id / reported_user_id / reviewed_by] -.-> auth
+    media[Chat: message.storage_key] -.-> minio[MinIO: media object]
+```
+
+Миграция `000008` намеренно не создаёт эти FK: удаление мэтча/аккаунта не должно каскадно стирать переписку и жалобы. В основной ER показаны только реальные SQL FK. У системного сообщения нет автора; составной FK сообщения проверяет пару `(chat_id, sender_id)`. Ровно двух участников и наличие счётчика для каждого чата обеспечивает backend, а SQL допускает их отсутствие. Текст и ключ удалённого сообщения остаются в БД; API скрывает содержимое. `user.is_disabled` — модераторский бан, `user_block` — отдельная блокировка пары.
