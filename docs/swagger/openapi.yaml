@@ -1119,6 +1119,61 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/report:
+    post:
+      security:
+        - cookieAuth: []
+      summary: Отправить жалобу на пользователя
+      description: >-
+        Создаёт жалобу на другого пользователя. Автор определяется по текущей
+        сессии. Жалоба на самого себя и текст, состоящий только из пробелов,
+        возвращают 400 VALIDATION_ERROR. Для запроса необходим CSRF-токен
+        в заголовке X-CSRF-Token и соответствующая cookie csrf_token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [target_user_id, text]
+              properties:
+                target_user_id:
+                  type: integer
+                  format: int64
+                  minimum: 1
+                  description: Идентификатор пользователя, на которого отправляется жалоба.
+                  example: 42
+                text:
+                  type: string
+                  minLength: 1
+                  pattern: '\S'
+                  description: Текст жалобы; должен содержать хотя бы один непробельный символ.
+                  example: Пользователь отправляет оскорбительные сообщения.
+      responses:
+        '201':
+          description: Жалоба создана. Тело ответа отсутствует.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFInvalid'
+        '404':
+          description: Пользователь, на которого отправляется жалоба, не найден.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestError'
+              example:
+                error:
+                  code: USER_NOT_FOUND
+                  message: Пользователь не найден
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/v1/matches/{match_id}/search-places:
     post:
       summary: Создать или открыть активный подбор событий
