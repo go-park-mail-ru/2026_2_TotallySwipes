@@ -1,0 +1,40 @@
+package model
+
+type FeedPage struct {
+	Items      []FeedItem
+	NextCursor *int64
+}
+
+type FeedItem struct {
+	UserID        int64
+	Name          string
+	Age           int
+	DatingGoal    DatingGoal
+	Compatibility *float64
+	AboutMe       *string
+	Education     *Education
+	Work          *string
+	Smoking       *Attitude
+	Alcohol       *Attitude
+	Height        *int
+	Tags          []string
+	Photos        []FeedPhoto
+	LikedMe       bool
+	City          *string
+}
+
+// MatchedProfile - анкета собеседника по мэтчу
+type MatchedProfile struct {
+	MatchID int64
+	Item    FeedItem
+}
+
+type FeedCandidate struct {
+	Profile Profile
+	LikedMe bool
+}
+
+type FeedPhoto struct {
+	ID  int64
+	URL string
+}
