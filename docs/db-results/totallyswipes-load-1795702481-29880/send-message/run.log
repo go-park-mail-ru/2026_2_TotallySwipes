@@ -1,0 +1,143 @@
+Проект: totallyswipes-load-1795702481-29880; сценарий: send-message
+Клиенты: 1 5 10; длительность каждого запуска: 60s
+pgbench (PostgreSQL) 16.15 (Debian 16.15-1.pgdg13+2)
+BEGIN
+DELETE 10000
+INSERT 0 0
+INSERT 0 20
+INSERT 0 10
+INSERT 0 10000
+COMMIT
+ANALYZE
+ANALYZE
+ANALYZE
+ANALYZE
+Старт: 2026-11-26T14:17:56Z; клиентов: 1
+pgbench: setting random seed to 42
+pgbench (16.15 (Debian 16.15-1.pgdg13+2))
+progress: 5.0 s, 5742.4 tps, lat 0.173 ms stddev 0.188, 0 failed
+progress: 10.0 s, 5773.6 tps, lat 0.173 ms stddev 0.036, 0 failed
+progress: 15.0 s, 5775.4 tps, lat 0.173 ms stddev 0.029, 0 failed
+progress: 20.0 s, 5689.0 tps, lat 0.176 ms stddev 0.060, 0 failed
+progress: 25.0 s, 5544.0 tps, lat 0.180 ms stddev 0.082, 0 failed
+progress: 30.0 s, 5230.4 tps, lat 0.191 ms stddev 0.140, 0 failed
+progress: 35.0 s, 5548.0 tps, lat 0.180 ms stddev 0.090, 0 failed
+progress: 40.0 s, 5513.7 tps, lat 0.181 ms stddev 0.090, 0 failed
+progress: 45.0 s, 5723.3 tps, lat 0.175 ms stddev 0.028, 0 failed
+progress: 50.0 s, 5629.6 tps, lat 0.177 ms stddev 0.068, 0 failed
+progress: 55.0 s, 5453.8 tps, lat 0.183 ms stddev 0.122, 0 failed
+progress: 60.0 s, 5511.4 tps, lat 0.181 ms stddev 0.072, 0 failed
+transaction type: /dev/stdin
+scaling factor: 1
+query mode: prepared
+number of clients: 1
+number of threads: 1
+maximum number of tries: 1
+duration: 60 s
+number of transactions actually processed: 335674
+number of failed transactions: 0 (0.000%)
+latency average = 0.178 ms
+latency stddev = 0.095 ms
+initial connection time = 17.041 ms
+tps = 5596.077234 (without initial connection time)
+statement latencies in milliseconds and failures:
+         0.000           0  \set chat_id random(900000001, 900000010)
+         0.031           0  BEGIN;
+         0.112           0  WITH next_position AS (
+         0.035           0  COMMIT;
+Завершение: 2026-11-26T14:18:57Z
+PASS: seq уникальны, идут без пропусков и согласованы со счётчиками
+BEGIN
+DELETE 345674
+INSERT 0 0
+INSERT 0 20
+INSERT 0 10
+INSERT 0 10000
+COMMIT
+ANALYZE
+ANALYZE
+ANALYZE
+ANALYZE
+Старт: 2026-11-26T14:18:58Z; клиентов: 5
+pgbench: setting random seed to 42
+pgbench (16.15 (Debian 16.15-1.pgdg13+2))
+progress: 5.0 s, 16805.2 tps, lat 0.289 ms stddev 0.397, 0 failed
+progress: 10.0 s, 16104.4 tps, lat 0.306 ms stddev 0.196, 0 failed
+progress: 15.0 s, 16488.1 tps, lat 0.299 ms stddev 0.136, 0 failed
+progress: 20.0 s, 15961.1 tps, lat 0.309 ms stddev 0.200, 0 failed
+progress: 25.0 s, 14977.7 tps, lat 0.330 ms stddev 0.988, 0 failed
+progress: 30.0 s, 15367.1 tps, lat 0.321 ms stddev 0.174, 0 failed
+progress: 35.0 s, 15110.7 tps, lat 0.327 ms stddev 0.219, 0 failed
+progress: 40.0 s, 15403.4 tps, lat 0.320 ms stddev 0.325, 0 failed
+progress: 45.0 s, 14741.7 tps, lat 0.335 ms stddev 0.202, 0 failed
+progress: 50.0 s, 15156.3 tps, lat 0.326 ms stddev 0.249, 0 failed
+progress: 55.0 s, 14110.6 tps, lat 0.350 ms stddev 0.951, 0 failed
+progress: 60.0 s, 13618.4 tps, lat 0.362 ms stddev 0.173, 0 failed
+transaction type: /dev/stdin
+scaling factor: 1
+query mode: prepared
+number of clients: 5
+number of threads: 1
+maximum number of tries: 1
+duration: 60 s
+number of transactions actually processed: 919231
+number of failed transactions: 0 (0.000%)
+latency average = 0.322 ms
+latency stddev = 0.445 ms
+initial connection time = 82.626 ms
+tps = 15341.165364 (without initial connection time)
+statement latencies in milliseconds and failures:
+         0.000           0  \set chat_id random(900000001, 900000010)
+         0.052           0  BEGIN;
+         0.208           0  WITH next_position AS (
+         0.062           0  COMMIT;
+Завершение: 2026-11-26T14:19:58Z
+PASS: seq уникальны, идут без пропусков и согласованы со счётчиками
+BEGIN
+DELETE 929231
+INSERT 0 0
+INSERT 0 20
+INSERT 0 10
+INSERT 0 10000
+COMMIT
+ANALYZE
+ANALYZE
+ANALYZE
+ANALYZE
+Старт: 2026-11-26T14:20:02Z; клиентов: 10
+pgbench: setting random seed to 42
+pgbench (16.15 (Debian 16.15-1.pgdg13+2))
+progress: 5.0 s, 16779.3 tps, lat 0.567 ms stddev 1.008, 0 failed
+progress: 10.0 s, 18415.1 tps, lat 0.535 ms stddev 0.254, 0 failed
+progress: 15.0 s, 17687.2 tps, lat 0.557 ms stddev 0.364, 0 failed
+progress: 20.0 s, 18177.8 tps, lat 0.542 ms stddev 0.264, 0 failed
+progress: 25.0 s, 17263.8 tps, lat 0.571 ms stddev 0.550, 0 failed
+progress: 30.0 s, 17750.8 tps, lat 0.555 ms stddev 0.276, 0 failed
+progress: 35.0 s, 17397.1 tps, lat 0.566 ms stddev 0.311, 0 failed
+progress: 40.0 s, 14965.4 tps, lat 0.658 ms stddev 0.880, 0 failed
+progress: 45.0 s, 16902.7 tps, lat 0.583 ms stddev 0.391, 0 failed
+progress: 50.0 s, 17308.4 tps, lat 0.569 ms stddev 0.309, 0 failed
+progress: 55.0 s, 17254.1 tps, lat 0.571 ms stddev 0.345, 0 failed
+progress: 60.0 s, 18028.1 tps, lat 0.546 ms stddev 0.252, 0 failed
+transaction type: /dev/stdin
+scaling factor: 1
+query mode: prepared
+number of clients: 10
+number of threads: 1
+maximum number of tries: 1
+duration: 60 s
+number of transactions actually processed: 1039666
+number of failed transactions: 0 (0.000%)
+latency average = 0.567 ms
+latency stddev = 0.487 ms
+initial connection time = 163.550 ms
+tps = 17374.179471 (without initial connection time)
+statement latencies in milliseconds and failures:
+         0.000           0  \set chat_id random(900000001, 900000010)
+         0.085           0  BEGIN;
+         0.380           0  WITH next_position AS (
+         0.101           0  COMMIT;
+Завершение: 2026-11-26T14:21:03Z
+PASS: seq уникальны, идут без пропусков и согласованы со счётчиками
+Логи PostgreSQL: arifacts/postgres/totallyswipes-load-1795702481-29880/postgres-20261126-172103-30838.log
+Результаты: arifacts/pgbench/totallyswipes-load-1795702481-29880/send-message-20261126-171756-30421

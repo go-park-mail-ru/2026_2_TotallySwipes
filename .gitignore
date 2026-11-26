@@ -18,3 +18,5 @@ __pycache__/
 logs/
 
 certs/
+/arifacts/
+/deploy/env/*.env

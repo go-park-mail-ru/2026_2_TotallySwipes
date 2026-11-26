@@ -1,0 +1,32 @@
+pgbench: setting random seed to 42
+pgbench (16.15 (Debian 16.15-1.pgdg13+2))
+progress: 5.0 s, 16805.2 tps, lat 0.289 ms stddev 0.397, 0 failed
+progress: 10.0 s, 16104.4 tps, lat 0.306 ms stddev 0.196, 0 failed
+progress: 15.0 s, 16488.1 tps, lat 0.299 ms stddev 0.136, 0 failed
+progress: 20.0 s, 15961.1 tps, lat 0.309 ms stddev 0.200, 0 failed
+progress: 25.0 s, 14977.7 tps, lat 0.330 ms stddev 0.988, 0 failed
+progress: 30.0 s, 15367.1 tps, lat 0.321 ms stddev 0.174, 0 failed
+progress: 35.0 s, 15110.7 tps, lat 0.327 ms stddev 0.219, 0 failed
+progress: 40.0 s, 15403.4 tps, lat 0.320 ms stddev 0.325, 0 failed
+progress: 45.0 s, 14741.7 tps, lat 0.335 ms stddev 0.202, 0 failed
+progress: 50.0 s, 15156.3 tps, lat 0.326 ms stddev 0.249, 0 failed
+progress: 55.0 s, 14110.6 tps, lat 0.350 ms stddev 0.951, 0 failed
+progress: 60.0 s, 13618.4 tps, lat 0.362 ms stddev 0.173, 0 failed
+transaction type: /dev/stdin
+scaling factor: 1
+query mode: prepared
+number of clients: 5
+number of threads: 1
+maximum number of tries: 1
+duration: 60 s
+number of transactions actually processed: 919231
+number of failed transactions: 0 (0.000%)
+latency average = 0.322 ms
+latency stddev = 0.445 ms
+initial connection time = 82.626 ms
+tps = 15341.165364 (without initial connection time)
+statement latencies in milliseconds and failures:
+         0.000           0  \set chat_id random(900000001, 900000010)
+         0.052           0  BEGIN;
+         0.208           0  WITH next_position AS (
+         0.062           0  COMMIT;

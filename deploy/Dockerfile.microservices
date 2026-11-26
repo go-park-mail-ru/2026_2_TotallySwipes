@@ -1,0 +1,15 @@
+FROM golang:1.27 AS build
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+ARG SERVICE_PATH
+RUN test -n "$SERVICE_PATH" && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /service "$SERVICE_PATH"
+
+FROM alpine:3.24
+RUN apk add --no-cache ca-certificates
+WORKDIR /app
+COPY --from=build /service /usr/local/bin/service
+ENTRYPOINT ["/usr/local/bin/service"]

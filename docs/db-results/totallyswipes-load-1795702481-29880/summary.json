@@ -1,0 +1,65 @@
+{
+  "metrics": {
+    "read-history": [
+      {
+        "clients": 1,
+        "transactions": 495400,
+        "failed": 0,
+        "tps": 8258.823321,
+        "latency": 0.121,
+        "stddev": 0.064
+      },
+      {
+        "clients": 5,
+        "transactions": 1583391,
+        "failed": 0,
+        "tps": 26424.654353,
+        "latency": 0.185,
+        "stddev": 0.083
+      },
+      {
+        "clients": 10,
+        "transactions": 1933641,
+        "failed": 0,
+        "tps": 32317.261469,
+        "latency": 0.296,
+        "stddev": 0.255
+      }
+    ],
+    "send-message": [
+      {
+        "clients": 1,
+        "transactions": 335674,
+        "failed": 0,
+        "tps": 5596.077234,
+        "latency": 0.178,
+        "stddev": 0.095
+      },
+      {
+        "clients": 5,
+        "transactions": 919231,
+        "failed": 0,
+        "tps": 15341.165364,
+        "latency": 0.322,
+        "stddev": 0.445
+      },
+      {
+        "clients": 10,
+        "transactions": 1039666,
+        "failed": 0,
+        "tps": 17374.179471,
+        "latency": 0.567,
+        "stddev": 0.487
+      }
+    ]
+  },
+  "log_summary": {
+    "project": "totallyswipes-load-1795702481-29880",
+    "pgbench_errors": 0,
+    "postgres_errors": 0,
+    "postgres_fatal": 0,
+    "deadlock_events": 0,
+    "benchmark_lock_wait_events": 0,
+    "benchmark_slow_queries": 0
+  }
+}

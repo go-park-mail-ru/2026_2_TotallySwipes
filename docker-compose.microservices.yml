@@ -1,0 +1,169 @@
+name: totallyswipes-microservices
+
+x-go-service: &go-service
+  networks: [backend, data]
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.6
+    env_file:
+      - ./deploy/env/postgres.env
+    volumes:
+      - microservices_pgdata:/var/lib/postgresql/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - microservices_redisdata:/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  minio:
+    image: dhi.io/minio:latest
+    env_file:
+      - ./deploy/env/minio.env
+    command: ["server", "/data", "--address", ":9000", "--console-address", ":9001"]
+    volumes:
+      - microservices_miniodata:/data
+    networks: [data]
+
+  auth:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.microservices
+      args:
+        SERVICE_PATH: ./services/auth/cmd
+    env_file:
+      - ./deploy/env/auth.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - microservices_logs:/logs
+
+  profile:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.microservices
+      args:
+        SERVICE_PATH: ./services/profile/cmd
+    env_file:
+      - ./deploy/env/profile.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    volumes:
+      - microservices_logs:/logs
+
+  matching:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.microservices
+      args:
+        SERVICE_PATH: ./services/matching/cmd
+    env_file:
+      - ./deploy/env/matching.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - microservices_logs:/logs
+
+  chat:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.microservices
+      args:
+        SERVICE_PATH: ./services/chat/cmd
+    env_file:
+      - ./deploy/env/chat.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    volumes:
+      - microservices_logs:/logs
+
+  gateway:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.microservices
+      args:
+        SERVICE_PATH: ./gateway/cmd
+    env_file:
+      - ./deploy/env/gateway.env
+    networks: [edge, backend]
+    depends_on:
+      auth:
+        condition: service_started
+      profile:
+        condition: service_started
+      matching:
+        condition: service_started
+      chat:
+        condition: service_started
+    volumes:
+      - microservices_logs:/logs
+
+  nginx:
+    image: nginx:1.28-alpine
+    profiles: [edge]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [edge]
+    depends_on:
+      gateway:
+        condition: service_started
+
+  migrate:
+    image: migrate/migrate:latest
+    profiles: [tools]
+    env_file:
+      - ./deploy/env/postgres.env
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ['exec migrate -path=/migrations -database "$$DATABASE_URL" up']
+    volumes:
+      - ./db/migrations:/migrations:ro
+    networks: [data]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  edge:
+  backend:
+  data:
+    internal: true
+
+volumes:
+  microservices_pgdata:
+  microservices_redisdata:
+  microservices_miniodata:
+  microservices_logs:

@@ -9,3 +9,9 @@
 *.test
 /bin/
 *.DS_Store
+
+**/*.env
+!**/*.env.example
+arifacts/
+logs/
+certs/

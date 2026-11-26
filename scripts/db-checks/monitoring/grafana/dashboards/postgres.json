@@ -1,0 +1,271 @@
+{
+  "uid": "postgres-basics",
+  "title": "PostgreSQL — базовые метрики",
+  "tags": [
+    "postgres",
+    "db-homework"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Доступность PostgreSQL",
+      "description": "1 — exporter успешно подключился к PostgreSQL; 0 — ошибка подключения.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "postgres-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "pg_up{job=\"postgres\"}",
+          "legendFormat": "PostgreSQL"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Подключения к БД",
+      "description": "Включая подключения exporter и диагностических клиентов.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "postgres-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "pg_stat_database_numbackends{job=\"postgres\",datname=\"access_test\"}",
+          "legendFormat": "Подключения"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Запись строк в секунду",
+      "description": "Скорость INSERT, UPDATE и DELETE по статистике PostgreSQL. Это не объём записи на диск.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "postgres-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(pg_stat_database_tup_inserted{job=\"postgres\",datname=\"access_test\"}[1m])",
+          "legendFormat": "INSERT"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(pg_stat_database_tup_updated{job=\"postgres\",datname=\"access_test\"}[1m])",
+          "legendFormat": "UPDATE"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(pg_stat_database_tup_deleted{job=\"postgres\",datname=\"access_test\"}[1m])",
+          "legendFormat": "DELETE"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Транзакции в секунду",
+      "description": "Число завершённых и отменённых транзакций. Включает запросы мониторинга.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "postgres-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(pg_stat_database_xact_commit{job=\"postgres\",datname=\"access_test\"}[1m])",
+          "legendFormat": "COMMIT"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(pg_stat_database_xact_rollback{job=\"postgres\",datname=\"access_test\"}[1m])",
+          "legendFormat": "ROLLBACK"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Чтение блоков в секунду",
+      "description": "Чтения блоков вне shared_buffers и попадания в кеш PostgreSQL. Чтение может обслуживаться кешем ОС.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "postgres-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(pg_stat_database_blks_read{job=\"postgres\",datname=\"access_test\"}[1m])",
+          "legendFormat": "Чтение"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(pg_stat_database_blks_hit{job=\"postgres\",datname=\"access_test\"}[1m])",
+          "legendFormat": "Кеш"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Deadlock за 5 минут",
+      "description": "Взаимные блокировки, обнаруженные PostgreSQL. Обычное ожидание блокировки сюда не входит.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "postgres-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(pg_stat_database_deadlocks{job=\"postgres\",datname=\"access_test\"}[5m])",
+          "legendFormat": "Deadlock"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    }
+  ],
+  "annotations": {
+    "list": []
+  }
+}
