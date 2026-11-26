@@ -2,9 +2,9 @@ package client
 
 import (
 	"context"
+	"dating-app/gateway/internal/client/mapper"
 	matchpb "dating-app/gen/go/match/v1"
 	"dating-app/internal/model"
-	"fmt"
 )
 
 type SwipeAdapter struct {
@@ -17,23 +17,13 @@ func NewSwipeAdapter(client matchpb.MatchServiceClient) *SwipeAdapter {
 
 func (a *SwipeAdapter) Swipe(ctx context.Context, swipe *model.Swipe) error {
 
-	if swipe == nil {
-		return fmt.Errorf("missing swipe")
+	request, err := mapper.SwipeToProto(swipe)
+
+	if err != nil {
+		return err
 	}
 
-	var action matchpb.SwipeAction
-	switch swipe.Action {
-	case model.SwipeLike:
-		action = matchpb.SwipeAction_SWIPE_ACTION_LIKE
-	case model.SwipeDislike:
-		action = matchpb.SwipeAction_SWIPE_ACTION_DISLIKE
-	case model.SwipeSuperLike:
-		action = matchpb.SwipeAction_SWIPE_ACTION_SUPER_LIKE
-	default:
-		return fmt.Errorf("unknown swipe action: %q", swipe.Action)
-	}
-
-	_, err := a.client.Swipe(ctx, &matchpb.SwipeRequest{UserId: swipe.AuthorID, TargetUserId: swipe.TargetID, Action: action})
+	_, err = a.client.Swipe(ctx, request)
 
 	return err
 }

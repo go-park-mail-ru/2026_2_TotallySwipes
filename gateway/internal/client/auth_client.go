@@ -2,9 +2,9 @@ package client
 
 import (
 	"context"
+	"dating-app/gateway/internal/client/mapper"
 	authpb "dating-app/gen/go/auth/v1"
 	"dating-app/internal/model"
-	"fmt"
 )
 
 type AuthAdapter struct {
@@ -22,26 +22,7 @@ func (a *AuthAdapter) Login(ctx context.Context, email, password string) (model.
 		return model.AuthResult{}, err
 	}
 
-	tk := response.GetTokens()
-	if tk == nil {
-		return model.AuthResult{}, fmt.Errorf("auth login: missing tokens")
-	}
-
-	if err := tk.GetAccessExpiresAt().CheckValid(); err != nil {
-		return model.AuthResult{}, err
-	}
-	if err := tk.GetRefreshExpiresAt().CheckValid(); err != nil {
-		return model.AuthResult{}, err
-	}
-
-	tokens := model.Tokens{
-		Access:           tk.GetAccessToken(),
-		AccessExpiresAt:  tk.GetAccessExpiresAt().AsTime(),
-		Refresh:          tk.GetRefreshToken(),
-		RefreshExpiresAt: tk.GetRefreshExpiresAt().AsTime(),
-	}
-
-	return model.AuthResult{UserID: response.GetUserId(), Missing: response.GetMissing(), Tokens: tokens}, nil
+	return mapper.LoginResponseFromProto(response)
 }
 
 func (a *AuthAdapter) Register(ctx context.Context, in model.RegisterInput) (model.AuthResult, error) {
@@ -52,28 +33,7 @@ func (a *AuthAdapter) Register(ctx context.Context, in model.RegisterInput) (mod
 		return model.AuthResult{}, err
 	}
 
-	tk := response.GetTokens()
-	if tk == nil {
-		return model.AuthResult{}, fmt.Errorf("auth register: missing tokens")
-	}
-
-	if err := tk.GetAccessExpiresAt().CheckValid(); err != nil {
-		return model.AuthResult{}, err
-	}
-
-	if err := tk.GetRefreshExpiresAt().CheckValid(); err != nil {
-		return model.AuthResult{}, err
-	}
-
-	tokens := model.Tokens{
-		Access:           tk.GetAccessToken(),
-		AccessExpiresAt:  tk.GetAccessExpiresAt().AsTime(),
-		Refresh:          tk.GetRefreshToken(),
-		RefreshExpiresAt: tk.GetRefreshExpiresAt().AsTime(),
-	}
-
-	return model.AuthResult{UserID: response.GetUserId(), Missing: response.GetMissing(), Tokens: tokens}, nil
-
+	return mapper.RegisterResponseFromProto(response)
 }
 
 func (a *AuthAdapter) Logout(ctx context.Context, refreshToken string) error {
@@ -95,25 +55,5 @@ func (a *AuthAdapter) Refresh(ctx context.Context, refreshToken string) (model.T
 		return model.Tokens{}, err
 	}
 
-	tk := response.GetTokens()
-	if tk == nil {
-		return model.Tokens{}, fmt.Errorf("auth refresh: missing tokens")
-	}
-
-	if err := tk.GetAccessExpiresAt().CheckValid(); err != nil {
-		return model.Tokens{}, err
-	}
-
-	if err := tk.GetRefreshExpiresAt().CheckValid(); err != nil {
-		return model.Tokens{}, err
-	}
-
-	tokens := model.Tokens{
-		Access:           tk.GetAccessToken(),
-		AccessExpiresAt:  tk.GetAccessExpiresAt().AsTime(),
-		Refresh:          tk.GetRefreshToken(),
-		RefreshExpiresAt: tk.GetRefreshExpiresAt().AsTime(),
-	}
-
-	return tokens, nil
+	return mapper.TokensFromProto(response.GetTokens())
 }

@@ -1,10 +1,11 @@
 package client
 
 import (
-	"bytes"
+	"dating-app/gateway/internal/client/mapper"
+
 	"context"
 	profilepb "dating-app/gen/go/profile/v1"
-	"fmt"
+
 	"io"
 	"time"
 )
@@ -24,21 +25,5 @@ func (a *PhotoAdapter) OpenPhoto(ctx context.Context, key string) (io.ReadSeekCl
 		return nil, time.Time{}, err
 	}
 
-	if response == nil {
-		return nil, time.Time{}, fmt.Errorf("proto: missing photo response")
-	}
-
-	if err := response.GetLastModified().CheckValid(); err != nil {
-		return nil, time.Time{}, fmt.Errorf("proto: invalid photo.last_modified: %w", err)
-	}
-
-	return &photoReader{Reader: bytes.NewReader(response.GetData())}, response.GetLastModified().AsTime(), nil
-}
-
-type photoReader struct {
-	*bytes.Reader
-}
-
-func (r *photoReader) Close() error {
-	return nil
+	return mapper.PhotoFromProto(response)
 }

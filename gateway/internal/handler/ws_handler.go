@@ -9,9 +9,11 @@ import (
 	"dating-app/internal/middleware"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -89,6 +91,49 @@ func (h *WSHandler) serveConnection(ctx context.Context, conn *websocket.Conn, u
 		commands: make(chan []byte, h.cfg.CommandsQueueSize),
 	}
 
+	conn.SetReadLimit(h.cfg.MaxMessageBytes)
+
+	if err := conn.SetReadDeadline(time.Now().Add(h.cfg.PongTimeout)); err != nil {
+		conn.Close()
+		return
+	}
+
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(h.cfg.PongTimeout))
+	})
+
+	var wg sync.WaitGroup
+
+	startLoop := func(name string, loop func(context.Context, *wsConnection) error) {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+			defer cancel()
+			defer conn.Close()
+
+			if err := loop(ctx, connection); err != nil && ctx.Err() == nil {
+
+				slog.DebugContext(
+					ctx,
+					"websocket loop stopped",
+					"loop", name,
+					"user_id", userID,
+					"error", err,
+				)
+			}
+		}()
+	}
+
+	startLoop("read", h.readLoop)
+	startLoop("write", h.writeLoop)
+	startLoop("events", h.eventLoop)
+	startLoop("commands", h.commandLoop)
+
+	<-ctx.Done()
+	conn.Close()
+
+	wg.Wait()
 }
 
 func (h *WSHandler) eventLoop(ctx context.Context, connection *wsConnection) error {
@@ -229,6 +274,7 @@ func (h *WSHandler) handleCommand(ctx context.Context, connection *wsConnection,
 }
 
 func (h *WSHandler) executeCommand(ctx context.Context, userID int64, command any) (any, error) {
+
 	switch data := command.(type) {
 	case model.ChatSendMessage:
 		message, err := h.chat.SendMessage(ctx, userID, data)
