@@ -3,6 +3,14 @@ package service
 import (
 	"context"
 	"dating-app/services/chat/internal/model"
+	"strings"
+	"unicode/utf8"
+)
+
+const (
+	defaultLimit             = 50
+	maxClientMessageIDLength = 128
+	maxMessageTextLength     = 10000
 )
 
 type ChatRepository interface {
@@ -10,8 +18,21 @@ type ChatRepository interface {
 	GeyMembers(ctx context.Context, chatID int64) ([]model.ChatMember, error)
 	GetSummary(ctx context.Context, userID int64) (*model.ChatSummary, error)
 	GetChatState(ctx context.Context, userID, chatID int64) (*model.ChatState, error)
-
 	CreateMessage(ctx context.Context, userID int64, command model.ChatSendMessage) (*model.StoredMessage, bool, error)
+	GetMessages(ctx context.Context, userID, chatID int64, query model.ChatMessagesQuery) (*model.StoredMessagesPage, error)
+
+	GetMessage(ctx context.Context, chatID, messageID int64) (*model.StoredMessage, error)
+
+	ReadChat(ctx context.Context, userID int64, command model.ChatRead) (*model.ChatReadUpdated, error)
+	MarkSeen(ctx context.Context, userID, chatID int64) error
+}
+
+type MediaStorage interface {
+	GetPresignedDownloadURL(ctx context.Context, key string) (string, error)
+}
+
+type MediaLinkBuilder interface {
+	BuildMessageMediaURL(chatID, messageID int64) string
 }
 
 type ProfileProvider interface {
@@ -19,12 +40,14 @@ type ProfileProvider interface {
 }
 
 type ChatService struct {
-	repo    ChatRepository
-	profile ProfileProvider
+	repo       ChatRepository
+	profile    ProfileProvider
+	storage    MediaStorage
+	mediaLinks MediaLinkBuilder
 }
 
-func NewChatService(repo ChatRepository, profile ProfileProvider) *ChatService {
-	return &ChatService{repo: repo, profile: profile}
+func NewChatService(repo ChatRepository, profile ProfileProvider, storage MediaStorage, mediaLinks MediaLinkBuilder) *ChatService {
+	return &ChatService{repo: repo, profile: profile, storage: storage, mediaLinks: mediaLinks}
 }
 
 func (s *ChatService) GetSummary(ctx context.Context, userID int64) (*model.ChatSummary, error) {
@@ -133,23 +156,193 @@ func commonTags(viewerTags, peerTags []string) []string {
 
 func (s *ChatService) GetMessages(ctx context.Context, userID, chatID int64, query model.ChatMessagesQuery) (*model.ChatMessagesPage, error) {
 
+	if userID <= 0 {
+		return nil, model.ErrInvalidUserID
+	}
+
+	if chatID <= 0 {
+		return nil, model.ErrInvalidChatID
+	}
+
+	if query.BeforeSeq != nil && query.AfterSeq != nil {
+		return nil, model.ErrInvalidMessagesQuery
+	}
+
+	if query.BeforeSeq != nil && *query.BeforeSeq <= 0 {
+		return nil, model.ErrInvalidMessagesQuery
+	}
+
+	if query.AfterSeq != nil && *query.AfterSeq < 0 {
+		return nil, model.ErrInvalidMessagesQuery
+	}
+
+	limit := defaultLimit
+
+	if query.Limit != nil {
+		limit = *query.Limit
+	}
+
+	if limit < 1 {
+		return nil, model.ErrInvalidMessagesQuery
+	}
+
+	query.Limit = &limit
+
+	state, err := s.repo.GetChatState(ctx, userID, chatID)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if state.ViewerDisabled {
+		return nil, model.ErrChatMemberBlocked
+	}
+
+	storedPage, err := s.repo.GetMessages(ctx, userID, chatID, query)
+
+	if err != nil {
+		return nil, err
+	}
+
+	page := &model.ChatMessagesPage{
+		Items:      make([]model.ChatMessage, 0, len(storedPage.Items)),
+		Direction:  storedPage.Direction,
+		NextCursor: storedPage.NextCursor,
+		HasMore:    storedPage.HasMore,
+	}
+
+	for _, stored := range storedPage.Items {
+		page.Items = append(page.Items, s.chatMessageFromStored(stored))
+	}
+
+	return page, nil
 }
 
-// Снять новизну чата; сообщения прочитанными не делает.
 func (s *ChatService) MarkSeen(ctx context.Context, userID, chatID int64) error {
 
+	if userID <= 0 {
+		return model.ErrInvalidUserID
+	}
+
+	if chatID <= 0 {
+		return model.ErrInvalidChatID
+	}
+
+	return s.repo.MarkSeen(ctx, userID, chatID)
+
 }
 
-// Отправка текста и подтверждение прочтения.
 func (s *ChatService) SendMessage(ctx context.Context, userID int64, command model.ChatSendMessage) (*model.ChatMessage, error) {
 
+	if userID <= 0 {
+		return nil, model.ErrInvalidUserID
+	}
+
+	if command.ChatID <= 0 {
+		return nil, model.ErrInvalidChatID
+	}
+
+	if !utf8.ValidString(command.ClientMessageID) ||
+		strings.TrimSpace(command.ClientMessageID) == "" ||
+		utf8.RuneCountInString(command.ClientMessageID) > maxClientMessageIDLength {
+		return nil, model.ErrInvalidClientMessageID
+	}
+
+	if !utf8.ValidString(command.Text) ||
+		strings.TrimSpace(command.Text) == "" ||
+		utf8.RuneCountInString(command.Text) > maxMessageTextLength {
+		return nil, model.ErrInvalidMessageText
+	}
+
+	stored, _, err := s.repo.CreateMessage(ctx, userID, command)
+
+	if err != nil {
+		return nil, err
+	}
+
+	message := s.chatMessageFromStored(*stored)
+
+	return &message, nil
 }
 
 func (s *ChatService) ReadChat(ctx context.Context, userID int64, command model.ChatRead) (*model.ChatReadUpdated, error) {
 
+	if userID <= 0 {
+		return nil, model.ErrInvalidUserID
+	}
+
+	if command.ChatID <= 0 {
+		return nil, model.ErrInvalidChatID
+	}
+
+	if command.LastReadSeq < 0 {
+		return nil, model.ErrInvalidReadSeq
+	}
+
+	return s.repo.ReadChat(ctx, userID, command)
 }
 
-// Получение внутренней ссылки на медиа после проверки доступа.
 func (s *ChatService) GetMedia(ctx context.Context, userID, chatID, messageID int64) (string, error) {
+	if userID <= 0 {
+		return "", model.ErrInvalidUserID
+	}
 
+	if chatID <= 0 {
+		return "", model.ErrInvalidChatID
+	}
+
+	if messageID <= 0 {
+		return "", model.ErrInvalidMessageID
+	}
+
+	state, err := s.repo.GetChatState(ctx, userID, chatID)
+
+	if err != nil {
+		return "", err
+	}
+
+	if state.ViewerDisabled {
+		return "", model.ErrChatMemberBlocked
+	}
+
+	message, err := s.repo.GetMessage(ctx, chatID, messageID)
+
+	if err != nil {
+		return "", err
+	}
+
+	if message.DeletedAt != nil || message.StorageKey == nil || *message.StorageKey == "" {
+		return "", model.ErrMediaNotFound
+	}
+
+	return s.storage.GetPresignedDownloadURL(ctx, *message.StorageKey)
+}
+
+func (s *ChatService) chatMessageFromStored(stored model.StoredMessage) model.ChatMessage {
+
+	message := model.ChatMessage{
+		MessageID: stored.ID,
+		Seq:       stored.Seq,
+		SenderID:  stored.SenderID,
+		Type:      stored.Type,
+		CreatedAt: stored.CreatedAt,
+		EditedAt:  stored.EditedAt,
+		DeletedAt: stored.DeletedAt,
+		Version:   stored.Version,
+	}
+
+	if stored.DeletedAt != nil {
+		return message
+	}
+
+	message.Text = stored.Text
+
+	if stored.StorageKey != nil && stored.DurationSeconds != nil {
+		message.Attachment = &model.ChatAttachment{
+			URL:             s.mediaLinks.BuildMessageMediaURL(stored.ChatID, stored.ID),
+			DurationSeconds: *stored.DurationSeconds,
+		}
+	}
+
+	return message
 }

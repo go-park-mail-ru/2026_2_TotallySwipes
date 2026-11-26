@@ -52,6 +52,9 @@ type ChatState struct {
 	UnreadCount int64
 	LastMessage *ChatLastMessage
 	CardVersion int64
+
+	LastActivityAt       time.Time
+	MatchAllowsMessaging bool
 }
 
 type ChatProfile struct {
@@ -60,4 +63,11 @@ type ChatProfile struct {
 	Age       *int
 	AvatarURL *string
 	Tags      []string
+}
+
+type StoredMessagesPage struct {
+	Items      []StoredMessage
+	Direction  ChatPageDirection
+	NextCursor *int64
+	HasMore    bool
 }
