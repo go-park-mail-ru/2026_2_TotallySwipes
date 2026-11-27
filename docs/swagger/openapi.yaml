@@ -1599,12 +1599,16 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [match_id, user_id, name, age, photo_url, compatibility, is_new, can_meetup, partner_finished, created_at]
+                      required: [match_id, chat_id, user_id, name, age, photo_url, compatibility, is_new, can_meetup, partner_finished, created_at]
                       properties:
                         match_id:
                           type: integer
                           format: int64
                           example: 15
+                        chat_id:
+                          type: string
+                          description: Идентификатор чата этого мэтча для перехода со страницы Симпати» и вызова API чата.
+                          example: '456'
                         user_id:
                           description: Идентификатор собеседника.
                           type: integer
