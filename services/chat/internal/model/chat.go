@@ -163,6 +163,7 @@ const (
 	MessagingRestrictionPeerDisabled  = "PEER_DISABLED"
 	MessagingRestrictionPairBlocked   = "PAIR_BLOCKED"
 	MessagingRestrictionMatchNotFound = "MATCH_NOT_FOUND"
+	MessagingRestrictionNotAllowed    = "MESSAGING_NOT_ALLOWED"
 )
 
 type ChatMessagesQuery struct {

@@ -89,7 +89,8 @@ const getSummaryQuery = `
 	SELECT
 		COUNT(*) FILTER (WHERE seen_at IS NULL),
 		COUNT(*) FILTER (WHERE unread_count > 0),
-		COALESCE(SUM(unread_count), 0)::bigint
+		COALESCE(SUM(unread_count), 0)::bigint,
+        COALESCE((SELECT summary_version FROM chat_user_state WHERE user_id = $1), 1)
 	FROM user_chats`
 
 func (r *ChatRepository) GetSummary(ctx context.Context, userID int64) (*model.ChatSummary, error) {
@@ -99,6 +100,7 @@ func (r *ChatRepository) GetSummary(ctx context.Context, userID int64) (*model.C
 		&summary.NewChatsCount,
 		&summary.UnreadChatsCount,
 		&summary.UnreadMessagesCount,
+		&summary.Version,
 	)
 
 	if err != nil {
@@ -158,7 +160,8 @@ const getChatQueryState = `
         CASE
             WHEN last_message.sender_id = viewer.user_id
             THEN last_message.seq <= peer.last_read_seq
-        END
+        END,
+        viewer.card_version
 
     FROM chat
 
@@ -249,6 +252,7 @@ func (r *ChatRepository) GetChatState(ctx context.Context, userID, chatID int64)
 		&lastMessage.DurationSeconds,
 		&lastMessageCreatedAt,
 		&lastMessage.IsReadByPeer,
+		&state.CardVersion,
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
@@ -410,6 +414,10 @@ func (r *ChatRepository) CreateMessage(ctx context.Context, userID int64, comman
 
 	if err != nil {
 		return nil, false, fmt.Errorf("create message: insert: %w", err)
+	}
+
+	if err := incrementMessageVersions(ctx, tx, command.ChatID, userID); err != nil {
+		return nil, false, err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -636,13 +644,31 @@ func (r *ChatRepository) GetMessages(ctx context.Context, userID, chatID int64, 
 
 const markSeenQuery = `
     UPDATE chat_member
-    SET seen_at = COALESCE(seen_at, CURRENT_TIMESTAMP)
-    WHERE user_id = $1
-      AND chat_id = $2`
+    SET seen_at = CURRENT_TIMESTAMP,
+        card_version = card_version + 1
+    WHERE user_id = $1 AND chat_id = $2 AND seen_at IS NULL`
 
 func (r *ChatRepository) MarkSeen(ctx context.Context, userID, chatID int64) error {
 
-	result, err := r.db.ExecContext(ctx, markSeenQuery, userID, chatID)
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+
+	if err != nil {
+		return fmt.Errorf("mark chat seen: begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Все изменения чата используют один порядок блокировок: сначала sequence.
+	var lastSeq int64
+	err = tx.QueryRowContext(ctx, lockChatSequenceQuery, userID, chatID).Scan(&lastSeq)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.ErrChatNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("mark chat seen: lock chat: %w", err)
+	}
+
+	result, err := tx.ExecContext(ctx, markSeenQuery, userID, chatID)
 
 	if err != nil {
 		return fmt.Errorf("mark chat seen: %w", err)
@@ -654,8 +680,15 @@ func (r *ChatRepository) MarkSeen(ctx context.Context, userID, chatID int64) err
 		return fmt.Errorf("mark chat seen: rows affected: %w", err)
 	}
 
-	if affected == 0 {
-		return model.ErrChatNotFound
+	if affected > 0 {
+
+		if _, err := tx.ExecContext(ctx, incrementUserSummaryVersionQuery, userID); err != nil {
+			return fmt.Errorf("mark chat seen: increment summary version: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("mark chat seen: commit: %w", err)
 	}
 
 	return nil
@@ -674,36 +707,159 @@ const readChatQuery = `
       AND $3 <= sequence.last_seq
     RETURNING member.last_read_seq`
 
+const getReadPositionQuery = `
+    SELECT member.last_read_seq, COALESCE(account.is_disabled, TRUE)
+    FROM chat_member AS member
+    LEFT JOIN "user" AS account ON account.id = member.user_id
+    WHERE member.user_id = $1 AND member.chat_id = $2`
+
 func (r *ChatRepository) ReadChat(ctx context.Context, userID int64, command model.ChatRead) (*model.ChatReadUpdated, error) {
-	state, err := r.GetChatState(ctx, userID, command.ChatID)
+
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read chat: begin: %w", err)
 	}
+	defer tx.Rollback()
 
-	if state.ViewerDisabled {
-		return nil, model.ErrChatMemberBlocked
-	}
-
-	if command.LastReadSeq < 0 || command.LastReadSeq > state.LastSeq {
-		return nil, model.ErrInvalidReadSeq
-	}
-
-	var lastReadSeq int64
-
-	err = r.db.QueryRowContext(ctx, readChatQuery, userID, command.ChatID, command.LastReadSeq).Scan(&lastReadSeq)
+	var lastSeq int64
+	err = tx.QueryRowContext(ctx, lockChatSequenceQuery, userID, command.ChatID).Scan(&lastSeq)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, model.ErrChatNotFound
 	}
-
 	if err != nil {
-		return nil, fmt.Errorf("read chat: update read position: %w", err)
+		return nil, fmt.Errorf("read chat: lock chat: %w", err)
 	}
 
-	return &model.ChatReadUpdated{
-		ChatID:      command.ChatID,
-		UserID:      userID,
-		LastReadSeq: lastReadSeq,
-	}, nil
+	// Читаем позицию отдельным запросом после получения блокировки.
+	var lastReadSeq int64
+	var disabled bool
+	err = tx.QueryRowContext(ctx, getReadPositionQuery, userID, command.ChatID).Scan(&lastReadSeq, &disabled)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, model.ErrChatNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read chat: get read position: %w", err)
+	}
+	if disabled {
+		return nil, model.ErrChatMemberBlocked
+	}
+	if command.LastReadSeq < 0 || command.LastReadSeq > lastSeq {
+		return nil, model.ErrInvalidReadSeq
+	}
+
+	if command.LastReadSeq > lastReadSeq {
+
+		err = tx.QueryRowContext(ctx, readChatQuery, userID, command.ChatID, command.LastReadSeq).Scan(&lastReadSeq)
+
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, model.ErrChatNotFound
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read chat: update read position: %w", err)
+		}
+
+		if _, err := tx.ExecContext(ctx, incrementChatCardVersionsQuery, command.ChatID); err != nil {
+			return nil, fmt.Errorf("read chat: increment card versions: %w", err)
+		}
+
+		if _, err := tx.ExecContext(ctx, incrementUserSummaryVersionQuery, userID); err != nil {
+			return nil, fmt.Errorf("read chat: increment summary version: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("read chat: commit: %w", err)
+	}
+
+	return &model.ChatReadUpdated{ChatID: command.ChatID, UserID: userID, LastReadSeq: lastReadSeq}, nil
+}
+
+const createChatQuery = `
+    INSERT INTO chat (match_id)
+    VALUES ($1)
+    ON CONFLICT (match_id) DO NOTHING
+    RETURNING id`
+
+const getChatByMatchQuery = `
+    SELECT id
+    FROM chat
+    WHERE match_id = $1`
+
+const createChatMembersQuery = `
+    INSERT INTO chat_member (chat_id, user_id)
+    VALUES ($1, $2), ($1, $3)`
+
+const createChatSequenceQuery = `
+    INSERT INTO chat_sequence (chat_id, last_seq)
+    VALUES ($1, 0)`
+
+const checkChatMembersQuery = `
+    SELECT
+        COUNT(*),
+        COUNT(*) FILTER (WHERE user_id IN ($2, $3))
+    FROM chat_member
+    WHERE chat_id = $1`
+
+func (r *ChatRepository) CreateChat(ctx context.Context, matchID, firstUserID, secondUserID int64) (int64, bool, error) {
+
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return 0, false, fmt.Errorf("create chat: begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	var chatID int64
+
+	err = tx.QueryRowContext(ctx, createChatQuery, matchID).Scan(&chatID)
+	created := err == nil
+	if errors.Is(err, sql.ErrNoRows) {
+
+		err = tx.QueryRowContext(ctx, getChatByMatchQuery, matchID).Scan(&chatID)
+
+		if err != nil {
+			return 0, false, fmt.Errorf("create chat: get existing chat: %w", err)
+		}
+
+	} else if err != nil {
+		return 0, false, fmt.Errorf("create chat: insert chat: %w", err)
+	}
+
+	if created {
+
+		_, err := tx.ExecContext(ctx, createChatMembersQuery, chatID, firstUserID, secondUserID)
+
+		if err != nil {
+			return 0, false, fmt.Errorf("create chat: insert members: %w", err)
+		}
+
+		if _, err := tx.ExecContext(ctx, createChatSequenceQuery, chatID); err != nil {
+			return 0, false, fmt.Errorf("create chat: insert sequence: %w", err)
+		}
+
+		if _, err := tx.ExecContext(ctx, incrementChatSummaryVersionsQuery, chatID, nil); err != nil {
+			return 0, false, fmt.Errorf("create chat: increment summary versions: %w", err)
+		}
+
+	} else {
+
+		var total, matched int64
+		err := tx.QueryRowContext(ctx, checkChatMembersQuery, chatID, firstUserID, secondUserID).Scan(&total, &matched)
+
+		if err != nil {
+			return 0, false, fmt.Errorf("create chat: check members: %w", err)
+		}
+
+		if total != 2 || matched != 2 || firstUserID == secondUserID {
+			return 0, false, model.ErrInvalidChatMembers
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, false, fmt.Errorf("create chat: commit: %w", err)
+	}
+
+	return chatID, created, nil
 }

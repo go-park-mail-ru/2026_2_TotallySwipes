@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"dating-app/gateway/internal/model"
-	chatpb "dating-app/gen/go/chat/v1"
+	chatpb "dating-app/services/chat/api/gen/go/chat/v1"
 )
 
 func TestChatMessagesQueryToProto(t *testing.T) {

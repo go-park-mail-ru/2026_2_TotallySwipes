@@ -71,3 +71,31 @@ type StoredMessagesPage struct {
 	NextCursor *int64
 	HasMore    bool
 }
+
+type ChatSendMedia struct {
+	ChatID          int64
+	ClientMessageID string
+	Type            ChatMessageType
+	Data            []byte
+}
+
+// MediaInfo содержит проверенные характеристики файла.
+type MediaInfo struct {
+	ContentType     string
+	DurationSeconds float64
+}
+
+// StoredMediaMessage дополняет сообщение хешем исходного файла для проверки повторов.
+type StoredMediaMessage struct {
+	Message StoredMessage
+	SHA256  string
+}
+
+type ChatCreateMedia struct {
+	ChatID          int64
+	ClientMessageID string
+	Type            ChatMessageType
+	StorageKey      string
+	DurationSeconds float64
+	SHA256          string
+}

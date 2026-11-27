@@ -129,6 +129,13 @@ type ChatSendMessage struct {
 	Text            string
 }
 
+type ChatSendMedia struct {
+	ChatID          int64
+	ClientMessageID string
+	Type            ChatMessageType
+	Data            []byte
+}
+
 type ChatEditMessage struct {
 	ChatID    int64
 	MessageID int64

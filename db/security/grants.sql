@@ -91,9 +91,13 @@ GRANT SELECT, INSERT, DELETE ON TABLE public.user_block
 GRANT USAGE ON SEQUENCE public.match_id_seq
     TO matching_app;
 
+-- Matching получает ID чата для каждого мэтча в списке симпатий.
+GRANT SELECT (id, match_id) ON TABLE public.chat
+    TO matching_app;
+
 -- Chat читает и создаёт чаты, хранит состояние участников и обновляет счётчики позиций сообщений.
 GRANT SELECT, INSERT, UPDATE
-    ON TABLE public.chat, public.chat_member, public.chat_sequence
+    ON TABLE public.chat, public.chat_member, public.chat_sequence, public.chat_user_state
     TO chat_app;
 
 -- Chat читает историю и сохраняет сообщения; редактирование и удаление пока не реализуются.

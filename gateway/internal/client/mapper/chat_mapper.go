@@ -2,7 +2,7 @@ package mapper
 
 import (
 	"dating-app/gateway/internal/model"
-	chatpb "dating-app/gen/go/chat/v1"
+	chatpb "dating-app/services/chat/api/gen/go/chat/v1"
 	"fmt"
 	"strconv"
 )
@@ -502,6 +502,31 @@ func ChatMessageTypeFromProto(value chatpb.ChatMessageType) (model.ChatMessageTy
 	default:
 		return "", fmt.Errorf("proto: unknown chat message type: %d", value)
 	}
+}
+
+func SendMediaToProto(userID int64, command model.ChatSendMedia) (*chatpb.SendMediaRequest, error) {
+
+	var mediaType chatpb.ChatMessageType
+
+	switch command.Type {
+
+	case model.ChatMessageTypeVoice:
+		mediaType = chatpb.ChatMessageType_CHAT_MESSAGE_TYPE_VOICE
+
+	case model.ChatMessageTypeVideoNote:
+		mediaType = chatpb.ChatMessageType_CHAT_MESSAGE_TYPE_VIDEO_NOTE
+
+	default:
+		return nil, fmt.Errorf("unsupported media type: %q", command.Type)
+	}
+
+	return &chatpb.SendMediaRequest{
+		UserId:          userID,
+		ChatId:          strconv.FormatInt(command.ChatID, 10),
+		ClientMessageId: command.ClientMessageID,
+		Type:            mediaType,
+		Data:            command.Data,
+	}, nil
 }
 
 func SendMessageToProto(userID int64, command model.ChatSendMessage) *chatpb.SendMessageRequest {

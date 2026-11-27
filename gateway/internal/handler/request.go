@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"dating-app/internal/middleware"
+	"dating-app/gateway/internal/middleware"
 	"encoding/json"
 	"errors"
 	"io"

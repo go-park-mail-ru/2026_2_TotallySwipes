@@ -1607,7 +1607,8 @@ paths:
                           example: 15
                         chat_id:
                           type: string
-                          description: Идентификатор чата этого мэтча для перехода со страницы Симпати» и вызова API чата.
+                          nullable: true
+                          description: Идентификатор чата этого мэтча для перехода со страницы «Симпатии» и вызова API чата. null, если чат ещё не создан.
                           example: '456'
                         user_id:
                           description: Идентификатор собеседника.
@@ -2244,7 +2245,7 @@ components:
             restriction:
               type: string
               nullable: true
-              description: Машинная причина запрета; null, если отправка разрешена. Полный набор причин будет согласован с блокировками.
+              description: Машинная причина запрета — PEER_DISABLED, PAIR_BLOCKED, MATCH_NOT_FOUND или MESSAGING_NOT_ALLOWED; null, если отправка разрешена.
     ChatAttachment:
       type: object
       nullable: true

@@ -78,9 +78,7 @@ services:
     <<: *go-service
     build:
       context: .
-      dockerfile: deploy/Dockerfile.microservices
-      args:
-        SERVICE_PATH: ./services/matching/cmd
+      dockerfile: services/matching/Dockerfile
     env_file:
       - ./deploy/env/matching.env
     depends_on:
@@ -109,6 +107,7 @@ services:
       - microservices_logs:/logs
 
   gateway:
+    stop_grace_period: 15s
     build:
       context: .
       dockerfile: deploy/Dockerfile.microservices
@@ -137,6 +136,7 @@ services:
       - "443:443"
     volumes:
       - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
     networks: [edge]
     depends_on:
       gateway:
@@ -158,6 +158,8 @@ services:
 
 networks:
   edge:
+    name: totallyswipes-edge
+    external: true
   backend:
   data:
     internal: true

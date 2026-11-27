@@ -30,7 +30,8 @@ const getSummaryQuery = `
 	SELECT
 		COUNT(*) FILTER (WHERE seen_at IS NULL),
 		COUNT(*) FILTER (WHERE unread_count > 0),
-		COALESCE(SUM(unread_count), 0)::bigint
+		COALESCE(SUM(unread_count), 0)::bigint,
+        COALESCE((SELECT summary_version FROM chat_user_state WHERE user_id = $1), 1)
 	FROM user_chats`
 
 const getChatQueryState = `
@@ -83,7 +84,8 @@ const getChatQueryState = `
         CASE
             WHEN last_message.sender_id = viewer.user_id
             THEN last_message.seq <= peer.last_read_seq
-        END
+        END,
+        viewer.card_version
 
     FROM chat
 
@@ -243,9 +245,9 @@ const getNewerMessagesQuery = getMessagesQuery + `
 
 const markSeenQuery = `
     UPDATE chat_member
-    SET seen_at = COALESCE(seen_at, CURRENT_TIMESTAMP)
-    WHERE user_id = $1
-      AND chat_id = $2`
+    SET seen_at = CURRENT_TIMESTAMP,
+        card_version = card_version + 1
+    WHERE user_id = $1 AND chat_id = $2 AND seen_at IS NULL`
 
 const readChatQuery = `
     UPDATE chat_member AS member

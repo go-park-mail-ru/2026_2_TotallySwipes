@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"bufio"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 )
@@ -10,6 +12,23 @@ type statusRecorder struct {
 	http.ResponseWriter
 	status  int
 	written bool
+}
+
+func (r *statusRecorder) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
+}
+
+// Hijack сохраняет возможность WebSocket Upgrade после обёртки логирования.
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+
+	conn, buffer, err := http.NewResponseController(r.ResponseWriter).Hijack()
+
+	if err == nil {
+		r.status = http.StatusSwitchingProtocols
+		r.written = true
+	}
+
+	return conn, buffer, err
 }
 
 func (r *statusRecorder) WriteHeader(status int) {

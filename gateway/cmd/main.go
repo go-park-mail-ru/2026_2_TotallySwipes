@@ -1,20 +1,25 @@
 package main
 
 import (
+	"context"
 	"dating-app/gateway/internal/client"
 	"dating-app/gateway/internal/config"
 	"dating-app/gateway/internal/handler"
 	"dating-app/gateway/internal/logging"
 	"dating-app/gateway/internal/middleware"
 	authpb "dating-app/gen/go/auth/v1"
-	matchpb "dating-app/gen/go/match/v1"
 	profilepb "dating-app/gen/go/profile/v1"
 	"dating-app/internal/auth"
 	"dating-app/internal/storage/s3"
+	chatpb "dating-app/services/chat/api/gen/go/chat/v1"
+	matchpb "dating-app/services/matching/api/gen/go/match/v1"
+	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
-	"time"
+	"os/signal"
+	"syscall"
 
 	"github.com/gorilla/mux"
 	"google.golang.org/grpc"
@@ -32,10 +37,11 @@ type handlers struct {
 	location   *handler.LocationHandler
 	event      *handler.EventHandler
 	photo      *handler.PhotoHandler
+	chat       *handler.ChatHTTPHandler
 	ws         *handler.WSHandler
 }
 
-const connectTimeout = 5 * time.Second
+const maxChatGRPCMessageSize = 12 << 20
 
 func main() {
 	if err := start(); err != nil {
@@ -61,7 +67,10 @@ func start() error {
 
 	slog.SetDefault(logger)
 
-	if err := run(cfg); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	if err := run(ctx, cfg); err != nil {
 		logger.Error("server stopped", "error", err)
 		return err
 	}
@@ -69,18 +78,16 @@ func start() error {
 	return nil
 }
 
-func run(cfg *config.Config) error {
-
-	// ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
-	// defer cancel()
+func run(ctx context.Context, cfg *config.Config) error {
 
 	authConn, err := grpc.NewClient(
 		cfg.GRPC.AuthAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithChainUnaryInterceptor(client.UnaryTimeoutInterceptor(cfg.GRPC.RequestTimeout)),
 	)
 
 	if err != nil {
-		return nil
+		return fmt.Errorf("create auth client: %w", err)
 	}
 	defer authConn.Close()
 
@@ -91,10 +98,11 @@ func run(cfg *config.Config) error {
 	profileConn, err := grpc.NewClient(
 		cfg.GRPC.ProfileAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithChainUnaryInterceptor(client.UnaryTimeoutInterceptor(cfg.GRPC.RequestTimeout)),
 	)
 
 	if err != nil {
-		return nil
+		return fmt.Errorf("create profile client: %w", err)
 	}
 	defer profileConn.Close()
 
@@ -114,10 +122,11 @@ func run(cfg *config.Config) error {
 	matchConn, err := grpc.NewClient(
 		cfg.GRPC.MatchingAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithChainUnaryInterceptor(client.UnaryTimeoutInterceptor(cfg.GRPC.RequestTimeout)),
 	)
 
 	if err != nil {
-		return nil
+		return fmt.Errorf("create matching client: %w", err)
 	}
 	defer matchConn.Close()
 
@@ -132,6 +141,23 @@ func run(cfg *config.Config) error {
 	swipeHandler := handler.NewSwipeHandler(swipeAdapter)
 	feedHandler := handler.NewFeedHandler(feedAdapter)
 
+	chatConn, err := grpc.NewClient(
+		cfg.GRPC.ChatAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithChainUnaryInterceptor(client.UnaryTimeoutInterceptor(cfg.GRPC.RequestTimeout)),
+		grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(maxChatGRPCMessageSize)),
+	)
+
+	if err != nil {
+		return fmt.Errorf("create chat client: %w", err)
+	}
+	defer chatConn.Close()
+
+	chatClient := chatpb.NewChatServiceClient(chatConn)
+	chatAdapter := client.NewChatAdapter(chatClient)
+	chatHandler := handler.NewChatHandler(chatAdapter)
+	wsHandler := handler.NewWSHandler(cfg.WebSocket, chatAdapter)
+
 	h := handlers{
 		auth:       authHandler,
 		feed:       feedHandler,
@@ -143,6 +169,8 @@ func run(cfg *config.Config) error {
 		location:   locationHandler,
 		event:      eventHandler,
 		photo:      photoHandler,
+		chat:       chatHandler,
+		ws:         wsHandler,
 	}
 
 	issuer := auth.NewJWTIssuer(cfg.Auth.JWTSecret, cfg.Auth.JWTAccessTTL)
@@ -163,11 +191,16 @@ func run(cfg *config.Config) error {
 		IdleTimeout:       cfg.HTTP.IdleTimeout,
 	}
 
-	slog.Info("starting server", "port", cfg.HTTP.Port)
-	if cfg.TLS.CertFile != "" {
-		return srv.ListenAndServeTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+	listener, err := net.Listen("tcp", srv.Addr)
+
+	if err != nil {
+		return fmt.Errorf("listen gateway http: %w", err)
 	}
-	return srv.ListenAndServe()
+
+	defer listener.Close()
+	slog.Info("starting server", "port", cfg.HTTP.Port)
+
+	return serveHTTP(ctx, srv, listener, wsHandler, cfg)
 }
 
 func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Router {
@@ -197,6 +230,13 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 	api.Handle("/matches", authed(h.match.List)).Methods(http.MethodGet)
 	api.Handle("/matches/summary", authed(h.match.Summary)).Methods(http.MethodGet)
 	api.Handle("/matches/{match_id}/seen", authed(h.match.MarkSeen)).Methods(http.MethodPost)
+
+	api.Handle("/chats/summary", authed(h.chat.Summary)).Methods(http.MethodGet)
+	api.Handle("/chats/{chat_id}", authed(h.chat.Get)).Methods(http.MethodGet)
+	api.Handle("/chats/{chat_id}/seen", authed(h.chat.MarkSeen)).Methods(http.MethodPost)
+	api.Handle("/chats/{chat_id}/messages", authed(h.chat.GetMessages)).Methods(http.MethodGet)
+	api.Handle("/chats/{chat_id}/messages/{message_id}/media", authed(h.chat.GetMedia)).Methods(http.MethodGet)
+	api.Handle("/chats/{chat_id}/messages/media", authed(h.chat.SendMedia)).Methods(http.MethodPost)
 
 	api.Handle("/filters/me", authed(h.filter.Get)).Methods(http.MethodGet)
 	api.Handle("/filters/me", authed(h.filter.Set)).Methods(http.MethodPut)

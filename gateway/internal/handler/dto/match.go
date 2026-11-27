@@ -3,6 +3,7 @@ package dto
 import (
 	"dating-app/internal/model"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -29,6 +30,7 @@ type MatchesResponse struct {
 
 type MatchItem struct {
 	MatchID         int64     `json:"match_id"`
+	ChatID          *string   `json:"chat_id"`
 	UserID          int64     `json:"user_id"`
 	Name            *string   `json:"name"`
 	Age             *int      `json:"age"`
@@ -47,8 +49,18 @@ func NewMatchesResponse(page *model.MatchPage) MatchesResponse {
 		NextCursor: page.NextCursor,
 	}
 	for _, m := range page.Items {
+
+		var chatID *string
+
+		if m.ChatID != nil {
+
+			value := strconv.FormatInt(*m.ChatID, 10)
+			chatID = &value
+		}
+
 		resp.Items = append(resp.Items, MatchItem{
 			MatchID:         m.ID,
+			ChatID:          chatID,
 			UserID:          m.UserID,
 			Name:            m.Name,
 			Age:             m.Age,

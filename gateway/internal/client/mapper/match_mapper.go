@@ -1,9 +1,10 @@
 package mapper
 
 import (
-	matchpb "dating-app/gen/go/match/v1"
 	"dating-app/internal/model"
+	matchpb "dating-app/services/matching/api/gen/go/match/v1"
 	"fmt"
+	"strconv"
 )
 
 func MatchPageFromProto(response *matchpb.GetMatchesResponse) (*model.MatchPage, error) {
@@ -37,6 +38,21 @@ func MatchPageFromProto(response *matchpb.GetMatchesResponse) (*model.MatchPage,
 		if item.Age != nil {
 			age := int(item.GetAge())
 			m.Age = &age
+		}
+
+		if item.ChatId != nil {
+
+			chatID, err := strconv.ParseInt(item.GetChatId(), 10, 64)
+
+			if err != nil {
+				return nil, fmt.Errorf("proto: invalid match.chat_id: %w", err)
+			}
+
+			if chatID <= 0 {
+				return nil, fmt.Errorf("proto: match.chat_id must be positive")
+			}
+
+			m.ChatID = &chatID
 		}
 
 		page.Items = append(page.Items, m)

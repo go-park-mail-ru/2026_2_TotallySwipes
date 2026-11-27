@@ -3,8 +3,8 @@ package client
 import (
 	"context"
 	"dating-app/gateway/internal/client/mapper"
-	matchpb "dating-app/gen/go/match/v1"
 	"dating-app/internal/model"
+	matchpb "dating-app/services/matching/api/gen/go/match/v1"
 )
 
 type SwipeAdapter struct {

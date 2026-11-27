@@ -9,7 +9,9 @@ ARG SERVICE_PATH
 RUN test -n "$SERVICE_PATH" && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /service "$SERVICE_PATH"
 
 FROM alpine:3.24
-RUN apk add --no-cache ca-certificates
+ARG SERVICE_PATH
+RUN apk add --no-cache ca-certificates && \
+    if [ "$SERVICE_PATH" = "./services/chat/cmd" ]; then apk add --no-cache ffmpeg; fi
 WORKDIR /app
 COPY --from=build /service /usr/local/bin/service
 ENTRYPOINT ["/usr/local/bin/service"]

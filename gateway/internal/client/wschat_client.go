@@ -4,7 +4,7 @@ import (
 	"context"
 	"dating-app/gateway/internal/client/mapper"
 	"dating-app/gateway/internal/model"
-	chatpb "dating-app/gen/go/chat/v1"
+	chatpb "dating-app/services/chat/api/gen/go/chat/v1"
 	"fmt"
 
 	"google.golang.org/grpc"

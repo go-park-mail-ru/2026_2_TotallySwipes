@@ -3,22 +3,28 @@ package service
 import (
 	"context"
 	"dating-app/services/chat/internal/model"
+	"log/slog"
 	"strings"
 	"unicode/utf8"
 )
 
 const (
 	defaultLimit             = 50
+	maxMessagesLimit         = 100
 	maxClientMessageIDLength = 128
 	maxMessageTextLength     = 10000
 )
 
 type ChatRepository interface {
+	GetMediaByClientID(ctx context.Context, userID, chatID int64, clientMessageID string) (*model.StoredMediaMessage, error)
+	CreateMediaMessage(ctx context.Context, userID int64, command model.ChatCreateMedia) (*model.StoredMessage, bool, error)
+
 	GetChat(ctx context.Context, chatID int64) (*model.Chat, error)
 	GeyMembers(ctx context.Context, chatID int64) ([]model.ChatMember, error)
 	GetSummary(ctx context.Context, userID int64) (*model.ChatSummary, error)
 	GetChatState(ctx context.Context, userID, chatID int64) (*model.ChatState, error)
 	CreateMessage(ctx context.Context, userID int64, command model.ChatSendMessage) (*model.StoredMessage, bool, error)
+	CreateChat(ctx context.Context, matchID, firstUserID, secondUserID int64) (int64, bool, error)
 	GetMessages(ctx context.Context, userID, chatID int64, query model.ChatMessagesQuery) (*model.StoredMessagesPage, error)
 
 	GetMessage(ctx context.Context, chatID, messageID int64) (*model.StoredMessage, error)
@@ -27,7 +33,13 @@ type ChatRepository interface {
 	MarkSeen(ctx context.Context, userID, chatID int64) error
 }
 
+type MediaInspector interface {
+	Inspect(ctx context.Context, data []byte, mediaType model.ChatMessageType) (*model.MediaInfo, error)
+}
+
 type MediaStorage interface {
+	Save(ctx context.Context, data []byte, mediaType model.ChatMessageType, contentType string) (string, error)
+	Delete(ctx context.Context, key string) error
 	GetPresignedDownloadURL(ctx context.Context, key string) (string, error)
 }
 
@@ -42,12 +54,20 @@ type ProfileProvider interface {
 type ChatService struct {
 	repo       ChatRepository
 	profile    ProfileProvider
+	broker     ChatEventBroker
 	storage    MediaStorage
 	mediaLinks MediaLinkBuilder
+	inspector  MediaInspector
 }
 
-func NewChatService(repo ChatRepository, profile ProfileProvider, storage MediaStorage, mediaLinks MediaLinkBuilder) *ChatService {
-	return &ChatService{repo: repo, profile: profile, storage: storage, mediaLinks: mediaLinks}
+func NewChatService(
+	repo ChatRepository,
+	profile ProfileProvider,
+	broker ChatEventBroker,
+	storage MediaStorage,
+	mediaLinks MediaLinkBuilder,
+	inspector MediaInspector) *ChatService {
+	return &ChatService{repo: repo, profile: profile, broker: broker, storage: storage, mediaLinks: mediaLinks, inspector: inspector}
 }
 
 func (s *ChatService) GetSummary(ctx context.Context, userID int64) (*model.ChatSummary, error) {
@@ -87,6 +107,9 @@ func (s *ChatService) GetChat(ctx context.Context, userID, chatID int64) (*model
 
 	case !state.MatchExists:
 		restriction = model.MessagingRestrictionMatchNotFound
+
+	case !state.MatchAllowsMessaging:
+		restriction = model.MessagingRestrictionNotAllowed
 	}
 
 	if restriction != "" {
@@ -96,13 +119,14 @@ func (s *ChatService) GetChat(ctx context.Context, userID, chatID int64) (*model
 
 	details := &model.ChatDetails{
 		Chat: model.ChatCard{
-			ChatID:      state.Chat.ID,
-			MatchID:     state.Chat.MatchID,
-			IsNew:       state.Viewer.SeenAt == nil,
-			UnreadCount: state.UnreadCount,
-			LastMessage: state.LastMessage,
-			CreatedAt:   state.Chat.CreatedAt,
-			Version:     state.CardVersion,
+			ChatID:         state.Chat.ID,
+			MatchID:        state.Chat.MatchID,
+			IsNew:          state.Viewer.SeenAt == nil,
+			UnreadCount:    state.UnreadCount,
+			LastMessage:    state.LastMessage,
+			CreatedAt:      state.Chat.CreatedAt,
+			LastActivityAt: state.LastActivityAt,
+			Version:        state.CardVersion,
 		},
 		IsEmpty:         state.LastSeq == 0,
 		LastReadSeq:     state.Viewer.LastReadSeq,
@@ -182,7 +206,7 @@ func (s *ChatService) GetMessages(ctx context.Context, userID, chatID int64, que
 		limit = *query.Limit
 	}
 
-	if limit < 1 {
+	if limit < 1 || limit > maxMessagesLimit {
 		return nil, model.ErrInvalidMessagesQuery
 	}
 
@@ -228,8 +252,21 @@ func (s *ChatService) MarkSeen(ctx context.Context, userID, chatID int64) error 
 		return model.ErrInvalidChatID
 	}
 
-	return s.repo.MarkSeen(ctx, userID, chatID)
+	err := s.repo.MarkSeen(ctx, userID, chatID)
 
+	if err != nil {
+		return err
+	}
+
+	if err := s.publishChatUpdated(ctx, chatID); err != nil {
+		slog.ErrorContext(ctx, "failed to publish chat updated", "user_id", userID, "chat_id", chatID, "error", err)
+	}
+
+	if err := s.publishSummaryUpdated(ctx, userID); err != nil {
+		slog.ErrorContext(ctx, "failed to publish summary updated", "user_id", userID, "error", err)
+	}
+
+	return nil
 }
 
 func (s *ChatService) SendMessage(ctx context.Context, userID int64, command model.ChatSendMessage) (*model.ChatMessage, error) {
@@ -254,13 +291,27 @@ func (s *ChatService) SendMessage(ctx context.Context, userID int64, command mod
 		return nil, model.ErrInvalidMessageText
 	}
 
-	stored, _, err := s.repo.CreateMessage(ctx, userID, command)
+	stored, created, err := s.repo.CreateMessage(ctx, userID, command)
 
 	if err != nil {
 		return nil, err
 	}
 
 	message := s.chatMessageFromStored(*stored)
+
+	if created {
+		if err := s.publishMessageCreated(ctx, stored.ChatID, stored.ClientMessageID, message); err != nil {
+			slog.ErrorContext(ctx, "publish message created", "message", message)
+		}
+
+		if err := s.publishChatUpdated(ctx, command.ChatID); err != nil {
+			slog.ErrorContext(ctx, "failed to publish chat updated", "chat_id", command.ChatID, "error", err)
+		}
+
+		if err := s.publishChatMembersSummaryUpdated(ctx, command.ChatID); err != nil {
+			slog.ErrorContext(ctx, "failed to publish summary updated", "chat_id", command.ChatID, "error", err)
+		}
+	}
 
 	return &message, nil
 }
@@ -279,7 +330,28 @@ func (s *ChatService) ReadChat(ctx context.Context, userID int64, command model.
 		return nil, model.ErrInvalidReadSeq
 	}
 
-	return s.repo.ReadChat(ctx, userID, command)
+	updated, err := s.repo.ReadChat(ctx, userID, command)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.publishChatReadUpdated(ctx, *updated); err != nil {
+
+		slog.ErrorContext(ctx, "failed to publish chat read updated", "chat_id", command.ChatID, "user_id", userID, "error", err)
+	}
+
+	if err := s.publishChatUpdated(ctx, command.ChatID); err != nil {
+
+		slog.ErrorContext(ctx, "failed to publish chat updated", "chat_id", command.ChatID, "error", err)
+	}
+
+	if err := s.publishSummaryUpdated(ctx, userID); err != nil {
+
+		slog.ErrorContext(ctx, "failed to publish summary updated", "user_id", userID, "error", err)
+	}
+
+	return updated, nil
 }
 
 func (s *ChatService) GetMedia(ctx context.Context, userID, chatID, messageID int64) (string, error) {
@@ -345,4 +417,38 @@ func (s *ChatService) chatMessageFromStored(stored model.StoredMessage) model.Ch
 	}
 
 	return message
+}
+
+func (s *ChatService) EnsureChat(ctx context.Context, matchID, firstUserID, secondUserID int64) (int64, bool, error) {
+
+	if matchID <= 0 {
+		return 0, false, model.ErrInvalidMatchID
+	}
+
+	if firstUserID <= 0 || secondUserID <= 0 {
+		return 0, false, model.ErrInvalidUserID
+	}
+
+	if firstUserID == secondUserID {
+		return 0, false, model.ErrInvalidChatMembers
+	}
+
+	chatID, created, err := s.repo.CreateChat(ctx, matchID, firstUserID, secondUserID)
+
+	if err != nil {
+		return 0, false, err
+	}
+
+	if created {
+
+		if err := s.publishChatCreated(ctx, chatID); err != nil {
+			slog.ErrorContext(ctx, "failed to publish chat created", "match_id", matchID, "chat_id", chatID, "error", err)
+		}
+
+		if err := s.publishChatMembersSummaryUpdated(ctx, chatID); err != nil {
+			slog.ErrorContext(ctx, "failed to publish summary updated", "chat_id", chatID, "error", err)
+		}
+	}
+
+	return chatID, created, nil
 }

@@ -20,6 +20,8 @@ message Photo {
 }
 
 message Profile {
+  // Внутренний ID анкеты нужен для существующей схемы хранения свайпов.
+  int64 profile_id = 17;
   int64 user_id = 1;
   optional string name = 2;
   Date birth_date = 3;
@@ -286,6 +288,7 @@ message ProfileChatSummary {
   optional string name = 2;
   optional string photo_url = 3;
   repeated string tags = 4;
+  optional int32 age = 5;
 }
 
 message GetProfileChatSummariesRequest {

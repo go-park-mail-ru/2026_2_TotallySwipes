@@ -19,23 +19,27 @@ var now = time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
 func ptr[T any](value T) *T { return &value }
 
 type fixture struct {
-	svc     *service.ChatService
-	repo    *MockChatRepository
-	profile *MockProfileProvider
-	storage *MockMediaStorage
-	links   *MockMediaLinkBuilder
+	svc       *service.ChatService
+	repo      *MockChatRepository
+	profile   *MockProfileProvider
+	broker    *MockChatEventBroker
+	storage   *MockMediaStorage
+	links     *MockMediaLinkBuilder
+	inspector *MockMediaInspector
 }
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 	ctrl := gomock.NewController(t)
 	f := fixture{
-		repo:    NewMockChatRepository(ctrl),
-		profile: NewMockProfileProvider(ctrl),
-		storage: NewMockMediaStorage(ctrl),
-		links:   NewMockMediaLinkBuilder(ctrl),
+		repo:      NewMockChatRepository(ctrl),
+		profile:   NewMockProfileProvider(ctrl),
+		broker:    NewMockChatEventBroker(ctrl),
+		storage:   NewMockMediaStorage(ctrl),
+		links:     NewMockMediaLinkBuilder(ctrl),
+		inspector: NewMockMediaInspector(ctrl),
 	}
-	f.svc = service.NewChatService(f.repo, f.profile, f.storage, f.links)
+	f.svc = service.NewChatService(f.repo, f.profile, f.broker, f.storage, f.links, f.inspector)
 	return f
 }
 
@@ -115,6 +119,9 @@ func TestSendMessage(t *testing.T) {
 			command := model.ChatSendMessage{ChatID: 10, ClientMessageID: strings.Repeat("я", 128), Text: tc.text}
 			stored := &model.StoredMessage{ID: 100, ChatID: 10, Seq: 5, SenderID: ptr(int64(1)), Type: model.ChatMessageTypeText, Text: &command.Text, CreatedAt: now, Version: 1}
 			f.repo.EXPECT().CreateMessage(gomock.Any(), int64(1), command).Return(stored, tc.created, tc.repoErr)
+			if tc.created && tc.repoErr == nil {
+				f.repo.EXPECT().GeyMembers(gomock.Any(), int64(10)).Return([]model.ChatMember{}, nil).Times(3)
+			}
 			got, err := f.svc.SendMessage(context.Background(), 1, command)
 			assertError(t, err, tc.repoErr)
 			if err != nil {
@@ -140,13 +147,14 @@ func TestGetChat(t *testing.T) {
 		{name: "блокировка собеседника", change: func(s *model.ChatState) { s.ViewerBlockedPeer = true }, restriction: model.MessagingRestrictionPairBlocked},
 		{name: "блокировка пользователем", change: func(s *model.ChatState) { s.PeerBlockedViewer = true }, restriction: model.MessagingRestrictionPairBlocked},
 		{name: "нет мэтча", change: func(s *model.ChatState) { s.MatchExists = false }, restriction: model.MessagingRestrictionMatchNotFound},
+		{name: "мэтч не разрешает переписку", change: func(s *model.ChatState) { s.MatchAllowsMessaging = false }, restriction: model.MessagingRestrictionNotAllowed},
 		{name: "пользователь отключён", change: func(s *model.ChatState) { s.ViewerDisabled = true }, wantErr: model.ErrChatMemberBlocked},
 		{name: "ошибка репозитория", repoErr: dependencyErr, wantErr: dependencyErr},
 		{name: "ошибка профиля", profileErr: dependencyErr, wantErr: dependencyErr},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)
-			state := &model.ChatState{Chat: model.Chat{ID: 10, MatchID: 20, CreatedAt: now}, Viewer: model.ChatMember{UserID: 1, LastReadSeq: 3}, Peer: model.ChatMember{UserID: 2, LastReadSeq: 4}, MatchExists: true, UnreadCount: 2, LastSeq: 5, CardVersion: 7}
+			state := &model.ChatState{Chat: model.Chat{ID: 10, MatchID: 20, CreatedAt: now}, Viewer: model.ChatMember{UserID: 1, LastReadSeq: 3}, Peer: model.ChatMember{UserID: 2, LastReadSeq: 4}, MatchExists: true, MatchAllowsMessaging: true, LastActivityAt: now.Add(time.Hour), UnreadCount: 2, LastSeq: 5, CardVersion: 7}
 			if tc.change != nil {
 				tc.change(state)
 			}
@@ -162,6 +170,10 @@ func TestGetChat(t *testing.T) {
 			}
 			if got.Chat.ChatID != 10 || got.Chat.MatchID != 20 || !got.Chat.IsNew || got.Chat.UnreadCount != 2 || got.Chat.Version != 7 || got.IsEmpty || got.LastReadSeq != 3 || got.PeerLastReadSeq != 4 {
 				t.Fatalf("details = %#v", got)
+			}
+
+			if !got.Chat.LastActivityAt.Equal(state.LastActivityAt) {
+				t.Fatalf("last activity = %v, want %v", got.Chat.LastActivityAt, state.LastActivityAt)
 			}
 			if !reflect.DeepEqual(got.CommonTags, []string{"go"}) || got.Chat.Peer.UserID != 2 || *got.Chat.Peer.Name != "Анна" {
 				t.Fatalf("profile mapping = %#v", got)
@@ -190,12 +202,29 @@ func TestGetMessagesValidation(t *testing.T) {
 		{"неверный before", 1, 10, model.ChatMessagesQuery{BeforeSeq: ptr(int64(0))}, model.ErrInvalidMessagesQuery},
 		{"неверный after", 1, 10, model.ChatMessagesQuery{AfterSeq: ptr(int64(-1))}, model.ErrInvalidMessagesQuery},
 		{"неверный limit", 1, 10, model.ChatMessagesQuery{Limit: ptr(0)}, model.ErrInvalidMessagesQuery},
+		{"limit больше максимума", 1, 10, model.ChatMessagesQuery{Limit: ptr(101)}, model.ErrInvalidMessagesQuery},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)
 			_, err := f.svc.GetMessages(context.Background(), tc.userID, tc.chatID, tc.query)
 			assertError(t, err, tc.want)
 		})
+	}
+}
+
+func TestGetMessagesLimitBoundaries(t *testing.T) {
+
+	for _, limit := range []int{1, 100} {
+
+		f := newFixture(t)
+		query := model.ChatMessagesQuery{Limit: ptr(limit)}
+		f.repo.EXPECT().GetChatState(gomock.Any(), int64(1), int64(10)).Return(&model.ChatState{}, nil)
+		f.repo.EXPECT().GetMessages(gomock.Any(), int64(1), int64(10), query).
+			Return(&model.StoredMessagesPage{Direction: model.ChatPageDirectionOlder}, nil)
+
+		if _, err := f.svc.GetMessages(context.Background(), 1, 10, query); err != nil {
+			t.Fatalf("limit = %d, error = %v", limit, err)
+		}
 	}
 }
 
@@ -254,6 +283,11 @@ func TestMarkSeen(t *testing.T) {
 			f := newFixture(t)
 			if tc.userID > 0 && tc.chatID > 0 {
 				f.repo.EXPECT().MarkSeen(gomock.Any(), tc.userID, tc.chatID).Return(tc.repoErr)
+				if tc.repoErr == nil {
+					f.repo.EXPECT().GeyMembers(gomock.Any(), tc.chatID).Return([]model.ChatMember{}, nil)
+					f.repo.EXPECT().GetSummary(gomock.Any(), tc.userID).Return(&model.ChatSummary{}, nil)
+					f.broker.EXPECT().Publish(gomock.Any(), tc.userID, gomock.Any()).Return(nil)
+				}
 			}
 			assertError(t, f.svc.MarkSeen(context.Background(), tc.userID, tc.chatID), tc.wantErr)
 		})
@@ -279,6 +313,11 @@ func TestReadChat(t *testing.T) {
 			want := &model.ChatReadUpdated{ChatID: 10, UserID: 1, LastReadSeq: 7}
 			if tc.userID > 0 && tc.command.ChatID > 0 && tc.command.LastReadSeq >= 0 {
 				f.repo.EXPECT().ReadChat(gomock.Any(), tc.userID, tc.command).Return(want, tc.repoErr)
+				if tc.repoErr == nil {
+					f.repo.EXPECT().GeyMembers(gomock.Any(), tc.command.ChatID).Return([]model.ChatMember{}, nil).Times(2)
+					f.repo.EXPECT().GetSummary(gomock.Any(), tc.userID).Return(&model.ChatSummary{}, nil)
+					f.broker.EXPECT().Publish(gomock.Any(), tc.userID, gomock.Any()).Return(nil)
+				}
 			}
 			got, err := f.svc.ReadChat(context.Background(), tc.userID, tc.command)
 			assertError(t, err, tc.wantErr)

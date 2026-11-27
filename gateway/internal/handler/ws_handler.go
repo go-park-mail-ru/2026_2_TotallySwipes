@@ -5,8 +5,8 @@ import (
 	"dating-app/gateway/internal/client"
 	"dating-app/gateway/internal/config"
 	"dating-app/gateway/internal/handler/dto"
+	"dating-app/gateway/internal/middleware"
 	"dating-app/gateway/internal/model"
-	"dating-app/internal/middleware"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -35,9 +35,16 @@ type WSHandler struct {
 	upgrader websocket.Upgrader
 	cfg      config.WebSocketConfig
 	chat     *client.ChatAdapter
+
+	mu           sync.Mutex
+	connections  map[*websocket.Conn]context.CancelFunc
+	closing      bool
+	wg           sync.WaitGroup
+	shutdownOnce sync.Once
+	done         chan struct{}
 }
 
-func NewWSHandler(cfg config.WebSocketConfig) *WSHandler {
+func NewWSHandler(cfg config.WebSocketConfig, chat *client.ChatAdapter) *WSHandler {
 
 	allowedOrigins := make(map[string]bool, len(cfg.AllowedOrigins))
 	for _, origin := range cfg.AllowedOrigins {
@@ -45,7 +52,10 @@ func NewWSHandler(cfg config.WebSocketConfig) *WSHandler {
 	}
 
 	return &WSHandler{
-		cfg: cfg,
+		cfg:         cfg,
+		chat:        chat,
+		connections: make(map[*websocket.Conn]context.CancelFunc),
+		done:        make(chan struct{}),
 		upgrader: websocket.Upgrader{
 			HandshakeTimeout: cfg.HandshakeTimeout,
 			CheckOrigin: func(r *http.Request) bool {
@@ -63,6 +73,13 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.beginConnection() {
+		http.Error(w, "Server is shutting down", http.StatusServiceUnavailable)
+		return
+	}
+
+	defer h.wg.Done()
+
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -70,7 +87,16 @@ func (h *WSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	defer conn.Close()
 
-	h.serveConnection(r.Context(), conn, userID)
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	if !h.registerConnection(conn, cancel) {
+		return
+	}
+
+	defer h.unregisterConnection(conn)
+
+	h.serveConnection(ctx, conn, userID)
 }
 
 type wsConnection struct {

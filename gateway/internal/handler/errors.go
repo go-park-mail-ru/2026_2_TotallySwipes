@@ -63,6 +63,10 @@ var domainErrors = []struct {
 
 // writeServiceError отвечает по domainErrors, остальные ошибки логирует и отдаёт 500
 func writeServiceError(ctx context.Context, w http.ResponseWriter, op string, err error) {
+	if api, ok := matchingAPIError(err); ok {
+		writeError(ctx, w, api.status, api.code, api.message, api.fields)
+		return
+	}
 	for _, e := range domainErrors {
 		if errors.Is(err, e.err) {
 			writeError(ctx, w, e.api.status, e.api.code, e.api.message, e.api.fields)

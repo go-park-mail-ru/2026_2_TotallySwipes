@@ -54,10 +54,10 @@ func messageRows(seqs ...int64) *sqlmock.Rows {
 	return rows
 }
 
-var stateColumns = []string{"id", "match_id", "created_at", "viewer_id", "viewer_seen", "viewer_read", "peer_id", "peer_seen", "peer_read", "viewer_disabled", "peer_disabled", "match_exists", "allows_messaging", "viewer_block", "peer_block", "last_seq", "unread", "last_activity", "message_id", "message_seq", "sender_id", "type", "preview", "duration", "message_created", "read_by_peer"}
+var stateColumns = []string{"id", "match_id", "created_at", "viewer_id", "viewer_seen", "viewer_read", "peer_id", "peer_seen", "peer_read", "viewer_disabled", "peer_disabled", "match_exists", "allows_messaging", "viewer_block", "peer_block", "last_seq", "unread", "last_activity", "message_id", "message_seq", "sender_id", "type", "preview", "duration", "message_created", "read_by_peer", "card_version"}
 
 func stateValues() []driver.Value {
-	return []driver.Value{int64(10), int64(20), now, int64(1), nil, int64(3), int64(2), now, int64(4), false, false, true, true, false, false, int64(5), int64(2), now, nil, nil, nil, nil, nil, nil, nil, nil}
+	return []driver.Value{int64(10), int64(20), now, int64(1), nil, int64(3), int64(2), now, int64(4), false, false, true, true, false, false, int64(5), int64(2), now, nil, nil, nil, nil, nil, nil, nil, nil, int64(9)}
 }
 
 func TestGetChat(t *testing.T) {
@@ -129,11 +129,11 @@ func TestGetSummary(t *testing.T) {
 			if dbErr != nil {
 				expect.WillReturnError(dbErr)
 			} else {
-				expect.WillReturnRows(sqlmock.NewRows([]string{"new", "unread_chats", "unread_messages"}).AddRow(2, 3, 7))
+				expect.WillReturnRows(sqlmock.NewRows([]string{"new", "unread_chats", "unread_messages", "version"}).AddRow(2, 3, 7, 9))
 			}
 			got, err := r.GetSummary(context.Background(), 1)
 			assertError(t, err, dbErr)
-			if err == nil && !reflect.DeepEqual(got, &model.ChatSummary{NewChatsCount: 2, UnreadChatsCount: 3, UnreadMessagesCount: 7}) {
+			if err == nil && !reflect.DeepEqual(got, &model.ChatSummary{NewChatsCount: 2, UnreadChatsCount: 3, UnreadMessagesCount: 7, Version: 9}) {
 				t.Fatalf("summary = %#v", got)
 			}
 		})
@@ -175,7 +175,7 @@ func TestGetChatState(t *testing.T) {
 				return
 			}
 			assertError(t, err, nil)
-			if got.Chat.ID != 10 || got.Viewer.ChatID != 10 || got.Peer.ChatID != 10 || got.Viewer.SeenAt != nil || got.Peer.SeenAt == nil || !got.MatchAllowsMessaging || got.LastSeq != 5 || got.UnreadCount != 2 || !got.LastActivityAt.Equal(now) {
+			if got.CardVersion != 9 || got.Chat.ID != 10 || got.Viewer.ChatID != 10 || got.Peer.ChatID != 10 || got.Viewer.SeenAt != nil || got.Peer.SeenAt == nil || !got.MatchAllowsMessaging || got.LastSeq != 5 || got.UnreadCount != 2 || !got.LastActivityAt.Equal(now) {
 				t.Fatalf("state = %#v", got)
 			}
 			if name == "пустой чат" && got.LastMessage != nil {
@@ -288,6 +288,7 @@ func TestCreateMessage(t *testing.T) {
 									wantErr = failure
 								} else {
 									insert.WillReturnRows(messageRows(5))
+									expectMessageVersionUpdates(mock)
 								}
 							}
 						}
@@ -379,95 +380,6 @@ func TestGetMessagesErrors(t *testing.T) {
 			}
 			if name != "сканирование" {
 				assertError(t, err, failure)
-			}
-		})
-	}
-}
-
-func TestMarkSeen(t *testing.T) {
-	for _, name := range []string{"успех", "нет участника", "ошибка запроса", "ошибка результата"} {
-		t.Run(name, func(t *testing.T) {
-			r, mock := newRepository(t)
-			expect := mock.ExpectExec(markSeenQuery).WithArgs(int64(1), int64(10))
-			wantErr := error(nil)
-			switch name {
-			case "нет участника":
-				expect.WillReturnResult(sqlmock.NewResult(0, 0))
-				wantErr = model.ErrChatNotFound
-			case "ошибка запроса":
-				expect.WillReturnError(failure)
-				wantErr = failure
-			case "ошибка результата":
-				expect.WillReturnResult(sqlmock.NewErrorResult(failure))
-				wantErr = failure
-			default:
-				expect.WillReturnResult(sqlmock.NewResult(0, 1))
-			}
-			assertError(t, r.MarkSeen(context.Background(), 1, 10), wantErr)
-		})
-	}
-}
-
-func TestReadChat(t *testing.T) {
-	for _, name := range []string{"успех", "старая команда", "нулевая позиция", "позиция за концом", "отрицательная позиция", "отключён", "нет доступа", "ошибка состояния", "ошибка обновления", "участник удалён"} {
-		t.Run(name, func(t *testing.T) {
-			r, mock := newRepository(t)
-			command := model.ChatRead{ChatID: 10, LastReadSeq: 5}
-			if name == "старая команда" {
-				command.LastReadSeq = 2
-			}
-			if name == "нулевая позиция" {
-				command.LastReadSeq = 0
-			}
-			if name == "позиция за концом" {
-				command.LastReadSeq = 6
-			}
-			if name == "отрицательная позиция" {
-				command.LastReadSeq = -1
-			}
-			values := stateValues()
-			if name == "отключён" {
-				values[9] = true
-			}
-			state := mock.ExpectQuery(getChatQueryState).WithArgs(int64(1), int64(10))
-			wantErr := error(nil)
-			switch name {
-			case "нет доступа":
-				state.WillReturnError(sql.ErrNoRows)
-				wantErr = model.ErrChatNotFound
-			case "ошибка состояния":
-				state.WillReturnError(failure)
-				wantErr = failure
-			default:
-				state.WillReturnRows(sqlmock.NewRows(stateColumns).AddRow(values...))
-			}
-			if name == "отключён" {
-				wantErr = model.ErrChatMemberBlocked
-			}
-			if name == "позиция за концом" || name == "отрицательная позиция" {
-				wantErr = model.ErrInvalidReadSeq
-			}
-			wantSeq := int64(5)
-			if command.LastReadSeq < 3 {
-				wantSeq = 3
-			}
-			if wantErr == nil {
-				update := mock.ExpectQuery(readChatQuery).WithArgs(int64(1), int64(10), command.LastReadSeq)
-				switch name {
-				case "ошибка обновления":
-					update.WillReturnError(failure)
-					wantErr = failure
-				case "участник удалён":
-					update.WillReturnError(sql.ErrNoRows)
-					wantErr = model.ErrChatNotFound
-				default:
-					update.WillReturnRows(sqlmock.NewRows([]string{"last_read_seq"}).AddRow(wantSeq))
-				}
-			}
-			got, err := r.ReadChat(context.Background(), 1, command)
-			assertError(t, err, wantErr)
-			if err == nil && !reflect.DeepEqual(got, &model.ChatReadUpdated{ChatID: 10, UserID: 1, LastReadSeq: wantSeq}) {
-				t.Fatalf("read = %#v", got)
 			}
 		})
 	}

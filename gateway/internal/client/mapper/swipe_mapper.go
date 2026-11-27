@@ -1,8 +1,8 @@
 package mapper
 
 import (
-	matchpb "dating-app/gen/go/match/v1"
 	"dating-app/internal/model"
+	matchpb "dating-app/services/matching/api/gen/go/match/v1"
 	"fmt"
 )
 

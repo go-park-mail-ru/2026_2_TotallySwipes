@@ -46,11 +46,12 @@ func TestMatchHandlerList(t *testing.T) {
 	name, age, url, compatibility := "Anna", 25, "https://media.example/cats/anna.jpg", 0.87
 	created := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
 	next, cursor := int64(4), int64(9)
+	chatID := int64(456)
 
 	t.Run("ok", func(t *testing.T) {
 		svc := &fakeMatchService{page: &model.MatchPage{
 			Items: []model.Match{
-				{ID: 5, UserID: 8, Name: &name, Age: &age, MainPhotoURL: &url, Compatibility: &compatibility, IsNew: true, CanMeetup: true, CreatedAt: created},
+				{ID: 5, ChatID: &chatID, UserID: 8, Name: &name, Age: &age, MainPhotoURL: &url, Compatibility: &compatibility, IsNew: true, CanMeetup: true, CreatedAt: created},
 				{ID: 4, UserID: 9},
 			},
 			Total:      12,
@@ -72,9 +73,9 @@ func TestMatchHandlerList(t *testing.T) {
 			"next_cursor": float64(4),
 			"total":       float64(12),
 			"items": []any{
-				map[string]any{"match_id": float64(5), "user_id": float64(8), "name": "Anna", "age": float64(25),
+				map[string]any{"match_id": float64(5), "chat_id": "456", "user_id": float64(8), "name": "Anna", "age": float64(25),
 					"photo_url": url, "compatibility": 0.87, "is_new": true, "can_meetup": true, "partner_finished": false, "created_at": "2026-10-18T12:00:00Z"},
-				map[string]any{"match_id": float64(4), "user_id": float64(9), "name": nil, "age": nil,
+				map[string]any{"match_id": float64(4), "chat_id": nil, "user_id": float64(9), "name": nil, "age": nil,
 					"photo_url": nil, "compatibility": nil, "is_new": false, "can_meetup": false, "partner_finished": false, "created_at": "0001-01-01T00:00:00Z"},
 			},
 		}

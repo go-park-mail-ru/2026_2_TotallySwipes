@@ -4,7 +4,7 @@ import (
 	"context"
 	"dating-app/gateway/internal/client/mapper"
 	"dating-app/gateway/internal/model"
-	chatpb "dating-app/gen/go/chat/v1"
+	chatpb "dating-app/services/chat/api/gen/go/chat/v1"
 	"fmt"
 	"strconv"
 )
@@ -76,4 +76,31 @@ func (a *ChatAdapter) GetMedia(ctx context.Context, userID, chatID, messageID in
 	}
 
 	return response.GetDownloadUrl(), nil
+}
+
+func (a *ChatAdapter) SendMedia(ctx context.Context, userID int64, command model.ChatSendMedia) (*model.ChatMessage, bool, error) {
+
+	request, err := mapper.SendMediaToProto(userID, command)
+
+	if err != nil {
+		return nil, false, err
+	}
+
+	response, err := a.client.SendMedia(ctx, request)
+
+	if err != nil {
+		return nil, false, err
+	}
+
+	if response == nil {
+		return nil, false, fmt.Errorf("proto: missing send media response")
+	}
+
+	message, err := mapper.ChatMessageFromProto(response.GetMessage())
+
+	if err != nil {
+		return nil, false, err
+	}
+
+	return message, response.GetCreated(), nil
 }

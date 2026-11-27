@@ -68,6 +68,7 @@ allowed auth_app "BEGIN; WITH account AS (
 
 allowed profile_app 'SELECT id FROM public.profile LIMIT 1;'
 allowed matching_app 'SELECT id FROM public."match" LIMIT 1;'
+allowed matching_app 'SELECT id, match_id FROM public.chat LIMIT 1;'
 allowed chat_app 'SELECT id, is_disabled FROM public."user" LIMIT 1;'
 allowed monitor 'SELECT datname, numbackends FROM pg_catalog.pg_stat_database;'
 
