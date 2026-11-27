@@ -38,7 +38,7 @@ done
 например `postgres:5432`, а не localhost.
 
 Redis пока запускается с постоянными параметрами из Compose. Конфигурация nginx находится
-в `deploy/nginx/default.conf`; публичный домен — `totallyswipes.ru`.
+в `deploy/nginx/default.conf`; публичный домен — `totally-swipes.ru`.
 
 ## Подготовка инфраструктуры
 
@@ -59,12 +59,14 @@ docker compose -f docker-compose.microservices.yml exec -T postgres \
   < db/security/grants.sql
 ```
 
-`roles.sql` выполняется один раз; повторный запуск с существующими ролями завершится
-ошибкой. `grants.sql` можно применять повторно после новых миграций.
+`roles.sql` создаёт отсутствующие роли и допускает повторный запуск.
+`grants.sql` можно применять повторно после новых миграций.
 
 Далее войти администратором через psql и задать пароли через `\password auth_app`,
 `\password profile_app`, `\password matching_app`, `\password chat_app`, `\password monitor`.
-Сами env-файлы пользователей БД не создают и не устанавливают им пароли.
+При ручном запуске Compose env-файлы сами пользователей БД не создают.
+При деплое через GitHub Actions скрипт создаёт роли, устанавливает пароли
+четырёх сервисов из их `DATABASE_URL` и выдаёт права автоматически.
 
 Пользователи MinIO `profile_storage` и `chat_storage` также должны быть созданы отдельно
 с доступом к своим bucket: `photos` и `chat-media`. Значения в env — предложенный контракт;
@@ -121,9 +123,9 @@ reflection подключён у Auth/Profile.
 Nginx находится в профиле `edge`, поэтому по умолчанию не запускается. Он завершает TLS
 и направляет запросы:
 
-- `https://totallyswipes.ru/api/...` — HTTP API Gateway;
-- `https://totallyswipes.ru/media/...` — фотографии через Gateway;
-- `wss://totallyswipes.ru/ws` — WebSocket Gateway;
+- `https://totally-swipes.ru/api/...` — HTTP API Gateway;
+- `https://totally-swipes.ru/media/...` — фотографии через Gateway;
+- `wss://totally-swipes.ru/ws` — WebSocket Gateway;
 - остальные пути — HTTP-сервер фронтенда `frontend:80`.
 
 В `proxy_pass` для Gateway нет завершающего `/`: исходный путь запроса сохраняется.
@@ -131,7 +133,7 @@ Nginx находится в профиле `edge`, поэтому по умол�
 а не полную длительность соединения. Gateway отправляет ping каждые 25 секунд.
 
 На сервере должны быть DNS-запись домена на IP этой машины, открытые входящие порты
-80/443 и действующий сертификат именно для `totallyswipes.ru`. Compose подключает
+80/443 и действующий сертификат именно для `totally-swipes.ru`. Compose подключает
 `certs/fullchain.pem` и `certs/privkey.pem` в nginx; эти файлы не коммитятся.
 После обновления сертификата выполнить перезагрузку конфигурации nginx.
 
@@ -170,15 +172,15 @@ networks:
 В локальном `deploy/env/gateway.env` задать:
 
 ```dotenv
-CORS_ORIGINS=https://totallyswipes.ru
-WS_ALLOWED_ORIGINS=https://totallyswipes.ru
+CORS_ORIGINS=https://totally-swipes.ru
+WS_ALLOWED_ORIGINS=https://totally-swipes.ru
 COOKIE_SECURE=true
 TLS_CERT_FILE=
 TLS_KEY_FILE=
 ```
 
 Origin — адрес страницы браузера с протоколом HTTPS, без пути и завершающего `/`.
-Это не `wss://totallyswipes.ru/ws`. Nginx передаёт исходный Origin в Gateway;
+Это не `wss://totally-swipes.ru/ws`. Nginx передаёт исходный Origin в Gateway;
 проверки CORS и WebSocket Origin выполняются в Gateway. При одном домене фронтенда
 и API дополнительные CORS-заголовки от nginx не нужны. В прежнем шаблоне был домен
 `totally-swipes.ru` с дефисом; локальные env-файлы нужно обновить под выбранный домен.

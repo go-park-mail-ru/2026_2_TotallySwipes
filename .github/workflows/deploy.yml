@@ -120,7 +120,7 @@ jobs:
       - name: Deploy microservices
         env:
           LEGACY_PROJECT: ${{ vars.LEGACY_PROJECT || 'app' }}
-          PUBLIC_HOST: ${{ vars.PUBLIC_HOST || 'totallyswipes.ru' }}
+          PUBLIC_HOST: ${{ vars.PUBLIC_HOST || 'totally-swipes.ru' }}
         run: |
           prefix="ghcr.io/${GITHUB_REPOSITORY,,}"
           ssh server bash -s -- "$GITHUB_SHA" "$prefix" "$LEGACY_PROJECT" "$PUBLIC_HOST" <<'REMOTE'

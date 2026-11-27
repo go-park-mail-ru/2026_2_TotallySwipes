@@ -10,6 +10,11 @@ if [[ ! "$IMAGE_TAG" =~ ^[a-f0-9]{40}$ ]]; then
   exit 1
 fi
 
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "Для установки паролей ролей PostgreSQL нужен python3" >&2
+  exit 1
+fi
+
 release_dir="$app_dir/releases/$IMAGE_TAG"
 project="totallyswipes-${IMAGE_TAG:0:12}"
 core_project="totallyswipes-microservices"
@@ -19,7 +24,7 @@ export DEPLOYMENT_ID="${IMAGE_TAG:0:12}"
 export NGINX_CONFIG_DIR="$app_dir/nginx/conf.d"
 export NGINX_UPSTREAM_DIR="$app_dir/nginx/upstreams"
 export CERTS_DIR="$app_dir/certs"
-public_host="${PUBLIC_HOST:-totallyswipes.ru}"
+public_host="${PUBLIC_HOST:-totally-swipes.ru}"
 previous_project="${LEGACY_PROJECT:-app}"
 
 mkdir -p "$app_dir" "$NGINX_CONFIG_DIR" "$NGINX_UPSTREAM_DIR"
@@ -115,6 +120,19 @@ done
 "${compose[@]}" -p "$core_project" up -d --no-recreate --wait postgres redis minio
 "${compose[@]}" -p "$project" pull "${apps[@]}"
 "${compose[@]}" -p "$core_project" --profile tools run --rm -T --no-deps migrate
+"${compose[@]}" -p "$core_project" exec -T postgres \
+  sh -ec 'exec psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' \
+  < "$release_dir/db/security/roles.sql"
+
+# Пароли берём из env сервисов и передаём в psql через stdin без вывода в лог.
+if ! python3 "$release_dir/scripts/deploy/postgres-passwords.py" "$release_dir/deploy/env" \
+  | "${compose[@]}" -p "$core_project" exec -T postgres \
+    sh -ec 'exec psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' \
+    >/dev/null 2>&1; then
+  echo "Не удалось установить пароли ролей PostgreSQL из env сервисов" >&2
+  exit 1
+fi
+
 "${compose[@]}" -p "$core_project" exec -T postgres \
   sh -ec 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' \
   < "$release_dir/db/security/grants.sql"

@@ -129,7 +129,7 @@ bucket при запуске. Для серверного запуска исп�
 
 ### 5. Подготовить nginx и фронтенд
 
-Текущий nginx настроен на `totallyswipes.ru`. Домен должен указывать на IP машины,
+Текущий nginx настроен на `totally-swipes.ru`. Домен должен указывать на IP машины,
 а сертификат и ключ должны лежать в файлах:
 
 ```text
@@ -140,14 +140,14 @@ certs/privkey.pem
 В `gateway.env`:
 
 ```dotenv
-CORS_ORIGINS=https://totallyswipes.ru
-WS_ALLOWED_ORIGINS=https://totallyswipes.ru
+CORS_ORIGINS=https://totally-swipes.ru
+WS_ALLOWED_ORIGINS=https://totally-swipes.ru
 COOKIE_SECURE=true
 TLS_CERT_FILE=
 TLS_KEY_FILE=
 ```
 
-В `profile.env` — `PUBLIC_URL=https://totallyswipes.ru`. HTTPS/WSS завершается
+В `profile.env` — `PUBLIC_URL=https://totally-swipes.ru`. HTTPS/WSS завершается
 на nginx, соединение nginx → Gateway использует HTTP/WS.
 
 В Compose фронтенда добавить общую сеть к существующему сервису, сохранив его
@@ -192,14 +192,14 @@ docker compose -f docker-compose.microservices.yml --profile edge up -d --build
 ```bash
 docker compose -f docker-compose.microservices.yml --profile edge ps
 docker compose -f docker-compose.microservices.yml --profile edge logs -f
-curl --fail https://totallyswipes.ru/health
+curl --fail https://totally-swipes.ru/health
 ```
 
 После запуска доступны:
 
-- фронтенд: `https://totallyswipes.ru/`;
-- API: `https://totallyswipes.ru/api/v1/...`;
-- WebSocket: `wss://totallyswipes.ru/ws`.
+- фронтенд: `https://totally-swipes.ru/`;
+- API: `https://totally-swipes.ru/api/v1/...`;
+- WebSocket: `wss://totally-swipes.ru/ws`.
 
 Для WebSocket требуется cookie `access_token`, полученная при входе.
 Сеть `totallyswipes-edge` общая для двух Compose-проектов; внутренние сети
