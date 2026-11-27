@@ -69,6 +69,13 @@ finish() {
   if [[ "$status" != 0 && "$completed" == 0 ]]; then
     echo "Деплой не завершён. Предыдущие приложения не останавливаем." >&2
 
+    if [[ "$config_changed" == 1 ]]; then
+      docker logs --tail 100 totallyswipes-nginx || true
+      docker inspect --format \
+        '{{.Name}}: status={{.State.Status}}, exit={{.State.ExitCode}}, error={{.State.Error}}, ports={{json .NetworkSettings.Ports}}, bindings={{json .HostConfig.PortBindings}}' \
+        totallyswipes-nginx || true
+    fi
+
     # Сначала выводим причину сбоя, пока откат ещё не удалил контейнеры.
     if [[ "$candidate_started" == 1 ]]; then
       "${compose[@]}" -p "$project" ps --all || true
@@ -170,12 +177,18 @@ mv "$NGINX_CONFIG_DIR/default.conf.next" "$NGINX_CONFIG_DIR/default.conf"
 printf 'server gateway-%s:8080 resolve;\n' "$DEPLOYMENT_ID" > "$NGINX_UPSTREAM_DIR/gateway.conf.next"
 mv "$NGINX_UPSTREAM_DIR/gateway.conf.next" "$NGINX_UPSTREAM_DIR/gateway.conf"
 "${compose[@]}" -p "$core_project" --profile edge run --rm --no-deps nginx nginx -t
-"${compose[@]}" -p "$core_project" --profile edge up -d --no-build --no-deps --no-recreate nginx
-docker exec totallyswipes-nginx nginx -s reload
+
+if [[ "$proxy_running" == 1 ]]; then
+  "${compose[@]}" -p "$core_project" --profile edge up -d --no-build --no-deps --no-recreate nginx
+  docker exec totallyswipes-nginx nginx -s reload
+else
+  # После неудачного запуска пересоздаём контейнер вместе с его сетевым окружением.
+  "${compose[@]}" -p "$core_project" --profile edge up -d --no-build --no-deps --force-recreate nginx
+fi
 
 routed=0
 for attempt in {1..15}; do
-  if http_status=$(curl --fail --silent --show-error --max-time 5 \
+  if http_status=$(curl --noproxy '*' --fail --silent --show-error --max-time 5 \
     --resolve "$public_host:443:127.0.0.1" --write-out '%{http_code}' --output /dev/null "https://$public_host/health"); then
     if [[ "$http_status" == 200 ]]; then
       routed=1
