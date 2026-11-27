@@ -68,6 +68,22 @@ finish() {
 
   if [[ "$status" != 0 && "$completed" == 0 ]]; then
     echo "Деплой не завершён. Предыдущие приложения не останавливаем." >&2
+
+    # Сначала выводим причину сбоя, пока откат ещё не удалил контейнеры.
+    if [[ "$candidate_started" == 1 ]]; then
+      "${compose[@]}" -p "$project" ps --all || true
+      "${compose[@]}" -p "$project" logs --no-color --tail 100 "${apps[@]}" || true
+
+      for container in $(docker ps -aq --filter "label=com.docker.compose.project=$project"); do
+        docker inspect --format \
+          '{{.Name}}: status={{.State.Status}}, exit={{.State.ExitCode}}, oom={{.State.OOMKilled}}{{if .State.Health}}{{range .State.Health.Log}}{{println}}{{.Output}}{{end}}{{end}}' \
+          "$container" || true
+      done
+    else
+      "${compose[@]}" -p "$core_project" ps --all postgres redis minio || true
+      "${compose[@]}" -p "$core_project" logs --no-color --tail 100 postgres redis minio || true
+    fi
+
     local restored=1
 
     if [[ "$config_changed" == 1 && "$proxy_running" == 1 ]]; then
@@ -117,7 +133,11 @@ for network in totallyswipes-edge totallyswipes-data; do
 done
 
 # Хранилища всегда принадлежат одному постоянному проекту.
-"${compose[@]}" -p "$core_project" up -d --no-recreate --wait postgres redis minio
+"${compose[@]}" -p "$core_project" up -d --no-recreate --wait postgres redis
+
+# MinIO применяет новые учётные данные из env при пересоздании контейнера.
+"${compose[@]}" -p "$core_project" up -d --no-deps --wait minio
+
 "${compose[@]}" -p "$project" pull "${apps[@]}"
 "${compose[@]}" -p "$core_project" --profile tools run --rm -T --no-deps migrate
 "${compose[@]}" -p "$core_project" exec -T postgres \
