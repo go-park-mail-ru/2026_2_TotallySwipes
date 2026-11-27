@@ -4,6 +4,7 @@ import (
 	"context"
 	"dating-app/gateway/internal/client/mapper"
 	"dating-app/gateway/internal/model"
+	"dating-app/gateway/internal/port"
 	chatpb "dating-app/services/chat/api/gen/go/chat/v1"
 	"fmt"
 
@@ -28,7 +29,9 @@ type ChatEventStream struct {
 	stream grpc.ServerStreamingClient[chatpb.ChatEvent]
 }
 
-func (a *ChatAdapter) SubscribeEvents(ctx context.Context, userID int64) (*ChatEventStream, error) {
+var _ port.ChatEventStream = (*ChatEventStream)(nil)
+
+func (a *ChatAdapter) SubscribeEvents(ctx context.Context, userID int64) (port.ChatEventStream, error) {
 
 	stream, err := a.client.SubscribeEvents(ctx, &chatpb.SubscribeEventsRequest{UserId: userID})
 

@@ -1,4 +1,4 @@
-package timepad
+package timepad_test
 
 import (
 	"context"

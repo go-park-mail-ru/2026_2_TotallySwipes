@@ -61,7 +61,6 @@ services:
       dockerfile: deploy/Dockerfile.microservices
       args:
         SERVICE_PATH: ./services/auth/cmd
-        VERSION: ${IMAGE_TAG:-development}
     env_file:
       - path: ./deploy/env/auth.env
         format: raw
@@ -88,7 +87,6 @@ services:
       dockerfile: deploy/Dockerfile.microservices
       args:
         SERVICE_PATH: ./services/profile/cmd
-        VERSION: ${IMAGE_TAG:-development}
     env_file:
       - path: ./deploy/env/profile.env
         format: raw
@@ -114,7 +112,6 @@ services:
       dockerfile: deploy/Dockerfile.microservices
       args:
         SERVICE_PATH: ./services/matching/cmd
-        VERSION: ${IMAGE_TAG:-development}
     env_file:
       - path: ./deploy/env/matching.env
         format: raw
@@ -144,7 +141,6 @@ services:
       dockerfile: deploy/Dockerfile.microservices
       args:
         SERVICE_PATH: ./services/chat/cmd
-        VERSION: ${IMAGE_TAG:-development}
     env_file:
       - path: ./deploy/env/chat.env
         format: raw
@@ -171,7 +167,6 @@ services:
       dockerfile: deploy/Dockerfile.microservices
       args:
         SERVICE_PATH: ./gateway/cmd
-        VERSION: ${IMAGE_TAG:-development}
     env_file:
       - path: ./deploy/env/gateway.env
         format: raw

@@ -3,7 +3,7 @@ package handler
 import (
 	"context"
 	"dating-app/gateway/internal/handler/dto"
-	"dating-app/internal/model"
+	"dating-app/gateway/internal/model"
 	"net/http"
 	"strconv"
 

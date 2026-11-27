@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"dating-app/internal/auth"
+	"dating-app/gateway/internal/auth"
 )
 
 type userIDKey struct{}

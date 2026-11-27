@@ -2,8 +2,8 @@ package handler
 
 import (
 	"context"
-	"dating-app/internal/model"
-	"dating-app/internal/validate"
+	"dating-app/gateway/internal/model"
+	"dating-app/gateway/internal/validate"
 	"errors"
 	"log/slog"
 	"net/http"

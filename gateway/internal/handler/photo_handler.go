@@ -2,7 +2,7 @@ package handler
 
 import (
 	"context"
-	"dating-app/internal/model"
+	"dating-app/gateway/internal/model"
 	"errors"
 	"io"
 	"net/http"
@@ -11,6 +11,9 @@ import (
 
 	"github.com/gorilla/mux"
 )
+
+// PhotoRoutePrefix — путь HTTP API для получения фотографий.
+const PhotoRoutePrefix = "/media/"
 
 // PhotoReader открывает файл фото по ключу хранилища.
 type PhotoReader interface {

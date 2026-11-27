@@ -2,9 +2,9 @@ package handler
 
 import (
 	"context"
-	"dating-app/internal/handler/dto"
-	"dating-app/internal/model"
-	"dating-app/internal/validate"
+	"dating-app/gateway/internal/handler/dto"
+	"dating-app/gateway/internal/model"
+	"dating-app/gateway/internal/validate"
 	"errors"
 	"io"
 	"net/http"

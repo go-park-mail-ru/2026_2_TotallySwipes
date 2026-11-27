@@ -2,16 +2,15 @@ package main
 
 import (
 	"context"
+	"dating-app/gateway/internal/auth"
 	"dating-app/gateway/internal/client"
 	"dating-app/gateway/internal/config"
+	"dating-app/gateway/internal/grpcclient"
 	"dating-app/gateway/internal/handler"
 	"dating-app/gateway/internal/logging"
 	"dating-app/gateway/internal/middleware"
 	authpb "dating-app/gen/go/auth/v1"
 	profilepb "dating-app/gen/go/profile/v1"
-	"dating-app/internal/auth"
-	"dating-app/internal/grpcclient"
-	"dating-app/internal/storage/s3"
 	chatpb "dating-app/services/chat/api/gen/go/chat/v1"
 	matchpb "dating-app/services/matching/api/gen/go/match/v1"
 	"fmt"
@@ -226,7 +225,7 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 
 	// files := http.FileServer(http.Dir(cfg.PhotoDir))
 	// r.PathPrefix("/cats/").Handler(http.StripPrefix("/cats/", files)).Methods(http.MethodGet, http.MethodHead)
-	r.HandleFunc(s3.PhotoRoutePrefix+"{key:.+}", h.photo.Get).Methods(http.MethodGet, http.MethodHead)
+	r.HandleFunc(handler.PhotoRoutePrefix+"{key:.+}", h.photo.Get).Methods(http.MethodGet, http.MethodHead)
 
 	api := r.PathPrefix("/api/v1").Subrouter()
 	requireAuth := middleware.Auth(issuer)

@@ -3,9 +3,9 @@ package client
 import (
 	"context"
 	"dating-app/gateway/internal/client/mapper"
+	"dating-app/gateway/internal/grpcerr"
+	"dating-app/gateway/internal/model"
 	authpb "dating-app/gen/go/auth/v1"
-	"dating-app/internal/grpcerr"
-	"dating-app/internal/model"
 	"errors"
 	"strconv"
 )

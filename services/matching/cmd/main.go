@@ -145,5 +145,5 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	slog.Info("matching grpc started", "port", cfg.GRPCPort)
 
-	return serveGRPC(ctx, server, listener, cfg.ShutdownTimeout, healthServer.Shutdown)
+	return delivery.ServeGRPC(ctx, server, listener, cfg.ShutdownTimeout, healthServer.Shutdown)
 }

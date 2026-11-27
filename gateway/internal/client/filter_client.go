@@ -3,8 +3,8 @@ package client
 import (
 	"context"
 	"dating-app/gateway/internal/client/mapper"
+	"dating-app/gateway/internal/model"
 	profilepb "dating-app/gen/go/profile/v1"
-	"dating-app/internal/model"
 )
 
 type FilterAdapter struct {

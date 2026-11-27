@@ -1,6 +1,7 @@
-package config
+package config_test
 
 import (
+	"dating-app/gateway/internal/config"
 	"log/slog"
 	"strings"
 	"testing"
@@ -20,7 +21,7 @@ func TestLoad(t *testing.T) {
 	t.Setenv("WS_PONG_TIMEOUT", "60s")
 	t.Setenv("WS_MAX_MESSAGE_BYTES", "1024")
 	t.Setenv("WS_SEND_QUEUE_SIZE", "8")
-	cfg, err := Load()
+	cfg, err := config.Load()
 
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +46,7 @@ func TestLoadCollectsErrors(t *testing.T) {
 	t.Setenv("WS_MAX_MESSAGE_BYTES", "-1")
 	t.Setenv("WS_SEND_QUEUE_SIZE", "invalid")
 	t.Setenv("LOG_LEVEL", "invalid")
-	_, err := Load()
+	_, err := config.Load()
 
 	if err == nil {
 		t.Fatal("expected configuration errors")

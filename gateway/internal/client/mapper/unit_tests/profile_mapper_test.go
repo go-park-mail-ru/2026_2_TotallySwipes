@@ -1,17 +1,18 @@
-package mapper
+package mapper_test
 
 import (
+	"dating-app/gateway/internal/client/mapper"
 	"reflect"
 	"testing"
 
-	"dating-app/internal/model"
+	"dating-app/gateway/internal/model"
 )
 
 func TestProfilePatchPreservesClearAndOmittedFields(t *testing.T) {
 
 	work := "Developer"
 	tags := []string{}
-	request, err := ProfilePatchToProto(7, &model.ProfilePatch{
+	request, err := mapper.ProfilePatchToProto(7, &model.ProfilePatch{
 		AboutMe: model.Optional[string]{Set: true},
 		Work:    model.Optional[string]{Set: true, Value: &work},
 		Tags:    &tags,
@@ -33,24 +34,24 @@ func TestProfilePatchPreservesClearAndOmittedFields(t *testing.T) {
 func TestSearchFilterRoundTrip(t *testing.T) {
 
 	original := model.SearchFilter{Sex: model.SearchSexAll, AgeFrom: 18, AgeTo: 100}
-	result, err := SearchFilterFromProto(SearchFilterToProto(original))
+	result, err := mapper.SearchFilterFromProto(mapper.SearchFilterToProto(original))
 
 	if err != nil || *result != original {
 		t.Fatalf("unexpected filter: %+v, %v", result, err)
 	}
 
-	if _, err := SearchFilterFromProto(nil); err == nil {
+	if _, err := mapper.SearchFilterFromProto(nil); err == nil {
 		t.Fatal("expected missing filter error")
 	}
 }
 
 func TestSwipeMapping(t *testing.T) {
 
-	if _, err := SwipeToProto(&model.Swipe{Action: "unknown"}); err == nil {
+	if _, err := mapper.SwipeToProto(&model.Swipe{Action: "unknown"}); err == nil {
 		t.Fatal("expected unknown action error")
 	}
 
-	if _, err := SwipeToProto(nil); err == nil {
+	if _, err := mapper.SwipeToProto(nil); err == nil {
 		t.Fatal("expected missing swipe error")
 	}
 }

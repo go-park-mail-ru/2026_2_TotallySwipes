@@ -56,7 +56,6 @@ jobs:
           tags: ${{ steps.image.outputs.prefix }}/${{ matrix.service }}:${{ github.sha }}
           build-args: |
             SERVICE_PATH=${{ matrix.path }}
-            VERSION=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 

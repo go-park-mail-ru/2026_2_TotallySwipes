@@ -2,11 +2,11 @@ package handler
 
 import (
 	"context"
-	"dating-app/gateway/internal/client"
 	"dating-app/gateway/internal/config"
 	"dating-app/gateway/internal/handler/dto"
 	"dating-app/gateway/internal/middleware"
 	"dating-app/gateway/internal/model"
+	"dating-app/gateway/internal/port"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -20,21 +20,17 @@ import (
 )
 
 type ChatService interface {
-	SubscribeEvents(ctx context.Context, userID int64) (ChatEventStream, error)
+	SubscribeEvents(ctx context.Context, userID int64) (port.ChatEventStream, error)
 	SendMessage(ctx context.Context, userID int64, command model.ChatSendMessage) (*model.ChatMessage, error)
 	EditMessage(ctx context.Context, userID int64, command model.ChatEditMessage) (*model.ChatMessage, error)
 	DeleteMessage(ctx context.Context, userID int64, command model.ChatDeleteMessage) (*model.ChatMessage, error)
 	ReadChat(ctx context.Context, userID int64, command model.ChatRead) (*model.ChatReadUpdated, error)
 }
 
-type ChatEventStream interface {
-	Recv() (*model.ChatEvent, error)
-}
-
 type WSHandler struct {
 	upgrader websocket.Upgrader
 	cfg      config.WebSocketConfig
-	chat     *client.ChatAdapter
+	chat     ChatService
 
 	mu           sync.Mutex
 	connections  map[*websocket.Conn]context.CancelFunc
@@ -44,7 +40,7 @@ type WSHandler struct {
 	done         chan struct{}
 }
 
-func NewWSHandler(cfg config.WebSocketConfig, chat *client.ChatAdapter) *WSHandler {
+func NewWSHandler(cfg config.WebSocketConfig, chat ChatService) *WSHandler {
 
 	allowedOrigins := make(map[string]bool, len(cfg.AllowedOrigins))
 	for _, origin := range cfg.AllowedOrigins {

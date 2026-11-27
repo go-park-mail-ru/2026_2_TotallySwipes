@@ -1,8 +1,8 @@
 package mapper
 
 import (
+	"dating-app/gateway/internal/model"
 	profilepb "dating-app/gen/go/profile/v1"
-	"dating-app/internal/model"
 	"fmt"
 )
 

@@ -6,8 +6,7 @@ RUN go mod download
 
 COPY . .
 ARG SERVICE_PATH
-ARG VERSION=development
-RUN test -n "$SERVICE_PATH" && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X dating-app/internal/buildinfo.Revision=$VERSION" -o /service "$SERVICE_PATH"
+RUN test -n "$SERVICE_PATH" && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /service "$SERVICE_PATH"
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /healthcheck ./cmd/healthcheck
 
 FROM alpine:3.24

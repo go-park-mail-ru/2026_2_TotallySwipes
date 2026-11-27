@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"context"
-	"dating-app/internal/requestctx"
+	"dating-app/gateway/internal/requestctx"
 	"net/http"
 
 	"github.com/google/uuid"

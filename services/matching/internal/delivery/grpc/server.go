@@ -1,4 +1,4 @@
-package main
+package grpc
 
 import (
 	"context"
@@ -10,7 +10,8 @@ import (
 	"google.golang.org/grpc"
 )
 
-func serveGRPC(ctx context.Context, server *grpc.Server, listener net.Listener, shutdownTimeout time.Duration, markNotServing func()) error {
+// ServeGRPC запускает сервер и завершает активные RPC при остановке приложения.
+func ServeGRPC(ctx context.Context, server *grpc.Server, listener net.Listener, shutdownTimeout time.Duration, markNotServing func()) error {
 	defer server.Stop()
 
 	serveErr := make(chan error, 1)

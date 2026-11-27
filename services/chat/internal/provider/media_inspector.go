@@ -15,7 +15,45 @@ import (
 	"dating-app/services/chat/internal/model"
 )
 
-const mediaProbeTimeout = 10 * time.Second
+const (
+	mediaProbeTimeout          = 10 * time.Second
+	mediaInspectionFilePattern = "chat-media-*"
+	probeFloatBitSize          = 64
+	secondsPerHour             = int(time.Hour / time.Second)
+	secondsPerMinute           = int(time.Minute / time.Second)
+	durationTagFormat          = "%d:%d:%f"
+	durationTagFieldCount      = 3
+)
+
+const (
+	ffprobeBinary                = "ffprobe"
+	ffprobeLogLevelFlag          = "-v"
+	ffprobeLogLevelError         = "error"
+	ffprobeProtocolWhitelistFlag = "-protocol_whitelist"
+	ffprobeFileProtocol          = "file"
+	ffprobeFormatWhitelistFlag   = "-format_whitelist"
+	ffprobeAllowedFormats        = "mov,matroska,webm,ogg,mp3,wav"
+	ffprobeShowPacketsFlag       = "-show_packets"
+	ffprobeShowEntriesFlag       = "-show_entries"
+	ffprobeEntries               = "format=format_name,duration:stream=codec_type,duration:stream_tags=DURATION:packet=pts_time,duration_time"
+	ffprobeOutputFormatFlag      = "-of"
+	ffprobeJSONFormat            = "json"
+)
+
+const (
+	streamTypeAudio = "audio"
+	streamTypeVideo = "video"
+	formatSeparator = ","
+	formatWebM      = "webm"
+	formatMP4       = "mp4"
+	formatOgg       = "ogg"
+	formatMP3       = "mp3"
+	formatWAV       = "wav"
+	audioMIMEPrefix = "audio/"
+	videoMIMEPrefix = "video/"
+	contentTypeMP3  = "audio/mpeg"
+	contentTypeWAV  = "audio/wav"
+)
 
 // FFprobeInspector определяет контейнер, тип дорожек и длительность на сервере.
 type FFprobeInspector struct {
@@ -25,7 +63,7 @@ type FFprobeInspector struct {
 func NewFFprobeInspector(binary string) *FFprobeInspector {
 
 	if binary == "" {
-		binary = "ffprobe"
+		binary = ffprobeBinary
 	}
 
 	return &FFprobeInspector{binary: binary}
@@ -33,7 +71,7 @@ func NewFFprobeInspector(binary string) *FFprobeInspector {
 
 func (p *FFprobeInspector) Inspect(ctx context.Context, data []byte, mediaType model.ChatMessageType) (*model.MediaInfo, error) {
 
-	file, err := os.CreateTemp("", "chat-media-*")
+	file, err := os.CreateTemp("", mediaInspectionFilePattern)
 
 	if err != nil {
 		return nil, fmt.Errorf("create media inspection file: %w", err)
@@ -52,11 +90,14 @@ func (p *FFprobeInspector) Inspect(ctx context.Context, data []byte, mediaType m
 	probeCtx, cancel := context.WithTimeout(ctx, mediaProbeTimeout)
 	defer cancel()
 
-	// Запрещаем сетевые протоколы; проверяем только загруженный файл.
 	output, err := exec.CommandContext(probeCtx, p.binary,
-		"-v", "error", "-protocol_whitelist", "file", "-format_whitelist", "mov,matroska,webm,ogg,mp3,wav",
-		"-show_packets", "-show_entries", "format=format_name,duration:stream=codec_type,duration:stream_tags=DURATION:packet=pts_time,duration_time",
-		"-of", "json", file.Name(),
+		ffprobeLogLevelFlag, ffprobeLogLevelError,
+		ffprobeProtocolWhitelistFlag, ffprobeFileProtocol,
+		ffprobeFormatWhitelistFlag, ffprobeAllowedFormats,
+		ffprobeShowPacketsFlag,
+		ffprobeShowEntriesFlag, ffprobeEntries,
+		ffprobeOutputFormatFlag, ffprobeJSONFormat,
+		file.Name(),
 	).Output()
 
 	if err != nil {
@@ -79,53 +120,37 @@ func (p *FFprobeInspector) Inspect(ctx context.Context, data []byte, mediaType m
 
 func mediaInfoFromProbe(data []byte, mediaType model.ChatMessageType) (*model.MediaInfo, error) {
 
-	var probe struct {
-		Packets []struct {
-			PTS      string `json:"pts_time"`
-			Duration string `json:"duration_time"`
-		} `json:"packets"`
-		Format struct {
-			Name     string `json:"format_name"`
-			Duration string `json:"duration"`
-		} `json:"format"`
-		Streams []struct {
-			Type     string `json:"codec_type"`
-			Duration string `json:"duration"`
-			Tags     struct {
-				Duration string `json:"DURATION"`
-			} `json:"tags"`
-		} `json:"streams"`
-	}
+	var probe ffprobeResponse
 
 	if err := json.Unmarshal(data, &probe); err != nil {
 		return nil, fmt.Errorf("decode ffprobe response: %w", err)
 	}
 
 	audio, video := false, false
-	duration, _ := strconv.ParseFloat(probe.Format.Duration, 64)
+	duration, _ := strconv.ParseFloat(probe.Format.Duration, probeFloatBitSize)
 
 	for _, stream := range probe.Streams {
 
 		switch stream.Type {
 
-		case "audio":
+		case streamTypeAudio:
 			audio = true
 
-		case "video":
+		case streamTypeVideo:
 			video = true
 
 		default:
 			return nil, model.ErrUnsupportedMedia
 		}
 
-		streamDuration, _ := strconv.ParseFloat(stream.Duration, 64)
+		streamDuration, _ := strconv.ParseFloat(stream.Duration, probeFloatBitSize)
 
 		if streamDuration <= 0 && stream.Tags.Duration != "" {
 			var hours, minutes int
 			var seconds float64
 
-			if n, _ := fmt.Sscanf(stream.Tags.Duration, "%d:%d:%f", &hours, &minutes, &seconds); n == 3 {
-				streamDuration = float64(hours*3600+minutes*60) + seconds
+			if n, _ := fmt.Sscanf(stream.Tags.Duration, durationTagFormat, &hours, &minutes, &seconds); n == durationTagFieldCount {
+				streamDuration = float64(hours*secondsPerHour+minutes*secondsPerMinute) + seconds
 			}
 		}
 
@@ -145,8 +170,8 @@ func mediaInfoFromProbe(data []byte, mediaType model.ChatMessageType) (*model.Me
 		start, end := math.Inf(1), math.Inf(-1)
 
 		for _, packet := range probe.Packets {
-			pts, ptsErr := strconv.ParseFloat(packet.PTS, 64)
-			packetDuration, _ := strconv.ParseFloat(packet.Duration, 64)
+			pts, ptsErr := strconv.ParseFloat(packet.PTS, probeFloatBitSize)
+			packetDuration, _ := strconv.ParseFloat(packet.Duration, probeFloatBitSize)
 
 			if ptsErr != nil || math.IsNaN(pts) || math.IsInf(pts, 0) {
 				continue
@@ -167,33 +192,33 @@ func mediaInfoFromProbe(data []byte, mediaType model.ChatMessageType) (*model.Me
 		return nil, model.ErrInvalidMedia
 	}
 
-	prefix := "audio/"
+	prefix := audioMIMEPrefix
 
 	if mediaType == model.ChatMessageTypeVideoNote {
-		prefix = "video/"
+		prefix = videoMIMEPrefix
 	} else if mediaType != model.ChatMessageTypeVoice {
 		return nil, model.ErrUnsupportedMedia
 	}
 
-	formats := "," + probe.Format.Name + ","
+	formats := formatSeparator + probe.Format.Name + formatSeparator
 	contentType := ""
 
 	switch {
 
-	case strings.Contains(formats, ",webm,"):
-		contentType = prefix + "webm"
+	case strings.Contains(formats, formatSeparator+formatWebM+formatSeparator):
+		contentType = prefix + formatWebM
 
-	case strings.Contains(formats, ",mp4,"):
-		contentType = prefix + "mp4"
+	case strings.Contains(formats, formatSeparator+formatMP4+formatSeparator):
+		contentType = prefix + formatMP4
 
-	case strings.Contains(formats, ",ogg,"):
-		contentType = prefix + "ogg"
+	case strings.Contains(formats, formatSeparator+formatOgg+formatSeparator):
+		contentType = prefix + formatOgg
 
-	case mediaType == model.ChatMessageTypeVoice && strings.Contains(formats, ",mp3,"):
-		contentType = "audio/mpeg"
+	case mediaType == model.ChatMessageTypeVoice && strings.Contains(formats, formatSeparator+formatMP3+formatSeparator):
+		contentType = contentTypeMP3
 
-	case mediaType == model.ChatMessageTypeVoice && strings.Contains(formats, ",wav,"):
-		contentType = "audio/wav"
+	case mediaType == model.ChatMessageTypeVoice && strings.Contains(formats, formatSeparator+formatWAV+formatSeparator):
+		contentType = contentTypeWAV
 
 	default:
 		return nil, model.ErrUnsupportedMedia

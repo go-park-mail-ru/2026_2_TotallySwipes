@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"dating-app/internal/handler/dto"
+	"dating-app/gateway/internal/handler/dto"
 )
 
 func TestParseFeedQuery(t *testing.T) {

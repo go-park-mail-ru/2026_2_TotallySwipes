@@ -2,7 +2,7 @@ package handler
 
 import (
 	"context"
-	"dating-app/internal/handler/dto"
+	"dating-app/gateway/internal/handler/dto"
 	"encoding/json"
 	"log/slog"
 	"net/http"

@@ -1,7 +1,8 @@
-package main
+package grpc_test
 
 import (
 	"context"
+	delivery "dating-app/services/matching/internal/delivery/grpc"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -26,7 +27,7 @@ func TestGracefulShutdownIdleServer(t *testing.T) {
 
 	go func() {
 
-		result <- serveGRPC(ctx, grpc.NewServer(), listener, time.Second, func() { marked.Store(true) })
+		result <- delivery.ServeGRPC(ctx, grpc.NewServer(), listener, time.Second, func() { marked.Store(true) })
 	}()
 
 	cancel()
@@ -60,7 +61,7 @@ func TestShutdownStopsLongLivedStream(t *testing.T) {
 
 	go func() {
 
-		result <- serveGRPC(ctx, server, listener, shutdownTimeout, healthServer.Shutdown)
+		result <- delivery.ServeGRPC(ctx, server, listener, shutdownTimeout, healthServer.Shutdown)
 	}()
 
 	conn, err := grpc.NewClient("passthrough:///matching-test",

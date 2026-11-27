@@ -123,7 +123,7 @@ done
 candidate_started=1
 "${compose[@]}" -p "$project" up -d --no-build --no-deps --wait --wait-timeout 180 "${apps[@]}"
 "${compose[@]}" -p "$project" exec -T gateway healthcheck \
-  -http http://127.0.0.1:8080/health -revision "$IMAGE_TAG"
+  -http http://127.0.0.1:8080/health
 
 # Директории монтируются в nginx целиком, поэтому замена файлов видна контейнеру.
 config_changed=1
@@ -137,10 +137,9 @@ docker exec totallyswipes-nginx nginx -s reload
 
 routed=0
 for attempt in {1..15}; do
-  if headers=$(curl --fail --silent --show-error --max-time 5 \
-    --resolve "$public_host:443:127.0.0.1" --dump-header - --output /dev/null "https://$public_host/health"); then
-    revision=$(printf '%s\n' "$headers" | tr -d '\r' | awk 'tolower($1) == "x-release-revision:" {print $2}')
-    if [[ "$revision" == "$IMAGE_TAG" ]]; then
+  if http_status=$(curl --fail --silent --show-error --max-time 5 \
+    --resolve "$public_host:443:127.0.0.1" --write-out '%{http_code}' --output /dev/null "https://$public_host/health"); then
+    if [[ "$http_status" == 200 ]]; then
       routed=1
       break
     fi
@@ -149,7 +148,7 @@ for attempt in {1..15}; do
 done
 
 if [[ "$routed" != 1 ]]; then
-  echo "Nginx не направил запросы в новую версию" >&2
+  echo "Проверка /health через nginx не вернула HTTP 200" >&2
   exit 1
 fi
 

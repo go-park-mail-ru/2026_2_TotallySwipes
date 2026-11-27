@@ -2,8 +2,8 @@ package handler
 
 import (
 	"context"
-	. "dating-app/internal/handler"
-	"dating-app/internal/handler/dto"
+	. "dating-app/gateway/internal/handler"
+	"dating-app/gateway/internal/handler/dto"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"dating-app/internal/model"
+	"dating-app/gateway/internal/model"
 )
 
 type fakeAuth struct {

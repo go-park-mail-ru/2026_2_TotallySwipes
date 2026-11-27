@@ -2,10 +2,10 @@ package handler_test
 
 import (
 	"context"
-	"dating-app/internal/auth"
-	"dating-app/internal/handler"
-	"dating-app/internal/middleware"
-	"dating-app/internal/model"
+	"dating-app/gateway/internal/auth"
+	"dating-app/gateway/internal/handler"
+	"dating-app/gateway/internal/middleware"
+	"dating-app/gateway/internal/model"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"

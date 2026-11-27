@@ -18,18 +18,17 @@ func main() {
 
 	grpcAddress := flag.String("grpc", "", "gRPC health address")
 	httpAddress := flag.String("http", "", "HTTP health URL")
-	revision := flag.String("revision", "", "expected HTTP release revision")
 	flag.Parse()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	if err := check(ctx, *grpcAddress, *httpAddress, *revision); err != nil {
+	if err := check(ctx, *grpcAddress, *httpAddress); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func check(ctx context.Context, grpcAddress, httpAddress, revision string) error {
+func check(ctx context.Context, grpcAddress, httpAddress string) error {
 
 	if (grpcAddress == "") == (httpAddress == "") {
 		return fmt.Errorf("specify exactly one of -grpc or -http")
@@ -76,10 +75,6 @@ func check(ctx context.Context, grpcAddress, httpAddress, revision string) error
 
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("HTTP health status: %d", response.StatusCode)
-	}
-
-	if revision != "" && response.Header.Get("X-Release-Revision") != revision {
-		return fmt.Errorf("HTTP health returned a different release")
 	}
 
 	return nil

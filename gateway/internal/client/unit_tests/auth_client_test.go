@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"dating-app/gateway/internal/client"
+	"dating-app/gateway/internal/grpcerr"
+	"dating-app/gateway/internal/model"
 	authpb "dating-app/gen/go/auth/v1"
-	"dating-app/internal/grpcerr"
-	"dating-app/internal/model"
 
 	"google.golang.org/grpc"
 )

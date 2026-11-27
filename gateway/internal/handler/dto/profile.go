@@ -2,8 +2,8 @@ package dto
 
 import (
 	"bytes"
-	"dating-app/internal/model"
-	"dating-app/internal/validate"
+	"dating-app/gateway/internal/model"
+	"dating-app/gateway/internal/validate"
 	"encoding/json"
 	"strings"
 	"time"

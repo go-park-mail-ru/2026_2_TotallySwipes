@@ -2,7 +2,7 @@ package logging
 
 import (
 	"context"
-	"dating-app/internal/requestctx"
+	"dating-app/gateway/internal/requestctx"
 	"log/slog"
 )
 

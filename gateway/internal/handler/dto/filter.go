@@ -1,8 +1,8 @@
 package dto
 
 import (
-	"dating-app/internal/model"
-	"dating-app/internal/validate"
+	"dating-app/gateway/internal/model"
+	"dating-app/gateway/internal/validate"
 )
 
 type FilterResponse struct {

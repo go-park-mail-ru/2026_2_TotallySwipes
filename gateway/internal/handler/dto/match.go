@@ -1,7 +1,7 @@
 package dto
 
 import (
-	"dating-app/internal/model"
+	"dating-app/gateway/internal/model"
 	"net/url"
 	"strconv"
 	"time"

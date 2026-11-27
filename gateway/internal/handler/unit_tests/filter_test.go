@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	. "dating-app/internal/handler"
-	"dating-app/internal/model"
+	. "dating-app/gateway/internal/handler"
+	"dating-app/gateway/internal/model"
 
 	"github.com/gorilla/mux"
 )
