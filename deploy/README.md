@@ -1,5 +1,8 @@
 # Конфигурация микросервисов
 
+Деплой из GitHub Actions описан в [production.md](production.md).
+Для ручного запуска и CI/CD используется один `docker-compose.microservices.yml`.
+
 `docker-compose.microservices.yml` — отдельная конфигурация, основной Compose монолита
 не меняется. Имя проекта, сети и volumes отдельные: `totallyswipes-microservices`.
 
@@ -78,8 +81,7 @@ docker compose -f docker-compose.microservices.yml up -d --build auth profile ma
 
 Точки входа Auth, Profile, Matching, Chat и Gateway подключены. Проверка сборки
 и nginx не заменяет сквозную проверку всего приложения.
-Readiness gRPC в Compose пока не настроен: service_started проверяет запуск процесса,
-а не готовность RPC.
+Готовность приложений проверяется через gRPC Health Check и HTTP `/health` Gateway.
 
 `GRPC_REQUEST_TIMEOUT` ограничивает длительность обычных RPC Gateway, включая команды
 из WebSocket. Подписка `SubscribeEvents` живёт до закрытия соединения и этим таймаутом
@@ -89,7 +91,7 @@ Readiness gRPC в Compose пока не настроен: service_started про
 код закрытия 1001, отменяет их подписки и ждёт завершения циклов. Обычные HTTP-запросы
 могут завершиться в пределах `SHUTDOWN_TIMEOUT`; после его истечения соединения
 закрываются принудительно. Затем закрываются gRPC-клиенты. В Compose для Gateway
-задан `stop_grace_period: 15s`, больше стандартного `SHUTDOWN_TIMEOUT=10s`.
+задан `stop_grace_period: 30s`, больше стандартного `SHUTDOWN_TIMEOUT=10s`.
 При увеличении `SHUTDOWN_TIMEOUT` нужно также увеличить `stop_grace_period`.
 
 - `profile` — анкета, фото (загрузка, удаление, порядок, отдача файла для `/media/...`),
@@ -137,6 +139,7 @@ Nginx находится в профиле `edge`, поэтому по умол�
 
 ```bash
 docker network create totallyswipes-edge
+docker network create --internal totallyswipes-data
 ```
 
 Бэкенд уже подключает Gateway и nginx к этой внешней сети. В Compose фронтенда добавить
@@ -201,7 +204,7 @@ docker compose -f docker-compose.microservices.yml --profile edge exec nginx ngi
 
 - `edge` (`totallyswipes-edge`) — Nginx, Gateway и фронтенд из отдельного Compose;
 - `backend` — Gateway и микросервисы, с исходящим доступом к внешним API;
-- `data` — сервисы и хранилища, внутренняя сеть Docker.
+- `data` (`totallyswipes-data`) — сервисы и хранилища, общая внутренняя сеть Docker.
 
 Gateway не подключён к data-сети. PostgreSQL, Redis, MinIO и gRPC-порты не публикуются
 на хост. Только Nginx публикует 80/443, когда включён его профиль.

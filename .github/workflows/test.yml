@@ -2,8 +2,9 @@ name: Test
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, dev3]
   pull_request:
+  workflow_call:
 
 concurrency:
   group: test-${{ github.ref }}
@@ -26,7 +27,7 @@ jobs:
         run: go vet ./...
 
       - name: Unit tests
-        run: go test -race -covermode=atomic -coverpkg=./internal/... -coverprofile=coverage.out $(go list ./... | grep /unit_tests$)
+        run: go test -race -covermode=atomic -coverpkg=./internal/...,./gateway/internal/...,./services/auth/internal/...,./services/profile/internal/...,./services/matching/internal/...,./services/chat/internal/... -coverprofile=coverage.out ./...
 
       - name: Coverage report
         run: |

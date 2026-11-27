@@ -1,15 +1,10 @@
-name: Deploy
+name: Deploy microservices
 
 on:
   workflow_dispatch:
-    inputs:
-      reset_data:
-        description: 'Снести базу, Redis и фото перед деплоем'
-        type: boolean
-        default: false
 
 concurrency:
-  group: deploy
+  group: deploy-production
   cancel-in-progress: false
 
 permissions:
@@ -17,17 +12,32 @@ permissions:
   packages: write
 
 jobs:
-  deploy:
+  checks:
+    uses: ./.github/workflows/test.yml
+
+  build:
+    needs: checks
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: auth
+            path: ./services/auth/cmd
+          - service: profile
+            path: ./services/profile/cmd
+          - service: matching
+            path: ./services/matching/cmd
+          - service: chat
+            path: ./services/chat/cmd
+          - service: gateway
+            path: ./gateway/cmd
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set image name
+      - name: Image prefix
         id: image
-        run: |
-          name="ghcr.io/${GITHUB_REPOSITORY,,}/api:${GITHUB_SHA}"
-          echo "name=$name" >> "$GITHUB_OUTPUT"
-          echo "API_IMAGE=$name" >> "$GITHUB_ENV"
+        run: echo "prefix=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/login-action@v3
         with:
@@ -37,20 +47,32 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build and push image
+      - name: Build and push service
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: deploy/Dockerfile.microservices
           push: true
-          tags: ${{ steps.image.outputs.name }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.image.outputs.prefix }}/${{ matrix.service }}:${{ github.sha }}
+          build-args: |
+            SERVICE_PATH=${{ matrix.path }}
+            VERSION=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Set up SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ vars.SSH_USER || 'ubuntu' }}
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
@@ -59,54 +81,58 @@ jobs:
           cat > ~/.ssh/config <<EOF
           Host server
             HostName $SSH_HOST
-            User ubuntu
+            User $SSH_USER
             IdentityFile ~/.ssh/id_deploy
             IdentitiesOnly yes
           EOF
 
-      - name: Upload config
-        env:
-          DOCKER_ENV: ${{ secrets.DOCKER_ENV }}
+      - name: Upload release
         run: |
-          ssh server 'mkdir -p ~/app'
-          rsync -az --delete --exclude=/db/data/ docker-compose.yml db server:~/app/
-          printf '%s\nAPI_IMAGE=%s\n' "$DOCKER_ENV" "$API_IMAGE" | ssh server 'umask 077 && cat > ~/app/.env'
+          ssh server "mkdir -p ~/app/releases/$GITHUB_SHA/deploy/env && chmod 700 ~/app/releases/$GITHUB_SHA/deploy/env"
+          rsync -az --exclude='.git/' --exclude='*.env' --exclude='certs/' --exclude='arifacts/' --exclude='logs/' \
+            ./ "server:~/app/releases/$GITHUB_SHA/"
 
-      - name: Deploy
+      - name: Upload service env files
+        env:
+          AUTH_ENV: ${{ secrets.AUTH_ENV }}
+          PROFILE_ENV: ${{ secrets.PROFILE_ENV }}
+          MATCHING_ENV: ${{ secrets.MATCHING_ENV }}
+          CHAT_ENV: ${{ secrets.CHAT_ENV }}
+          GATEWAY_ENV: ${{ secrets.GATEWAY_ENV }}
+          POSTGRES_ENV: ${{ secrets.POSTGRES_ENV }}
+          MINIO_ENV: ${{ secrets.MINIO_ENV }}
+        run: |
+          set -euo pipefail
+          for service in auth profile matching chat gateway postgres minio; do
+            secret_name="${service^^}_ENV"
+            if [ -z "${!secret_name}" ]; then
+              echo "Missing GitHub secret: $secret_name" >&2
+              exit 1
+            fi
+            printf '%s\n' "${!secret_name}" | ssh server "umask 077; cat > ~/app/releases/$GITHUB_SHA/deploy/env/$service.env"
+          done
+
+      - name: Login to registry on server
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           printf '%s' "$GHCR_TOKEN" | ssh server "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
-          ssh server bash -s <<'EOF'
+
+      - name: Deploy microservices
+        env:
+          LEGACY_PROJECT: ${{ vars.LEGACY_PROJECT || 'app' }}
+          PUBLIC_HOST: ${{ vars.PUBLIC_HOST || 'totallyswipes.ru' }}
+        run: |
+          prefix="ghcr.io/${GITHUB_REPOSITORY,,}"
+          ssh server bash -s -- "$GITHUB_SHA" "$prefix" "$LEGACY_PROJECT" "$PUBLIC_HOST" <<'REMOTE'
           set -euo pipefail
-          cd ~/app
-          set -a && . ./.env && set +a
+          revision="$1"
+          prefix="$2"
+          export LEGACY_PROJECT="$3"
+          export PUBLIC_HOST="$4"
+          bash "$HOME/app/releases/$revision/scripts/deploy/deploy.sh" "$HOME/app" "$prefix" "$revision"
+          REMOTE
 
-          docker compose pull api
-          docker logout ghcr.io
-
-          if [ "${{ inputs.reset_data }}" = "true" ]; then
-            docker compose --profile tools down -v --remove-orphans
-          fi
-
-          docker compose up -d --wait postgres redis
-          docker compose --profile tools run --rm -T migrate -path=/migrations -database "$DATABASE_URL" up </dev/null
-          docker compose up -d --no-build --remove-orphans api
-          docker image prune -f
-
-          docker compose ps
-          health_url="http://127.0.0.1:${PORT:-8080}/health"
-          health_curl_args=()
-          if [ -n "${TLS_CERT_FILE:-}" ]; then
-            health_url="https://127.0.0.1:${PORT:-8080}/health"
-            # Local probe uses an IP address rather than the certificate's domain.
-            health_curl_args=(--insecure)
-          fi
-          for i in $(seq 1 15); do
-            curl -fsS "${health_curl_args[@]}" "$health_url" && exit 0
-            sleep 2
-          done
-          echo "API не ответил на /health" >&2
-          docker compose logs --tail 50 api
-          exit 1
-          EOF
+      - name: Logout from registry on server
+        if: always()
+        run: ssh server 'docker logout ghcr.io' || true
