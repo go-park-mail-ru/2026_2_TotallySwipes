@@ -52,6 +52,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      profile:
+        condition: service_started
     volumes:
       - microservices_logs:/logs
 

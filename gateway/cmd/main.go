@@ -10,6 +10,7 @@ import (
 	matchpb "dating-app/gen/go/match/v1"
 	profilepb "dating-app/gen/go/profile/v1"
 	"dating-app/internal/auth"
+	"dating-app/internal/grpcclient"
 	"dating-app/internal/storage/s3"
 	"log/slog"
 	"net/http"
@@ -17,8 +18,6 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type handlers struct {
@@ -71,16 +70,9 @@ func start() error {
 
 func run(cfg *config.Config) error {
 
-	// ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
-	// defer cancel()
-
-	authConn, err := grpc.NewClient(
-		cfg.GRPC.AuthAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-
+	authConn, err := grpcclient.Dial(cfg.GRPC.AuthAddr, cfg.GRPC.RequestTimeout)
 	if err != nil {
-		return nil
+		return err
 	}
 	defer authConn.Close()
 
@@ -88,13 +80,9 @@ func run(cfg *config.Config) error {
 	authAdapter := client.NewAuthAdapter(authClient)
 	authHandler := handler.NewAuthHandler(authAdapter, cfg.Auth.CookieSecure)
 
-	profileConn, err := grpc.NewClient(
-		cfg.GRPC.ProfileAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-
+	profileConn, err := grpcclient.Dial(cfg.GRPC.ProfileAddr, cfg.GRPC.RequestTimeout)
 	if err != nil {
-		return nil
+		return err
 	}
 	defer profileConn.Close()
 
@@ -111,13 +99,9 @@ func run(cfg *config.Config) error {
 	filterHandler := handler.NewFilterHandler(filterAdapter)
 	locationHandler := handler.NewLocationHandler(locationAdapter)
 
-	matchConn, err := grpc.NewClient(
-		cfg.GRPC.MatchingAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-
+	matchConn, err := grpcclient.Dial(cfg.GRPC.MatchingAddr, cfg.GRPC.RequestTimeout)
 	if err != nil {
-		return nil
+		return err
 	}
 	defer matchConn.Close()
 

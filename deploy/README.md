@@ -75,11 +75,30 @@ docker compose -f docker-compose.microservices.yml exec -T postgres \
 docker compose -f docker-compose.microservices.yml up -d --build auth profile matching chat gateway
 ```
 
-Это заготовка окружения: точки входа gRPC-сервисов сейчас пустые и завершаются сразу;
-Gateway тоже ещё дорабатывается. Стек нельзя считать работающим приложением до реализации
-серверов и проверки сборки. Переменные GRPC_PORT и LOG_LEVEL должны читаться будущими
-конфигами сервисов; Compose только передаёт их окружению. Readiness gRPC пока не настроен:
-service_started проверяет запуск процесса, а не готовность RPC.
+Сервисы `auth` и `profile` реализованы: это gRPC-серверы поверх общей логики из `internal/`
+(репозитории, сервисы, хранилища). Точки входа `matching` и `chat` пока пустые и завершаются сразу,
+поэтому ручки ленты, мэтчей и чата через Gateway ещё не работают.
+
+- `profile` — анкета, фото (загрузка, удаление, порядок, отдача файла для `/media/...`),
+  психологический тест, фильтр поиска, геолокация и внутренние RPC для matching/chat:
+  `SearchCandidates`, `GetProfilesBatch`, `GetProfileChatSummaries`.
+- `auth` — регистрация, вход, refresh и logout. Список незаполненных полей анкеты при входе
+  запрашивает у `profile` по gRPC, поэтому стартует после него.
+
+Общий слой gRPC:
+
+- `internal/grpcserver` — интерсепторы (recovery, request ID из метаданных `x-request-id`,
+  логирование, перевод ошибок), health-сервис, reflection и graceful shutdown по `SHUTDOWN_TIMEOUT`;
+- `internal/grpcclient` — клиентское соединение: проброс request ID, таймаут `GRPC_REQUEST_TIMEOUT`,
+  восстановление доменных ошибок;
+- `internal/grpcerr` — реестр доменных ошибок `internal/model` ↔ gRPC-код и `ErrorInfo.reason`.
+  Благодаря ему Gateway получает те же `model.Err*`, что и монолит, и отвечает теми же HTTP-кодами.
+  Новую доменную ошибку нужно добавить в реестр, иначе клиент получит `Internal`.
+
+Сообщения gRPC ограничены `validate.PhotoMaxSize + 1 МБ` на обеих сторонах, чтобы проходили фото.
+Readiness gRPC в Compose не настроен: service_started проверяет запуск процесса, а не готовность RPC.
+Проверить сервис вручную можно через health/reflection, например
+`grpcurl -plaintext profile:50051 list` из контейнера в сети `backend`.
 
 ## Nginx и сеть
 

@@ -48,3 +48,12 @@ proto:
 		--go-grpc_out=. \
 		--go-grpc_opt=module=dating-app \
 		$(PROTO_FILES)
+.PHONY: run-auth run-profile run-gateway
+run-auth:
+	set -a && . ./deploy/env/auth.env && set +a && go run ./services/auth/cmd
+
+run-profile:
+	set -a && . ./deploy/env/profile.env && set +a && go run ./services/profile/cmd
+
+run-gateway:
+	set -a && . ./deploy/env/gateway.env && set +a && go run ./gateway/cmd

@@ -9,6 +9,11 @@ import (
 )
 
 func New(dir string) (*slog.Logger, io.Closer, error) {
+	return NewWithLevel(dir, slog.LevelInfo)
+}
+
+// NewWithLevel - как New, но с заданным минимальным уровнем логирования.
+func NewWithLevel(dir string, level slog.Level) (*slog.Logger, io.Closer, error) {
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, nil, fmt.Errorf("create logs directory: %w", err)
 	}
@@ -24,7 +29,7 @@ func New(dir string) (*slog.Logger, io.Closer, error) {
 
 	output := io.MultiWriter(os.Stdout, file)
 	handler := slog.NewJSONHandler(output, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: level,
 	})
 
 	return slog.New(NewLogHandler(handler)), file, nil
