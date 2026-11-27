@@ -6,6 +6,8 @@ import (
 	"net"
 	"os/exec"
 
+	profilepb "dating-app/gen/go/profile/v1"
+
 	chatpb "dating-app/services/chat/api/gen/go/chat/v1"
 	"dating-app/services/chat/internal/broker"
 	"dating-app/services/chat/internal/client"

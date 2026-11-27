@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	profilepb "dating-app/gen/go/profile/v1"
 	"dating-app/services/chat/internal/model"
 	"fmt"
 )

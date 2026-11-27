@@ -39,6 +39,8 @@ type ProfileRepository interface {
 	GetCandidatesByCursorAndLimit(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error)
 	// GetMatchedProfile возвращает анкету targetID и id мэтча с viewerID; model.ErrNotFound, если мэтча нет.
 	GetMatchedProfile(ctx context.Context, viewerID, targetID int64) (*model.Profile, int64, error)
+	// GetByUserIDs возвращает анкеты из списка, подходящие под filter, в порядке userIDs; без анкеты - пропуск.
+	GetByUserIDs(ctx context.Context, userIDs []int64, filter *model.ProfilesFilter) ([]model.Profile, error)
 }
 
 type ProfileService struct {
@@ -166,20 +168,9 @@ func (s *ProfileService) GetShortProfile(ctx context.Context, userID int64) (*mo
 // GetNextFeed формирует страницу анкет с возрастом, URL фото и совместимостью при наличии обоих векторов.
 func (s *ProfileService) GetNextFeed(ctx context.Context, userID int64, limit int, cursor *int64) (*model.FeedPage, error) {
 
-	if userID <= 0 || limit < 1 || limit > 10 || (cursor != nil && *cursor <= 0) {
-		return nil, fmt.Errorf("%w: invalid user ID, limit or cursor", model.ErrInvalidFeedRequest)
-	}
-
-	userProfile, err := s.profileRepo.GetByUserIDCurrentProfile(ctx, userID)
+	userProfile, err := s.feedViewer(ctx, userID, limit, cursor)
 	if err != nil {
-		return nil, fmt.Errorf("get feed viewer profile: %w", profileRequired(err))
-	}
-
-	if len(userProfile.Missing()) > 0 {
-		return nil, fmt.Errorf("get feed user id=%d: profile incomplete: %w", userID, model.ErrProfileRequired)
-	}
-	if userProfile.City == nil {
-		return nil, fmt.Errorf("get feed: %w", model.ErrLocationRequired)
+		return nil, err
 	}
 	userVector, _ := feedBigFive(userProfile.CurrentPsycho)
 	candidates, nextCursor, err := s.profileRepo.GetCandidatesByCursorAndLimit(ctx, userID, limit, cursor)
@@ -304,4 +295,83 @@ func feedBigFive(psycho *model.ProfilePsycho) (*model.BigFive, bool) {
 		Extraversion: psycho.Extraversion, Agreeableness: psycho.Agreeableness,
 		Neuroticism: psycho.Neuroticism,
 	}, true
+}
+
+// MaxFeedLimit - наибольший размер страницы ленты.
+const MaxFeedLimit = 10
+
+// MaxProfilesBatch - наибольшее число анкет в одной пакетной выборке.
+const MaxProfilesBatch = 200
+
+// feedViewer проверяет параметры страницы ленты и что анкета зрителя заполнена и у неё указан город.
+func (s *ProfileService) feedViewer(ctx context.Context, userID int64, limit int, cursor *int64) (*model.Profile, error) {
+	if userID <= 0 || limit < 1 || limit > MaxFeedLimit || (cursor != nil && *cursor <= 0) {
+		return nil, fmt.Errorf("%w: invalid user ID, limit or cursor", model.ErrInvalidFeedRequest)
+	}
+
+	userProfile, err := s.profileRepo.GetByUserIDCurrentProfile(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get feed viewer profile: %w", profileRequired(err))
+	}
+
+	if len(userProfile.Missing()) > 0 {
+		return nil, fmt.Errorf("get feed user id=%d: profile incomplete: %w", userID, model.ErrProfileRequired)
+	}
+	if userProfile.City == nil {
+		return nil, fmt.Errorf("get feed: %w", model.ErrLocationRequired)
+	}
+	return userProfile, nil
+}
+
+// SearchCandidates возвращает страницу заполненных анкет для ленты пользователя с URL фото и курсор следующей;
+// совместимость и оформление карточек остаются на стороне вызывающего (сервис мэтчинга).
+func (s *ProfileService) SearchCandidates(ctx context.Context, userID int64, limit int, cursor *int64) ([]model.FeedCandidate, *int64, error) {
+	if _, err := s.feedViewer(ctx, userID, limit, cursor); err != nil {
+		return nil, nil, err
+	}
+
+	candidates, nextCursor, err := s.profileRepo.GetCandidatesByCursorAndLimit(ctx, userID, limit, cursor)
+	if err != nil {
+		return nil, nil, fmt.Errorf("search candidates: %w", err)
+	}
+
+	result := make([]model.FeedCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if missing := candidate.Profile.Missing(); len(missing) > 0 {
+			slog.WarnContext(ctx, "feed: incomplete profile passed SQL filter", "user_id", candidate.Profile.UserID, "missing", missing)
+			continue
+		}
+		if err := s.fillPhotoURLs(ctx, candidate.Profile.Photos); err != nil {
+			return nil, nil, fmt.Errorf("search candidates: %w", err)
+		}
+		result = append(result, candidate)
+	}
+	return result, nextCursor, nil
+}
+
+// GetProfilesBatch возвращает анкеты пользователей из списка с URL фото, подходящие под filter,
+// в порядке userIDs; пользователи без анкеты пропускаются.
+func (s *ProfileService) GetProfilesBatch(ctx context.Context, userIDs []int64, filter *model.ProfilesFilter) ([]model.Profile, error) {
+	if len(userIDs) > MaxProfilesBatch {
+		return nil, fmt.Errorf("get profiles batch: %d ids: %w", len(userIDs), model.ErrInvalidMatchesRequest)
+	}
+	for _, id := range userIDs {
+		if id <= 0 {
+			return nil, fmt.Errorf("get profiles batch: user id=%d: %w", id, model.ErrInvalidMatchesRequest)
+		}
+	}
+	if filter != nil && filter.AgeFrom != nil && filter.AgeTo != nil && *filter.AgeFrom > *filter.AgeTo {
+		return nil, fmt.Errorf("get profiles batch: age range: %w", model.ErrInvalidMatchesRequest)
+	}
+
+	profiles, err := s.profileRepo.GetByUserIDs(ctx, userIDs, filter)
+	if err != nil {
+		return nil, fmt.Errorf("get profiles batch: %w", err)
+	}
+	for i := range profiles {
+		if err := s.fillPhotoURLs(ctx, profiles[i].Photos); err != nil {
+			return nil, fmt.Errorf("get profiles batch: %w", err)
+		}
+	}
+	return profiles, nil
 }

@@ -76,8 +76,8 @@ docker compose -f docker-compose.microservices.yml exec -T postgres \
 docker compose -f docker-compose.microservices.yml up -d --build auth profile matching chat gateway
 ```
 
-Точки входа Chat, Matching и WebSocket Gateway подключены; Auth и Profile ещё требуют
-доработки. Проверка nginx не подтверждает работоспособность всего приложения.
+Точки входа Auth, Profile, Matching, Chat и Gateway подключены. Проверка сборки
+и nginx не заменяет сквозную проверку всего приложения.
 Readiness gRPC в Compose пока не настроен: service_started проверяет запуск процесса,
 а не готовность RPC.
 
@@ -91,6 +91,28 @@ Readiness gRPC в Compose пока не настроен: service_started про
 закрываются принудительно. Затем закрываются gRPC-клиенты. В Compose для Gateway
 задан `stop_grace_period: 15s`, больше стандартного `SHUTDOWN_TIMEOUT=10s`.
 При увеличении `SHUTDOWN_TIMEOUT` нужно также увеличить `stop_grace_period`.
+
+- `profile` — анкета, фото (загрузка, удаление, порядок, отдача файла для `/media/...`),
+  психологический тест, фильтр поиска, геолокация и внутренние RPC для matching/chat:
+  `SearchCandidates`, `GetProfilesBatch`, `GetProfileChatSummaries`.
+- `auth` — регистрация, вход, refresh и logout. Список незаполненных полей анкеты при входе
+  запрашивает у `profile` по gRPC, поэтому стартует после него.
+
+Общий слой gRPC:
+
+- `internal/grpcserver` — интерсепторы (recovery, request ID из метаданных `x-request-id`,
+  логирование, перевод ошибок), health-сервис, reflection и graceful shutdown по `SHUTDOWN_TIMEOUT`;
+- `internal/grpcclient` — клиентское соединение: проброс request ID, таймаут `GRPC_REQUEST_TIMEOUT`,
+  восстановление доменных ошибок;
+- `internal/grpcerr` — реестр доменных ошибок `internal/model` ↔ gRPC-код и `ErrorInfo.reason`.
+  Благодаря ему Gateway получает те же `model.Err*`, что и монолит, и отвечает теми же HTTP-кодами.
+  Новую доменную ошибку нужно добавить в реестр, иначе клиент получит `Internal`.
+
+В Gateway общий gRPC-интерсептор пробрасывает request ID и восстанавливает ошибки
+Auth/Profile; отдельный UnaryTimeoutInterceptor ограничивает длительность каждого RPC.
+Лимит сообщений для Auth/Profile соответствует максимальному размеру фото с запасом,
+для отправки медиа в Chat — 12 МиБ. Health-сервисы есть у всех gRPC-сервисов,
+reflection подключён у Auth/Profile.
 
 ## Nginx и сеть
 

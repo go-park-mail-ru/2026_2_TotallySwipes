@@ -243,3 +243,12 @@ type ProfileShort struct {
 	Missing      []string
 	City         *string
 }
+
+// ProfilesFilter - необязательные условия пакетной выборки анкет; nil-поле не ограничивает выборку.
+type ProfilesFilter struct {
+	// Name - подстрока имени без учёта регистра.
+	Name    *string
+	AgeFrom *int
+	AgeTo   *int
+	Sex     *Sex
+}

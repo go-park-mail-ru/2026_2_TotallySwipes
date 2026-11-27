@@ -4,7 +4,10 @@ import (
 	"context"
 	"dating-app/gateway/internal/client/mapper"
 	authpb "dating-app/gen/go/auth/v1"
+	"dating-app/internal/grpcerr"
 	"dating-app/internal/model"
+	"errors"
+	"strconv"
 )
 
 type AuthAdapter struct {
@@ -28,6 +31,12 @@ func (a *AuthAdapter) Login(ctx context.Context, email, password string) (model.
 func (a *AuthAdapter) Register(ctx context.Context, in model.RegisterInput) (model.AuthResult, error) {
 
 	response, err := a.client.Register(ctx, &authpb.RegisterRequest{Email: in.Email, Password: in.Password})
+
+	if errors.Is(err, model.ErrSessionNotOpened) {
+		// Аккаунт создан с пустой анкетой, но без сессии: хендлер ответит 201 без cookie.
+		userID, _ := strconv.ParseInt(grpcerr.Metadata(err)[grpcerr.MetadataUserID], 10, 64)
+		return model.AuthResult{UserID: userID, Missing: (&model.Profile{}).Missing()}, err
+	}
 
 	if err != nil {
 		return model.AuthResult{}, err

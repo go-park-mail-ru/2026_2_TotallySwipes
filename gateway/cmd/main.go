@@ -10,6 +10,7 @@ import (
 	authpb "dating-app/gen/go/auth/v1"
 	profilepb "dating-app/gen/go/profile/v1"
 	"dating-app/internal/auth"
+	"dating-app/internal/grpcclient"
 	"dating-app/internal/storage/s3"
 	chatpb "dating-app/services/chat/api/gen/go/chat/v1"
 	matchpb "dating-app/services/matching/api/gen/go/match/v1"
@@ -83,7 +84,11 @@ func run(ctx context.Context, cfg *config.Config) error {
 	authConn, err := grpc.NewClient(
 		cfg.GRPC.AuthAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithChainUnaryInterceptor(client.UnaryTimeoutInterceptor(cfg.GRPC.RequestTimeout)),
+		grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(grpcclient.MaxMsgSize), grpc.MaxCallRecvMsgSize(grpcclient.MaxMsgSize)),
+		grpc.WithChainUnaryInterceptor(
+			grpcclient.UnaryInterceptor(0),
+			client.UnaryTimeoutInterceptor(cfg.GRPC.RequestTimeout),
+		),
 	)
 
 	if err != nil {
@@ -98,7 +103,11 @@ func run(ctx context.Context, cfg *config.Config) error {
 	profileConn, err := grpc.NewClient(
 		cfg.GRPC.ProfileAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithChainUnaryInterceptor(client.UnaryTimeoutInterceptor(cfg.GRPC.RequestTimeout)),
+		grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(grpcclient.MaxMsgSize), grpc.MaxCallRecvMsgSize(grpcclient.MaxMsgSize)),
+		grpc.WithChainUnaryInterceptor(
+			grpcclient.UnaryInterceptor(0),
+			client.UnaryTimeoutInterceptor(cfg.GRPC.RequestTimeout),
+		),
 	)
 
 	if err != nil {
@@ -122,7 +131,11 @@ func run(ctx context.Context, cfg *config.Config) error {
 	matchConn, err := grpc.NewClient(
 		cfg.GRPC.MatchingAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithChainUnaryInterceptor(client.UnaryTimeoutInterceptor(cfg.GRPC.RequestTimeout)),
+		grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(grpcclient.MaxMsgSize), grpc.MaxCallRecvMsgSize(grpcclient.MaxMsgSize)),
+		grpc.WithChainUnaryInterceptor(
+			grpcclient.UnaryInterceptor(0),
+			client.UnaryTimeoutInterceptor(cfg.GRPC.RequestTimeout),
+		),
 	)
 
 	if err != nil {
@@ -144,7 +157,11 @@ func run(ctx context.Context, cfg *config.Config) error {
 	chatConn, err := grpc.NewClient(
 		cfg.GRPC.ChatAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithChainUnaryInterceptor(client.UnaryTimeoutInterceptor(cfg.GRPC.RequestTimeout)),
+		grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(grpcclient.MaxMsgSize), grpc.MaxCallRecvMsgSize(grpcclient.MaxMsgSize)),
+		grpc.WithChainUnaryInterceptor(
+			grpcclient.UnaryInterceptor(0),
+			client.UnaryTimeoutInterceptor(cfg.GRPC.RequestTimeout),
+		),
 		grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(maxChatGRPCMessageSize)),
 	)
 

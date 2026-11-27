@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"dating-app/internal/model"
@@ -48,7 +49,11 @@ const insertProfileTagsQuery = `INSERT INTO profile_tag (profile_version_id, tag
 								SELECT $1, tag_id
 								FROM unnest($2::bigint[]) AS tags(tag_id)`
 
-const profileSelect = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
+const profileSelect = profileSelectFrom + `
+			WHERE p.user_id = $1`
+
+// profileSelectFrom - выборка анкеты с актуальными версией, психопрофилем и городом, без условия WHERE.
+const profileSelectFrom = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
 	       EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id), l.city,
 	       v.id, v.recorded_at, v.name, v.birth_date, v.sex, v.dating_goal, v.about_me,
 	       v.education, v.work, v.smoking, v.alcohol, v.height,
@@ -61,8 +66,16 @@ const profileSelect = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
 			LEFT JOIN LATERAL (
 				SELECT * FROM profile_psycho WHERE profile_id = p.id ORDER BY revision DESC LIMIT 1
 			) AS ps ON true
-			LEFT JOIN user_location AS l ON l.user_id = p.user_id
-			WHERE p.user_id = $1`
+			LEFT JOIN user_location AS l ON l.user_id = p.user_id`
+
+// profilesByUserIDsQuery - анкеты пользователей из списка с необязательными фильтрами
+// по подстроке имени ($2), возрасту ($3, $4 на дату $6) и полу ($5).
+const profilesByUserIDsQuery = profileSelectFrom + `
+			WHERE p.user_id = ANY($1::bigint[])
+			AND ($2::text IS NULL OR v.name ILIKE '%' || $2::text || '%' ESCAPE '\')
+			AND ($3::int IS NULL OR date_part('year', age($6::date, v.birth_date)) >= $3::int)
+			AND ($4::int IS NULL OR date_part('year', age($6::date, v.birth_date)) <= $4::int)
+			AND ($5::text IS NULL OR v.sex = $5::text)`
 
 const feedSelectBase = `SELECT p.id, p.user_id, p.created_at, p.updated_at,
 	       EXISTS (SELECT 1 FROM search_filter WHERE user_id = p.user_id), l.city,
@@ -699,4 +712,86 @@ func readFeedBatch(ctx context.Context, tx *sql.Tx, afterID, userID int64, limit
 	}
 
 	return candidates, nil
+}
+
+// likeEscaper экранирует спецсимволы шаблона LIKE, чтобы имя искалось как обычная подстрока.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// GetByUserIDs загружает анкеты пользователей из списка с тегами и фото, отбрасывая не подходящие под filter;
+// пользователи без анкеты пропускаются, порядок результата совпадает с порядком userIDs.
+func (r *ProfileRepo) GetByUserIDs(ctx context.Context, userIDs []int64, filter *model.ProfilesFilter) ([]model.Profile, error) {
+	if len(userIDs) == 0 {
+		return []model.Profile{}, nil
+	}
+
+	var name sql.NullString
+	var ageFrom, ageTo sql.NullInt64
+	var sex sql.NullString
+	if filter != nil {
+		if filter.Name != nil && *filter.Name != "" {
+			name = sql.NullString{String: likeEscaper.Replace(*filter.Name), Valid: true}
+		}
+		if filter.AgeFrom != nil {
+			ageFrom = sql.NullInt64{Int64: int64(*filter.AgeFrom), Valid: true}
+		}
+		if filter.AgeTo != nil {
+			ageTo = sql.NullInt64{Int64: int64(*filter.AgeTo), Valid: true}
+		}
+		if filter.Sex != nil {
+			sex = sql.NullString{String: string(*filter.Sex), Valid: true}
+		}
+	}
+
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("get profiles batch: begin read: %w", err)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx, profilesByUserIDsQuery,
+		userIDs, name, ageFrom, ageTo, sex, time.Now().Format(time.DateOnly))
+	if err != nil {
+		return nil, fmt.Errorf("get profiles batch: select: %w", err)
+	}
+	defer rows.Close()
+
+	byUserID := make(map[int64]*model.Profile, len(userIDs))
+	for rows.Next() {
+		profile, err := scanProfile(rows)
+		if err != nil {
+			return nil, fmt.Errorf("get profiles batch: scan: %w", err)
+		}
+		byUserID[profile.UserID] = profile
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get profiles batch: read: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("get profiles batch: close: %w", err)
+	}
+
+	byProfileID := make(map[int64]*model.Profile, len(byUserID))
+	byVersionID := make(map[int64]*model.Profile, len(byUserID))
+	for _, p := range byUserID {
+		byProfileID[p.ID] = p
+		if p.CurrentVersion.ID != 0 {
+			byVersionID[p.CurrentVersion.ID] = p
+		}
+	}
+	if err := loadCandidateRelations(ctx, tx, byProfileID, byVersionID); err != nil {
+		return nil, fmt.Errorf("get profiles batch: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("get profiles batch: commit read: %w", err)
+	}
+
+	profiles := make([]model.Profile, 0, len(byUserID))
+	for _, id := range userIDs {
+		if p, ok := byUserID[id]; ok {
+			profiles = append(profiles, *p)
+			delete(byUserID, id) // повтор ID во входном списке не дублирует анкету
+		}
+	}
+	return profiles, nil
 }
