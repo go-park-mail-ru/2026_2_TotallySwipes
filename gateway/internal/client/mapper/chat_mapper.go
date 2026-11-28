@@ -49,6 +49,50 @@ func ChatMessagesQueryToProto(userID, chatID int64, query model.ChatMessagesQuer
 	return request, nil
 }
 
+func ChatListQueryToProto(userID int64, query model.ChatListQuery) (*chatpb.GetChatsRequest, error) {
+
+	request := &chatpb.GetChatsRequest{
+		UserId: userID,
+		Cursor: query.Cursor,
+	}
+
+	if query.Limit != nil {
+
+		if *query.Limit < 1 || *query.Limit > 100 {
+			return nil, fmt.Errorf("limit must be between 1 and 100")
+		}
+
+		limit := int32(*query.Limit)
+		request.Limit = &limit
+	}
+
+	return request, nil
+}
+
+func ChatPageFromProto(page *chatpb.ChatPage) (*model.ChatPage, error) {
+
+	if page == nil {
+		return nil, fmt.Errorf("proto: missing chat page")
+	}
+
+	result := &model.ChatPage{
+		Items:      make([]model.ChatCard, 0, len(page.GetItems())),
+		NextCursor: page.NextCursor,
+	}
+
+	for _, item := range page.GetItems() {
+		card, err := ChatCardFromProto(item)
+
+		if err != nil {
+			return nil, err
+		}
+
+		result.Items = append(result.Items, *card)
+	}
+
+	return result, nil
+}
+
 func ChatDetailsFromProto(details *chatpb.ChatDetails) (*model.ChatDetails, error) {
 
 	if details == nil {

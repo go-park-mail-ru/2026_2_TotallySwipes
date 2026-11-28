@@ -52,6 +52,7 @@ func chatError(ctx context.Context, err error) error {
 		{model.ErrInvalidMessageID, codes.InvalidArgument},
 		{model.ErrInvalidChatMembers, codes.InvalidArgument},
 		{model.ErrInvalidMessagesQuery, codes.InvalidArgument},
+		{model.ErrInvalidChatsQuery, codes.InvalidArgument},
 		{model.ErrInvalidClientMessageID, codes.InvalidArgument},
 		{model.ErrInvalidMessageText, codes.InvalidArgument},
 		{model.ErrInvalidReadSeq, codes.InvalidArgument},

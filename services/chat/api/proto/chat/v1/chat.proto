@@ -270,6 +270,23 @@ message SendMediaResponse {
   bool created = 2;
 }
 
+message ChatPage {
+  repeated ChatCard items = 1;
+  optional string next_cursor = 2;
+}
+
+message GetChatsRequest {
+  int64 user_id = 1;
+  // Отсутствие поля означает лимит 100.
+  optional int32 limit = 2;
+  // Отсутствие поля означает первую страницу со смещением 0.
+  optional string cursor = 3;
+}
+
+message GetChatsResponse {
+  ChatPage page = 1;
+}
+
 service ChatService {
 
     rpc GetSummary(GetSummaryRequest) returns (GetSummaryResponse);
@@ -287,4 +304,5 @@ service ChatService {
 
     rpc EnsureChat(EnsureChatRequest) returns (EnsureChatResponse);
     rpc SendMedia(SendMediaRequest) returns (SendMediaResponse);
+    rpc GetChats(GetChatsRequest) returns (GetChatsResponse);
 }

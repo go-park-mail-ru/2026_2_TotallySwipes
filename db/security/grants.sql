@@ -7,13 +7,13 @@ BEGIN;
 REVOKE ALL PRIVILEGES ON DATABASE :"database_name" FROM PUBLIC;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 
--- Auth, Profile, Matching, Chat и мониторинг подключаются к текущей базе данных.
+-- Auth, Profile, Matching, Chat, OnlineConf и мониторинг подключаются к текущей базе данных.
 GRANT CONNECT ON DATABASE :"database_name"
-    TO auth_app, profile_app, matching_app, chat_app, monitor;
+    TO auth_app, profile_app, matching_app, chat_app, onlineconf_app, monitor;
 
--- Auth, Profile, Matching и Chat обращаются к таблицам в схеме public.
+-- Auth, Profile, Matching, Chat и OnlineConf обращаются к таблицам в схеме public.
 GRANT USAGE ON SCHEMA public
-    TO auth_app, profile_app, matching_app, chat_app;
+    TO auth_app, profile_app, matching_app, chat_app, onlineconf_app;
 
 -- Auth читает учётные данные для входа и создаёт аккаунты при регистрации.
 GRANT SELECT (id, email, password_hash), INSERT (email, password_hash)
@@ -118,5 +118,28 @@ GRANT USAGE ON SEQUENCE public.chat_id_seq, public.message_id_seq
 
 -- Мониторинг читает статистику PostgreSQL без прав изменения прикладных таблиц.
 GRANT pg_monitor TO monitor;
+
+-- OnlineConf обращается к собственным таблицам без права создавать объекты схемы.
+GRANT USAGE ON SCHEMA onlineconf TO onlineconf_app;
+
+-- OnlineConf ищет пользователя по email, не получая доступ к хешам паролей.
+GRANT SELECT (id, email) ON TABLE public."user" TO onlineconf_app;
+
+-- OnlineConf создаёт и изменяет параметры и политики; конфигурации удаляются через deleted_at.
+GRANT SELECT, INSERT, UPDATE
+    ON TABLE onlineconf.configs, onlineconf.rollout_policies TO onlineconf_app;
+
+-- OnlineConf управляет персональными исключениями и доступом администраторов.
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON TABLE onlineconf.flag_overrides, onlineconf.admins TO onlineconf_app;
+
+-- OnlineConf добавляет и читает аудит без возможности менять или удалять историю.
+GRANT SELECT, INSERT ON TABLE onlineconf.history TO onlineconf_app;
+
+-- OnlineConf читает ревизию настроек и блокирует строку состояния в транзакциях изменения.
+GRANT SELECT, UPDATE (revision) ON TABLE onlineconf.state TO onlineconf_app;
+
+-- OnlineConf использует генераторы ID конфигураций, политик и записей истории.
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA onlineconf TO onlineconf_app;
 
 COMMIT;

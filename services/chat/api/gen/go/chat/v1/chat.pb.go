@@ -2584,6 +2584,164 @@ func (x *SendMediaResponse) GetCreated() bool {
 	return false
 }
 
+type ChatPage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Items         []*ChatCard            `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	NextCursor    *string                `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3,oneof" json:"next_cursor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChatPage) Reset() {
+	*x = ChatPage{}
+	mi := &file_chat_v1_chat_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChatPage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChatPage) ProtoMessage() {}
+
+func (x *ChatPage) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_v1_chat_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChatPage.ProtoReflect.Descriptor instead.
+func (*ChatPage) Descriptor() ([]byte, []int) {
+	return file_chat_v1_chat_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *ChatPage) GetItems() []*ChatCard {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+func (x *ChatPage) GetNextCursor() string {
+	if x != nil && x.NextCursor != nil {
+		return *x.NextCursor
+	}
+	return ""
+}
+
+type GetChatsRequest struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	UserId int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	// Отсутствие поля означает лимит 100.
+	Limit *int32 `protobuf:"varint,2,opt,name=limit,proto3,oneof" json:"limit,omitempty"`
+	// Отсутствие поля означает первую страницу со смещением 0.
+	Cursor        *string `protobuf:"bytes,3,opt,name=cursor,proto3,oneof" json:"cursor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetChatsRequest) Reset() {
+	*x = GetChatsRequest{}
+	mi := &file_chat_v1_chat_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetChatsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetChatsRequest) ProtoMessage() {}
+
+func (x *GetChatsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_v1_chat_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetChatsRequest.ProtoReflect.Descriptor instead.
+func (*GetChatsRequest) Descriptor() ([]byte, []int) {
+	return file_chat_v1_chat_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *GetChatsRequest) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *GetChatsRequest) GetLimit() int32 {
+	if x != nil && x.Limit != nil {
+		return *x.Limit
+	}
+	return 0
+}
+
+func (x *GetChatsRequest) GetCursor() string {
+	if x != nil && x.Cursor != nil {
+		return *x.Cursor
+	}
+	return ""
+}
+
+type GetChatsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Page          *ChatPage              `protobuf:"bytes,1,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetChatsResponse) Reset() {
+	*x = GetChatsResponse{}
+	mi := &file_chat_v1_chat_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetChatsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetChatsResponse) ProtoMessage() {}
+
+func (x *GetChatsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_v1_chat_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetChatsResponse.ProtoReflect.Descriptor instead.
+func (*GetChatsResponse) Descriptor() ([]byte, []int) {
+	return file_chat_v1_chat_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *GetChatsResponse) GetPage() *ChatPage {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
 var File_chat_v1_chat_proto protoreflect.FileDescriptor
 
 const file_chat_v1_chat_proto_rawDesc = "" +
@@ -2782,7 +2940,20 @@ const file_chat_v1_chat_proto_rawDesc = "" +
 	"\x04data\x18\x05 \x01(\fR\x04data\"k\n" +
 	"\x11SendMediaResponse\x12<\n" +
 	"\amessage\x18\x01 \x01(\v2\".totallyswipes.chat.v1.ChatMessageR\amessage\x12\x18\n" +
-	"\acreated\x18\x02 \x01(\bR\acreated*\xad\x01\n" +
+	"\acreated\x18\x02 \x01(\bR\acreated\"w\n" +
+	"\bChatPage\x125\n" +
+	"\x05items\x18\x01 \x03(\v2\x1f.totallyswipes.chat.v1.ChatCardR\x05items\x12$\n" +
+	"\vnext_cursor\x18\x02 \x01(\tH\x00R\n" +
+	"nextCursor\x88\x01\x01B\x0e\n" +
+	"\f_next_cursor\"w\n" +
+	"\x0fGetChatsRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x19\n" +
+	"\x05limit\x18\x02 \x01(\x05H\x00R\x05limit\x88\x01\x01\x12\x1b\n" +
+	"\x06cursor\x18\x03 \x01(\tH\x01R\x06cursor\x88\x01\x01B\b\n" +
+	"\x06_limitB\t\n" +
+	"\a_cursor\"G\n" +
+	"\x10GetChatsResponse\x123\n" +
+	"\x04page\x18\x01 \x01(\v2\x1f.totallyswipes.chat.v1.ChatPageR\x04page*\xad\x01\n" +
 	"\x0fChatMessageType\x12!\n" +
 	"\x1dCHAT_MESSAGE_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16CHAT_MESSAGE_TYPE_TEXT\x10\x01\x12\x1b\n" +
@@ -2792,7 +2963,8 @@ const file_chat_v1_chat_proto_rawDesc = "" +
 	"\x11ChatPageDirection\x12#\n" +
 	"\x1fCHAT_PAGE_DIRECTION_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19CHAT_PAGE_DIRECTION_OLDER\x10\x01\x12\x1d\n" +
-	"\x19CHAT_PAGE_DIRECTION_NEWER\x10\x022\xa8\t\n" +
+	"\x19CHAT_PAGE_DIRECTION_NEWER\x10\x022\x85\n" +
+	"\n" +
 	"\vChatService\x12a\n" +
 	"\n" +
 	"GetSummary\x12(.totallyswipes.chat.v1.GetSummaryRequest\x1a).totallyswipes.chat.v1.GetSummaryResponse\x12X\n" +
@@ -2807,7 +2979,8 @@ const file_chat_v1_chat_proto_rawDesc = "" +
 	"\bGetMedia\x12&.totallyswipes.chat.v1.GetMediaRequest\x1a'.totallyswipes.chat.v1.GetMediaResponse\x12a\n" +
 	"\n" +
 	"EnsureChat\x12(.totallyswipes.chat.v1.EnsureChatRequest\x1a).totallyswipes.chat.v1.EnsureChatResponse\x12^\n" +
-	"\tSendMedia\x12'.totallyswipes.chat.v1.SendMediaRequest\x1a(.totallyswipes.chat.v1.SendMediaResponseB4Z2dating-app/services/chat/api/gen/go/chat/v1;chatpbb\x06proto3"
+	"\tSendMedia\x12'.totallyswipes.chat.v1.SendMediaRequest\x1a(.totallyswipes.chat.v1.SendMediaResponse\x12[\n" +
+	"\bGetChats\x12&.totallyswipes.chat.v1.GetChatsRequest\x1a'.totallyswipes.chat.v1.GetChatsResponseB4Z2dating-app/services/chat/api/gen/go/chat/v1;chatpbb\x06proto3"
 
 var (
 	file_chat_v1_chat_proto_rawDescOnce sync.Once
@@ -2822,7 +2995,7 @@ func file_chat_v1_chat_proto_rawDescGZIP() []byte {
 }
 
 var file_chat_v1_chat_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_chat_v1_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
+var file_chat_v1_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
 var file_chat_v1_chat_proto_goTypes = []any{
 	(ChatMessageType)(0),           // 0: totallyswipes.chat.v1.ChatMessageType
 	(ChatPageDirection)(0),         // 1: totallyswipes.chat.v1.ChatPageDirection
@@ -2864,7 +3037,10 @@ var file_chat_v1_chat_proto_goTypes = []any{
 	(*EnsureChatResponse)(nil),     // 37: totallyswipes.chat.v1.EnsureChatResponse
 	(*SendMediaRequest)(nil),       // 38: totallyswipes.chat.v1.SendMediaRequest
 	(*SendMediaResponse)(nil),      // 39: totallyswipes.chat.v1.SendMediaResponse
-	(*timestamppb.Timestamp)(nil),  // 40: google.protobuf.Timestamp
+	(*ChatPage)(nil),               // 40: totallyswipes.chat.v1.ChatPage
+	(*GetChatsRequest)(nil),        // 41: totallyswipes.chat.v1.GetChatsRequest
+	(*GetChatsResponse)(nil),       // 42: totallyswipes.chat.v1.GetChatsResponse
+	(*timestamppb.Timestamp)(nil),  // 43: google.protobuf.Timestamp
 }
 var file_chat_v1_chat_proto_depIdxs = []int32{
 	3,  // 0: totallyswipes.chat.v1.ChatEvent.message_created:type_name -> totallyswipes.chat.v1.MessageCreated
@@ -2884,15 +3060,15 @@ var file_chat_v1_chat_proto_depIdxs = []int32{
 	23, // 14: totallyswipes.chat.v1.DeleteMessageResponse.message:type_name -> totallyswipes.chat.v1.ChatMessage
 	0,  // 15: totallyswipes.chat.v1.ChatMessage.type:type_name -> totallyswipes.chat.v1.ChatMessageType
 	24, // 16: totallyswipes.chat.v1.ChatMessage.attachment:type_name -> totallyswipes.chat.v1.ChatAttachment
-	40, // 17: totallyswipes.chat.v1.ChatMessage.created_at:type_name -> google.protobuf.Timestamp
-	40, // 18: totallyswipes.chat.v1.ChatMessage.edited_at:type_name -> google.protobuf.Timestamp
-	40, // 19: totallyswipes.chat.v1.ChatMessage.deleted_at:type_name -> google.protobuf.Timestamp
+	43, // 17: totallyswipes.chat.v1.ChatMessage.created_at:type_name -> google.protobuf.Timestamp
+	43, // 18: totallyswipes.chat.v1.ChatMessage.edited_at:type_name -> google.protobuf.Timestamp
+	43, // 19: totallyswipes.chat.v1.ChatMessage.deleted_at:type_name -> google.protobuf.Timestamp
 	27, // 20: totallyswipes.chat.v1.ChatCard.peer:type_name -> totallyswipes.chat.v1.ChatPeer
 	28, // 21: totallyswipes.chat.v1.ChatCard.last_message:type_name -> totallyswipes.chat.v1.ChatLastMessage
-	40, // 22: totallyswipes.chat.v1.ChatCard.created_at:type_name -> google.protobuf.Timestamp
-	40, // 23: totallyswipes.chat.v1.ChatCard.last_activity_at:type_name -> google.protobuf.Timestamp
+	43, // 22: totallyswipes.chat.v1.ChatCard.created_at:type_name -> google.protobuf.Timestamp
+	43, // 23: totallyswipes.chat.v1.ChatCard.last_activity_at:type_name -> google.protobuf.Timestamp
 	0,  // 24: totallyswipes.chat.v1.ChatLastMessage.type:type_name -> totallyswipes.chat.v1.ChatMessageType
-	40, // 25: totallyswipes.chat.v1.ChatLastMessage.created_at:type_name -> google.protobuf.Timestamp
+	43, // 25: totallyswipes.chat.v1.ChatLastMessage.created_at:type_name -> google.protobuf.Timestamp
 	31, // 26: totallyswipes.chat.v1.GetMessagesResponse.page:type_name -> totallyswipes.chat.v1.ChatMessagesPage
 	23, // 27: totallyswipes.chat.v1.ChatMessagesPage.items:type_name -> totallyswipes.chat.v1.ChatMessage
 	1,  // 28: totallyswipes.chat.v1.ChatMessagesPage.direction:type_name -> totallyswipes.chat.v1.ChatPageDirection
@@ -2900,35 +3076,39 @@ var file_chat_v1_chat_proto_depIdxs = []int32{
 	33, // 30: totallyswipes.chat.v1.ChatDetails.messaging:type_name -> totallyswipes.chat.v1.ChatMessaging
 	0,  // 31: totallyswipes.chat.v1.SendMediaRequest.type:type_name -> totallyswipes.chat.v1.ChatMessageType
 	23, // 32: totallyswipes.chat.v1.SendMediaResponse.message:type_name -> totallyswipes.chat.v1.ChatMessage
-	7,  // 33: totallyswipes.chat.v1.ChatService.GetSummary:input_type -> totallyswipes.chat.v1.GetSummaryRequest
-	9,  // 34: totallyswipes.chat.v1.ChatService.GetChat:input_type -> totallyswipes.chat.v1.GetChatRequest
-	11, // 35: totallyswipes.chat.v1.ChatService.MarkSeen:input_type -> totallyswipes.chat.v1.MarkSeenRequest
-	29, // 36: totallyswipes.chat.v1.ChatService.GetMessages:input_type -> totallyswipes.chat.v1.GetMessagesRequest
-	18, // 37: totallyswipes.chat.v1.ChatService.DeleteMessage:input_type -> totallyswipes.chat.v1.DeleteMessageRequest
-	20, // 38: totallyswipes.chat.v1.ChatService.ReadChat:input_type -> totallyswipes.chat.v1.ReadChatRequest
-	14, // 39: totallyswipes.chat.v1.ChatService.SendMessage:input_type -> totallyswipes.chat.v1.SendMessageRequest
-	16, // 40: totallyswipes.chat.v1.ChatService.EditMessage:input_type -> totallyswipes.chat.v1.EditMessageRequest
-	22, // 41: totallyswipes.chat.v1.ChatService.SubscribeEvents:input_type -> totallyswipes.chat.v1.SubscribeEventsRequest
-	34, // 42: totallyswipes.chat.v1.ChatService.GetMedia:input_type -> totallyswipes.chat.v1.GetMediaRequest
-	36, // 43: totallyswipes.chat.v1.ChatService.EnsureChat:input_type -> totallyswipes.chat.v1.EnsureChatRequest
-	38, // 44: totallyswipes.chat.v1.ChatService.SendMedia:input_type -> totallyswipes.chat.v1.SendMediaRequest
-	8,  // 45: totallyswipes.chat.v1.ChatService.GetSummary:output_type -> totallyswipes.chat.v1.GetSummaryResponse
-	10, // 46: totallyswipes.chat.v1.ChatService.GetChat:output_type -> totallyswipes.chat.v1.GetChatResponse
-	12, // 47: totallyswipes.chat.v1.ChatService.MarkSeen:output_type -> totallyswipes.chat.v1.MarkSeenResponse
-	30, // 48: totallyswipes.chat.v1.ChatService.GetMessages:output_type -> totallyswipes.chat.v1.GetMessagesResponse
-	19, // 49: totallyswipes.chat.v1.ChatService.DeleteMessage:output_type -> totallyswipes.chat.v1.DeleteMessageResponse
-	21, // 50: totallyswipes.chat.v1.ChatService.ReadChat:output_type -> totallyswipes.chat.v1.ReadChatResponse
-	15, // 51: totallyswipes.chat.v1.ChatService.SendMessage:output_type -> totallyswipes.chat.v1.SendMessageResponse
-	17, // 52: totallyswipes.chat.v1.ChatService.EditMessage:output_type -> totallyswipes.chat.v1.EditMessageResponse
-	2,  // 53: totallyswipes.chat.v1.ChatService.SubscribeEvents:output_type -> totallyswipes.chat.v1.ChatEvent
-	35, // 54: totallyswipes.chat.v1.ChatService.GetMedia:output_type -> totallyswipes.chat.v1.GetMediaResponse
-	37, // 55: totallyswipes.chat.v1.ChatService.EnsureChat:output_type -> totallyswipes.chat.v1.EnsureChatResponse
-	39, // 56: totallyswipes.chat.v1.ChatService.SendMedia:output_type -> totallyswipes.chat.v1.SendMediaResponse
-	45, // [45:57] is the sub-list for method output_type
-	33, // [33:45] is the sub-list for method input_type
-	33, // [33:33] is the sub-list for extension type_name
-	33, // [33:33] is the sub-list for extension extendee
-	0,  // [0:33] is the sub-list for field type_name
+	26, // 33: totallyswipes.chat.v1.ChatPage.items:type_name -> totallyswipes.chat.v1.ChatCard
+	40, // 34: totallyswipes.chat.v1.GetChatsResponse.page:type_name -> totallyswipes.chat.v1.ChatPage
+	7,  // 35: totallyswipes.chat.v1.ChatService.GetSummary:input_type -> totallyswipes.chat.v1.GetSummaryRequest
+	9,  // 36: totallyswipes.chat.v1.ChatService.GetChat:input_type -> totallyswipes.chat.v1.GetChatRequest
+	11, // 37: totallyswipes.chat.v1.ChatService.MarkSeen:input_type -> totallyswipes.chat.v1.MarkSeenRequest
+	29, // 38: totallyswipes.chat.v1.ChatService.GetMessages:input_type -> totallyswipes.chat.v1.GetMessagesRequest
+	18, // 39: totallyswipes.chat.v1.ChatService.DeleteMessage:input_type -> totallyswipes.chat.v1.DeleteMessageRequest
+	20, // 40: totallyswipes.chat.v1.ChatService.ReadChat:input_type -> totallyswipes.chat.v1.ReadChatRequest
+	14, // 41: totallyswipes.chat.v1.ChatService.SendMessage:input_type -> totallyswipes.chat.v1.SendMessageRequest
+	16, // 42: totallyswipes.chat.v1.ChatService.EditMessage:input_type -> totallyswipes.chat.v1.EditMessageRequest
+	22, // 43: totallyswipes.chat.v1.ChatService.SubscribeEvents:input_type -> totallyswipes.chat.v1.SubscribeEventsRequest
+	34, // 44: totallyswipes.chat.v1.ChatService.GetMedia:input_type -> totallyswipes.chat.v1.GetMediaRequest
+	36, // 45: totallyswipes.chat.v1.ChatService.EnsureChat:input_type -> totallyswipes.chat.v1.EnsureChatRequest
+	38, // 46: totallyswipes.chat.v1.ChatService.SendMedia:input_type -> totallyswipes.chat.v1.SendMediaRequest
+	41, // 47: totallyswipes.chat.v1.ChatService.GetChats:input_type -> totallyswipes.chat.v1.GetChatsRequest
+	8,  // 48: totallyswipes.chat.v1.ChatService.GetSummary:output_type -> totallyswipes.chat.v1.GetSummaryResponse
+	10, // 49: totallyswipes.chat.v1.ChatService.GetChat:output_type -> totallyswipes.chat.v1.GetChatResponse
+	12, // 50: totallyswipes.chat.v1.ChatService.MarkSeen:output_type -> totallyswipes.chat.v1.MarkSeenResponse
+	30, // 51: totallyswipes.chat.v1.ChatService.GetMessages:output_type -> totallyswipes.chat.v1.GetMessagesResponse
+	19, // 52: totallyswipes.chat.v1.ChatService.DeleteMessage:output_type -> totallyswipes.chat.v1.DeleteMessageResponse
+	21, // 53: totallyswipes.chat.v1.ChatService.ReadChat:output_type -> totallyswipes.chat.v1.ReadChatResponse
+	15, // 54: totallyswipes.chat.v1.ChatService.SendMessage:output_type -> totallyswipes.chat.v1.SendMessageResponse
+	17, // 55: totallyswipes.chat.v1.ChatService.EditMessage:output_type -> totallyswipes.chat.v1.EditMessageResponse
+	2,  // 56: totallyswipes.chat.v1.ChatService.SubscribeEvents:output_type -> totallyswipes.chat.v1.ChatEvent
+	35, // 57: totallyswipes.chat.v1.ChatService.GetMedia:output_type -> totallyswipes.chat.v1.GetMediaResponse
+	37, // 58: totallyswipes.chat.v1.ChatService.EnsureChat:output_type -> totallyswipes.chat.v1.EnsureChatResponse
+	39, // 59: totallyswipes.chat.v1.ChatService.SendMedia:output_type -> totallyswipes.chat.v1.SendMediaResponse
+	42, // 60: totallyswipes.chat.v1.ChatService.GetChats:output_type -> totallyswipes.chat.v1.GetChatsResponse
+	48, // [48:61] is the sub-list for method output_type
+	35, // [35:48] is the sub-list for method input_type
+	35, // [35:35] is the sub-list for extension type_name
+	35, // [35:35] is the sub-list for extension extendee
+	0,  // [0:35] is the sub-list for field type_name
 }
 
 func init() { file_chat_v1_chat_proto_init() }
@@ -2959,13 +3139,15 @@ func file_chat_v1_chat_proto_init() {
 	}
 	file_chat_v1_chat_proto_msgTypes[29].OneofWrappers = []any{}
 	file_chat_v1_chat_proto_msgTypes[31].OneofWrappers = []any{}
+	file_chat_v1_chat_proto_msgTypes[38].OneofWrappers = []any{}
+	file_chat_v1_chat_proto_msgTypes[39].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chat_v1_chat_proto_rawDesc), len(file_chat_v1_chat_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   38,
+			NumMessages:   41,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

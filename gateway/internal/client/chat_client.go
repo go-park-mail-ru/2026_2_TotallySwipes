@@ -29,6 +29,23 @@ func (a *ChatAdapter) GetSummary(ctx context.Context, userID int64) (*model.Chat
 	return mapper.ChatSummaryFromProto(response.GetSummary())
 }
 
+func (a *ChatAdapter) GetChats(ctx context.Context, userID int64, query model.ChatListQuery) (*model.ChatPage, error) {
+
+	request, err := mapper.ChatListQueryToProto(userID, query)
+
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := a.client.GetChats(ctx, request)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return mapper.ChatPageFromProto(response.GetPage())
+}
+
 func (a *ChatAdapter) GetChat(ctx context.Context, userID, chatID int64) (*model.ChatDetails, error) {
 
 	response, err := a.client.GetChat(ctx, &chatpb.GetChatRequest{UserId: userID, ChatId: strconv.FormatInt(chatID, 10)})

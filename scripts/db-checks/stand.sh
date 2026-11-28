@@ -67,6 +67,7 @@ ALTER ROLE auth_app PASSWORD 'auth_app_test_only';
 ALTER ROLE profile_app PASSWORD 'profile_app_test_only';
 ALTER ROLE matching_app PASSWORD 'matching_app_test_only';
 ALTER ROLE chat_app PASSWORD 'chat_app_test_only';
+ALTER ROLE onlineconf_app PASSWORD 'onlineconf_app_test_only';
 ALTER ROLE monitor PASSWORD 'monitor_test_only';
 SQL
 

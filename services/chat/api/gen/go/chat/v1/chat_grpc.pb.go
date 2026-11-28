@@ -31,6 +31,7 @@ const (
 	ChatService_GetMedia_FullMethodName        = "/totallyswipes.chat.v1.ChatService/GetMedia"
 	ChatService_EnsureChat_FullMethodName      = "/totallyswipes.chat.v1.ChatService/EnsureChat"
 	ChatService_SendMedia_FullMethodName       = "/totallyswipes.chat.v1.ChatService/SendMedia"
+	ChatService_GetChats_FullMethodName        = "/totallyswipes.chat.v1.ChatService/GetChats"
 )
 
 // ChatServiceClient is the client API for ChatService service.
@@ -49,6 +50,7 @@ type ChatServiceClient interface {
 	GetMedia(ctx context.Context, in *GetMediaRequest, opts ...grpc.CallOption) (*GetMediaResponse, error)
 	EnsureChat(ctx context.Context, in *EnsureChatRequest, opts ...grpc.CallOption) (*EnsureChatResponse, error)
 	SendMedia(ctx context.Context, in *SendMediaRequest, opts ...grpc.CallOption) (*SendMediaResponse, error)
+	GetChats(ctx context.Context, in *GetChatsRequest, opts ...grpc.CallOption) (*GetChatsResponse, error)
 }
 
 type chatServiceClient struct {
@@ -188,6 +190,16 @@ func (c *chatServiceClient) SendMedia(ctx context.Context, in *SendMediaRequest,
 	return out, nil
 }
 
+func (c *chatServiceClient) GetChats(ctx context.Context, in *GetChatsRequest, opts ...grpc.CallOption) (*GetChatsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetChatsResponse)
+	err := c.cc.Invoke(ctx, ChatService_GetChats_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ChatServiceServer is the server API for ChatService service.
 // All implementations must embed UnimplementedChatServiceServer
 // for forward compatibility.
@@ -204,6 +216,7 @@ type ChatServiceServer interface {
 	GetMedia(context.Context, *GetMediaRequest) (*GetMediaResponse, error)
 	EnsureChat(context.Context, *EnsureChatRequest) (*EnsureChatResponse, error)
 	SendMedia(context.Context, *SendMediaRequest) (*SendMediaResponse, error)
+	GetChats(context.Context, *GetChatsRequest) (*GetChatsResponse, error)
 	mustEmbedUnimplementedChatServiceServer()
 }
 
@@ -249,6 +262,9 @@ func (UnimplementedChatServiceServer) EnsureChat(context.Context, *EnsureChatReq
 }
 func (UnimplementedChatServiceServer) SendMedia(context.Context, *SendMediaRequest) (*SendMediaResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SendMedia not implemented")
+}
+func (UnimplementedChatServiceServer) GetChats(context.Context, *GetChatsRequest) (*GetChatsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetChats not implemented")
 }
 func (UnimplementedChatServiceServer) mustEmbedUnimplementedChatServiceServer() {}
 func (UnimplementedChatServiceServer) testEmbeddedByValue()                     {}
@@ -480,6 +496,24 @@ func _ChatService_SendMedia_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ChatService_GetChats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetChatsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).GetChats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_GetChats_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).GetChats(ctx, req.(*GetChatsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ChatService_ServiceDesc is the grpc.ServiceDesc for ChatService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -530,6 +564,10 @@ var ChatService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendMedia",
 			Handler:    _ChatService_SendMedia_Handler,
+		},
+		{
+			MethodName: "GetChats",
+			Handler:    _ChatService_GetChats_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

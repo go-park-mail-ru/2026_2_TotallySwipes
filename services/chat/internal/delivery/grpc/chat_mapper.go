@@ -122,6 +122,24 @@ func chatCardToProto(card model.ChatCard) *chatpb.ChatCard {
 	return result
 }
 
+func chatPageToProto(page *model.ChatPage) *chatpb.ChatPage {
+
+	if page == nil {
+		return nil
+	}
+
+	items := make([]*chatpb.ChatCard, len(page.Items))
+
+	for index, card := range page.Items {
+		items[index] = chatCardToProto(card)
+	}
+
+	return &chatpb.ChatPage{
+		Items:      items,
+		NextCursor: page.NextCursor,
+	}
+}
+
 func chatDetailsToProto(details *model.ChatDetails) *chatpb.ChatDetails {
 
 	if details == nil {
@@ -250,4 +268,14 @@ func chatEventToProto(event *model.ChatEvent) (*chatpb.ChatEvent, error) {
 	}
 
 	return result, nil
+}
+
+func optionalChatsLimit(request *chatpb.GetChatsRequest) *int {
+
+	if request.Limit == nil {
+		return nil
+	}
+
+	limit := int(request.GetLimit())
+	return &limit
 }

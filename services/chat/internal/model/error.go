@@ -15,6 +15,7 @@ var (
 
 	ErrInvalidChatID        = errors.New("invalid chat id")
 	ErrInvalidMessagesQuery = errors.New("invalid messages query")
+	ErrInvalidChatsQuery    = errors.New("invalid chats query")
 	ErrChatNotFound         = errors.New("chat not found")
 
 	ErrIdempotencyConflict    = errors.New("idempotency conflict")

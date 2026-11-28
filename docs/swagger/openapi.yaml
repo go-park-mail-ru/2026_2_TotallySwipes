@@ -4,6 +4,12 @@ info:
   title: Totally Swipes
   version: 1.0.0
 
+tags:
+  - name: OnlineConf Admin
+    description: >-
+      Управление настройками и флагами. Все операции требуют прав администратора.
+      Продуктовые сервисы применяют сохранённые изменения в течение минуты.
+
 paths:
 
   /api/v1/auth/csrf:
@@ -112,7 +118,10 @@ paths:
     post:
       summary: Авторизовать пользователя
       description: >-
-        Обязательные поля email и password передаются строками в JSON. 
+        Обязательные поля email и password передаются строками в JSON.
+        При совпадении с ADMIN_LISTS в подписываемый JWT добавляется is_admin: true.
+        Администраторский JWT действует только на административных ручках.
+        Доступ к панели проверяется через GET /api/v1/admin/me.
       requestBody:
         required: true
         content:
@@ -1754,6 +1763,55 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
 
+  /api/v1/chats:
+    get:
+      tags: [Chat]
+      summary: Получить страницу чатов текущего пользователя
+      description: >-
+        Чаты сортируются по last_activity_at по убыванию, затем по chat_id по убыванию.
+        Пустые чаты включаются в список, last_message у них null, а last_activity_at
+        равно времени создания. Запрос не отмечает чаты просмотренными или прочитанными.
+        Отсутствующие или пустые limit и cursor трактуются как null:
+        сервер использует limit=100 и cursor="0". Строку "null" передавать не нужно.
+        cursor — смещение в списке; при новых сообщениях порядок чатов может меняться.
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          description: Размер страницы; при отсутствии или null используется 100.
+          schema:
+            type: integer
+            nullable: true
+            minimum: 1
+            maximum: 100
+            default: 100
+        - in: query
+          name: cursor
+          required: false
+          description: >-
+            Строковое смещение от 0 до 9223372036854775807.
+            При отсутствии или null используется "0".
+            Для следующей страницы передавать полученный next_cursor.
+          schema:
+            type: string
+            nullable: true
+            default: '0'
+      responses:
+        '200':
+          description: Страница чатов, включая пустой список при отсутствии чатов.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatPage'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/v1/chats/summary:
     get:
       tags: [Chat]
@@ -2082,6 +2140,190 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
 
+  /api/v1/admin/me:
+    get:
+      tags: [OnlineConf Admin]
+      summary: Получить текущего администратора
+      description: Проверяет административный JWT и наличие аккаунта в ADMIN_LISTS.
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Текущий администратор.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnlineConfAdminSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/OnlineConfAdminForbidden'
+
+  /api/v1/admin/onlineconf/configs:
+    get:
+      tags: [OnlineConf Admin]
+      operationId: listOnlineConfConfigs
+      summary: Получить список конфигов
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OnlineConfScopeFilter'
+        - $ref: '#/components/parameters/OnlineConfSearch'
+      responses:
+        '200':
+          description: Список конфигов, отсортированный по scope и key. Если совпадений нет, items пуст.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OnlineConfConfig'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/OnlineConfAdminForbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/admin/onlineconf/configs/{scope}/{key}:
+    parameters:
+      - $ref: '#/components/parameters/OnlineConfScope'
+      - $ref: '#/components/parameters/OnlineConfKey'
+    put:
+      tags: [OnlineConf Admin]
+      operationId: saveOnlineConfConfig
+      summary: Создать или обновить конфиг
+      description: Полностью заменяет значение конфига. Бэкенд определяет автора по сессии и устанавливает время сохранения.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OnlineConfCsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [value]
+              properties:
+                value:
+                  $ref: '#/components/schemas/OnlineConfValue'
+            example:
+              value: 3
+      responses:
+        '200':
+          description: Конфиг обновлён.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnlineConfConfig'
+        '201':
+          description: Конфиг создан.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnlineConfConfig'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/OnlineConfWriteForbidden'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/admin/onlineconf/flags:
+    get:
+      tags: [OnlineConf Admin]
+      operationId: listOnlineConfFlags
+      summary: Получить список флагов
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OnlineConfScopeFilter'
+        - $ref: '#/components/parameters/OnlineConfSearch'
+      responses:
+        '200':
+          description: Список флагов, отсортированный по scope и key. Если совпадений нет, items пуст.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OnlineConfFlag'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/OnlineConfAdminForbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/admin/onlineconf/flags/{scope}/{key}:
+    parameters:
+      - $ref: '#/components/parameters/OnlineConfScope'
+      - $ref: '#/components/parameters/OnlineConfKey'
+    put:
+      tags: [OnlineConf Admin]
+      operationId: saveOnlineConfFlag
+      summary: Создать или обновить флаг
+      description: >-
+        Сохраняет процент раскатки и полностью заменяет список персональных правил
+        в одной транзакции. Передайте пустой объект overrides, чтобы очистить исключения.
+        Персональное правило применяется раньше процентной раскатки.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OnlineConfCsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnlineConfFlagSettings'
+            example:
+              rollout_percent: 25
+              overrides:
+                '42': true
+                '57': false
+      responses:
+        '200':
+          description: Флаг обновлён.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnlineConfFlag'
+        '201':
+          description: Флаг создан.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnlineConfFlag'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/OnlineConfWriteForbidden'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
 components:
   parameters:
     ChatId:
@@ -2100,6 +2342,40 @@ components:
         type: integer
         format: int64
         minimum: 1
+    OnlineConfScope:
+      name: scope
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/OnlineConfScope'
+    OnlineConfKey:
+      name: key
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/OnlineConfKey'
+    OnlineConfScopeFilter:
+      name: scope
+      in: query
+      description: Точное совпадение по области. Если параметр пропущен, поиск идёт по всем областям.
+      schema:
+        $ref: '#/components/schemas/OnlineConfScope'
+    OnlineConfSearch:
+      name: search
+      in: query
+      description: Поиск по подстроке ключа без учёта регистра.
+      schema:
+        type: string
+        maxLength: 128
+        example: photo
+    OnlineConfCsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      description: Токен из GET /api/v1/auth/csrf, совпадающий с cookie csrf_token.
+      schema:
+        type: string
+        minLength: 1
   securitySchemes:
     cookieAuth:
       type: apiKey
@@ -2115,6 +2391,96 @@ components:
         type: string
         example: access_token=eyJhbGciOi...; Path=/; HttpOnly; Secure; SameSite=Lax
   schemas:
+    OnlineConfAdminSession:
+      type: object
+      required: [id, name, email]
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: ID администратора из ADMIN_LISTS.
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+    OnlineConfScope:
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: '^[a-z][a-z0-9_-]*$'
+      description: Область настроек, например профиль, чат или фронтенд.
+      example: profile
+    OnlineConfKey:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: '^[a-z][a-z0-9_.-]*$'
+      description: Имя конфига или флага внутри области.
+      example: max_profile_photos
+    OnlineConfValue:
+      description: >-
+        JSON-значение конфига. Поддерживаются скалярные значения, массивы и объекты.
+        Схема конкретной настройки определяется её scope и key.
+      example: 3
+    OnlineConfConfig:
+      type: object
+      required: [scope, key, value, updated_at, updated_by]
+      properties:
+        scope:
+          $ref: '#/components/schemas/OnlineConfScope'
+        key:
+          $ref: '#/components/schemas/OnlineConfKey'
+        value:
+          $ref: '#/components/schemas/OnlineConfValue'
+        updated_at:
+          type: string
+          format: date-time
+        updated_by:
+          type: integer
+          format: int64
+          minimum: 1
+          description: ID администратора, который сохранил конфиг.
+    OnlineConfFlagSettings:
+      type: object
+      required: [rollout_percent, overrides]
+      properties:
+        rollout_percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Процент пользователей, для которых включён флаг при отсутствии персонального правила.
+          example: 25
+        overrides:
+          type: object
+          description: >-
+            Персональные правила. Ключ — положительный ID пользователя в десятичной записи
+            без ведущих нулей, в диапазоне int64. Значение true включает флаг,
+            false выключает его независимо от процента раскатки.
+          additionalProperties:
+            type: boolean
+          example:
+            '42': true
+            '57': false
+    OnlineConfFlag:
+      allOf:
+        - $ref: '#/components/schemas/OnlineConfFlagSettings'
+        - type: object
+          required: [scope, key, updated_at, updated_by]
+          properties:
+            scope:
+              $ref: '#/components/schemas/OnlineConfScope'
+            key:
+              $ref: '#/components/schemas/OnlineConfKey'
+            updated_at:
+              type: string
+              format: date-time
+            updated_by:
+              type: integer
+              format: int64
+              minimum: 1
+              description: ID администратора, который сохранил флаг.
     ChatSummary:
       type: object
       required: [new_chats_count, unread_chats_count, unread_messages_count, version]
@@ -2184,6 +2550,19 @@ components:
           type: boolean
           nullable: true
           description: Прочтение последнего собственного сообщения собеседником; null для входящих и системных.
+    ChatPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCard'
+        next_cursor:
+          type: string
+          nullable: true
+          description: Смещение следующей страницы либо null, если больше чатов нет.
+          example: '100'
     ChatCard:
       type: object
       required: [chat_id, match_id, peer, is_new, unread_count, last_message, created_at, last_activity_at, version]
@@ -2837,6 +3216,33 @@ components:
                     type: string
                     enum: [MISSING_ANSWER, DUPLICATE_QUESTION, QUESTION_NOT_IN_TEST, VALUE_OUT_OF_RANGE]
   responses:
+    OnlineConfAdminForbidden:
+      description: У пользователя нет прав администратора.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TestError'
+          example:
+            error:
+              code: ADMIN_ACCESS_DENIED
+              message: Требуются права администратора
+    OnlineConfWriteForbidden:
+      description: У пользователя нет прав администратора или проверка CSRF завершилась ошибкой.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TestError'
+          examples:
+            adminAccess:
+              value:
+                error:
+                  code: ADMIN_ACCESS_DENIED
+                  message: Требуются права администратора
+            csrf:
+              value:
+                error:
+                  code: CSRF_INVALID
+                  message: Отсутствует или неверный CSRF-токен
     CSRFInvalid:
       description: >-
         Cookie csrf_token или заголовок X-CSRF-Token отсутствует, пустой либо их

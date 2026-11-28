@@ -27,6 +27,8 @@ type ChatService interface {
 	ReadChat(ctx context.Context, userID int64, command model.ChatRead) (*model.ChatReadUpdated, error)
 	GetMedia(ctx context.Context, userID, chatID, messageID int64) (string, error)
 	SubscribeEvents(ctx context.Context, userID int64) (service.ChatEventsStream, error)
+
+	GetChats(ctx context.Context, userID int64, query model.ChatListQuery) (*model.ChatPage, error)
 }
 
 type ChatHandler struct {
@@ -315,4 +317,23 @@ func (h *ChatHandler) SendMedia(ctx context.Context, request *chatpb.SendMediaRe
 	}
 
 	return &chatpb.SendMediaResponse{Message: chatMessageToProto(message), Created: created}, nil
+}
+
+func (h *ChatHandler) GetChats(ctx context.Context, request *chatpb.GetChatsRequest) (*chatpb.GetChatsResponse, error) {
+
+	page, err := h.chat.GetChats(
+		ctx,
+		request.GetUserId(),
+		model.ChatListQuery{
+			Limit:  optionalChatsLimit(request),
+			Cursor: request.Cursor,
+		})
+
+	if err != nil {
+		return nil, chatError(ctx, err)
+	}
+
+	return &chatpb.GetChatsResponse{
+		Page: chatPageToProto(page),
+	}, nil
 }

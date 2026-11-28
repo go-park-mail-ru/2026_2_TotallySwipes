@@ -97,12 +97,13 @@ jobs:
           PROFILE_ENV: ${{ secrets.PROFILE_ENV }}
           MATCHING_ENV: ${{ secrets.MATCHING_ENV }}
           CHAT_ENV: ${{ secrets.CHAT_ENV }}
+          ONLINECONF_ENV: ${{ secrets.ONLINECONF_ENV }}
           GATEWAY_ENV: ${{ secrets.GATEWAY_ENV }}
           POSTGRES_ENV: ${{ secrets.POSTGRES_ENV }}
           MINIO_ENV: ${{ secrets.MINIO_ENV }}
         run: |
           set -euo pipefail
-          for service in auth profile matching chat gateway postgres minio; do
+          for service in auth profile matching chat onlineconf gateway postgres minio; do
             secret_name="${service^^}_ENV"
             if [ -z "${!secret_name}" ]; then
               echo "Missing GitHub secret: $secret_name" >&2

@@ -7,7 +7,7 @@ DECLARE
     service_role text;
 BEGIN
     FOREACH service_role IN ARRAY ARRAY[
-        'auth_app', 'profile_app', 'matching_app', 'chat_app', 'monitor'
+        'auth_app', 'profile_app', 'matching_app', 'chat_app', 'onlineconf_app', 'monitor'
     ]
     LOOP
         IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = service_role) THEN

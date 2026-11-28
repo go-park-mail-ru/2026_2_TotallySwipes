@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 )
 
 type ChatRepository struct {
@@ -862,4 +863,133 @@ func (r *ChatRepository) CreateChat(ctx context.Context, matchID, firstUserID, s
 	}
 
 	return chatID, created, nil
+}
+
+const getChatsQuery = `
+    SELECT
+        chat.id,
+        chat.match_id,
+        peer.user_id,
+        viewer.seen_at IS NULL,
+        unread.message_count,
+        chat.created_at,
+        COALESCE(last_message.created_at, chat.created_at),
+        viewer.card_version,
+        last_message.id,
+        last_message.seq,
+        last_message.sender_id,
+        last_message.type,
+        CASE WHEN last_message.deleted_at IS NULL THEN LEFT(last_message.body, 100) END,
+        CASE WHEN last_message.deleted_at IS NULL THEN last_message.duration_seconds END,
+        last_message.created_at,
+        CASE WHEN last_message.sender_id = viewer.user_id
+            THEN last_message.seq <= peer.last_read_seq END
+    FROM chat_member AS viewer
+    JOIN chat ON chat.id = viewer.chat_id
+    JOIN chat_member AS peer
+        ON peer.chat_id = chat.id AND peer.user_id <> viewer.user_id
+    CROSS JOIN LATERAL (
+        SELECT COUNT(*) AS message_count
+        FROM message
+        WHERE message.chat_id = chat.id
+            AND message.seq > viewer.last_read_seq
+            AND message.sender_id <> viewer.user_id
+            AND message.deleted_at IS NULL
+    ) AS unread
+    LEFT JOIN LATERAL (
+        SELECT id, seq, sender_id, type, body, duration_seconds, created_at, deleted_at
+        FROM message
+        WHERE message.chat_id = chat.id
+        ORDER BY seq DESC
+        LIMIT 1
+    ) AS last_message ON TRUE
+    WHERE viewer.user_id = $1
+    ORDER BY COALESCE(last_message.created_at, chat.created_at) DESC, chat.id DESC
+    LIMIT $2 OFFSET $3`
+
+const defaultChatsLimit = 100
+
+func (r *ChatRepository) GetChats(ctx context.Context, userID int64, query model.ChatListQuery) (*model.ChatPage, error) {
+
+	limit := defaultChatsLimit
+	offset := int64(0)
+
+	if query.Limit != nil {
+		limit = *query.Limit
+	}
+
+	if query.Cursor != nil {
+		parsed, err := strconv.ParseInt(*query.Cursor, 10, 64)
+
+		if err != nil || parsed < 0 {
+			return nil, model.ErrInvalidChatsQuery
+		}
+
+		offset = parsed
+	}
+
+	if limit < 1 || limit > defaultChatsLimit {
+		return nil, model.ErrInvalidChatsQuery
+	}
+
+	rows, err := r.db.QueryContext(ctx, getChatsQuery, userID, limit+1, offset)
+
+	if err != nil {
+		return nil, fmt.Errorf("get chats: %w", err)
+	}
+	defer rows.Close()
+
+	page := &model.ChatPage{Items: make([]model.ChatCard, 0, limit)}
+
+	for rows.Next() {
+
+		var card model.ChatCard
+		var last model.ChatLastMessage
+		var lastID, lastSeq sql.NullInt64
+		var lastType sql.NullString
+		var lastCreatedAt sql.NullTime
+
+		if err := rows.Scan(
+			&card.ChatID,
+			&card.MatchID,
+			&card.Peer.UserID,
+			&card.IsNew,
+			&card.UnreadCount,
+			&card.CreatedAt,
+			&card.LastActivityAt,
+			&card.Version,
+			&lastID,
+			&lastSeq,
+			&last.SenderID,
+			&lastType,
+			&last.TextPreview,
+			&last.DurationSeconds,
+			&lastCreatedAt,
+			&last.IsReadByPeer,
+		); err != nil {
+			return nil, fmt.Errorf("scan chat card: %w", err)
+		}
+
+		if lastID.Valid {
+			last.MessageID = lastID.Int64
+			last.Seq = lastSeq.Int64
+			last.Type = model.ChatMessageType(lastType.String)
+			last.CreatedAt = lastCreatedAt.Time
+			card.LastMessage = &last
+		}
+
+		page.Items = append(page.Items, card)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read chat cards: %w", err)
+	}
+
+	if len(page.Items) > limit {
+		cursor := strconv.FormatInt(offset+int64(limit), 10)
+		page.NextCursor = &cursor
+		page.Items = page.Items[:limit]
+	}
+
+	return page, nil
 }

@@ -41,7 +41,7 @@ denied() {
 initialize_stand check-access 0
 start_database
 
-for role in auth_app profile_app matching_app chat_app monitor; do
+for role in auth_app profile_app matching_app chat_app onlineconf_app monitor; do
   echo "Проверка подключения: $role"
   actual=$(sql "$role" "${role}_test_only" -Atc 'SELECT current_user;')
 
@@ -68,6 +68,15 @@ allowed auth_app "BEGIN; WITH account AS (
 
 allowed profile_app 'SELECT id FROM public.profile LIMIT 1;'
 allowed matching_app 'SELECT id FROM public."match" LIMIT 1;'
+
+allowed onlineconf_app 'SELECT id, email FROM public."user" LIMIT 1;'
+allowed onlineconf_app "BEGIN;
+    INSERT INTO onlineconf.configs (scope, name, kind, value_type, value)
+    VALUES ('profile', 'access_check', 'config', 'number', '6');
+    UPDATE onlineconf.state SET revision = revision + 1 WHERE id = 1;
+    ROLLBACK;"
+denied onlineconf_app 'SELECT password_hash FROM public."user";'
+denied onlineconf_app 'DELETE FROM onlineconf.history;'
 allowed matching_app 'SELECT id, match_id FROM public.chat LIMIT 1;'
 allowed chat_app 'SELECT id, is_disabled FROM public."user" LIMIT 1;'
 allowed monitor 'SELECT datname, numbackends FROM pg_catalog.pg_stat_database;'

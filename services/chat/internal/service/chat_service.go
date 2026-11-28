@@ -4,6 +4,7 @@ import (
 	"context"
 	"dating-app/services/chat/internal/model"
 	"log/slog"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -13,6 +14,9 @@ const (
 	maxMessagesLimit         = 100
 	maxClientMessageIDLength = 128
 	maxMessageTextLength     = 10000
+	defaultChatsLimit        = 100
+	maxChatsLimit            = 100
+	firstChatsCursor         = "0"
 )
 
 type ChatRepository interface {
@@ -28,6 +32,7 @@ type ChatRepository interface {
 	GetMessages(ctx context.Context, userID, chatID int64, query model.ChatMessagesQuery) (*model.StoredMessagesPage, error)
 
 	GetMessage(ctx context.Context, chatID, messageID int64) (*model.StoredMessage, error)
+	GetChats(ctx context.Context, userID int64, query model.ChatListQuery) (*model.ChatPage, error)
 
 	ReadChat(ctx context.Context, userID int64, command model.ChatRead) (*model.ChatReadUpdated, error)
 	MarkSeen(ctx context.Context, userID, chatID int64) error
@@ -451,4 +456,71 @@ func (s *ChatService) EnsureChat(ctx context.Context, matchID, firstUserID, seco
 	}
 
 	return chatID, created, nil
+}
+
+func (s *ChatService) GetChats(ctx context.Context, userID int64, query model.ChatListQuery) (*model.ChatPage, error) {
+
+	if userID <= 0 {
+		return nil, model.ErrInvalidUserID
+	}
+
+	if query.Limit == nil {
+		limit := defaultChatsLimit
+		query.Limit = &limit
+	}
+
+	if *query.Limit < 1 || *query.Limit > maxChatsLimit {
+		return nil, model.ErrInvalidChatsQuery
+	}
+
+	if query.Cursor == nil {
+		cursor := firstChatsCursor
+		query.Cursor = &cursor
+	}
+
+	offset, err := strconv.ParseInt(*query.Cursor, 10, 64)
+
+	if err != nil || offset < 0 {
+		return nil, model.ErrInvalidChatsQuery
+	}
+
+	page, err := s.repo.GetChats(ctx, userID, query)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if len(page.Items) == 0 {
+		return page, nil
+	}
+
+	userIDs := make([]int64, 0, len(page.Items))
+	seen := make(map[int64]struct{}, len(page.Items))
+
+	for _, card := range page.Items {
+
+		if _, exists := seen[card.Peer.UserID]; exists {
+			continue
+		}
+
+		seen[card.Peer.UserID] = struct{}{}
+		userIDs = append(userIDs, card.Peer.UserID)
+	}
+
+	profiles, err := s.profile.GetChatProfiles(ctx, userIDs)
+
+	if err != nil {
+		return nil, err
+	}
+
+	for index := range page.Items {
+		peer := &page.Items[index].Peer
+		profile := profiles[peer.UserID]
+
+		peer.Name = profile.Name
+		peer.Age = profile.Age
+		peer.AvatarURL = profile.AvatarURL
+	}
+
+	return page, nil
 }

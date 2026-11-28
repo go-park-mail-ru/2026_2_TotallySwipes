@@ -42,7 +42,7 @@ def main() -> int:
 
     statements = []
 
-    for service in ("auth", "profile", "matching", "chat"):
+    for service in ("auth", "profile", "matching", "chat", "onlineconf"):
         try:
             statements.append(password_statement(Path(sys.argv[1]), service))
         except (OSError, ValueError, UnicodeError):
@@ -50,7 +50,7 @@ def main() -> int:
             print(f"invalid DATABASE_URL in {service}.env; expected {service}_app at postgres", file=sys.stderr)
             return 1
 
-    # Выводим SQL только после проверки всех четырёх файлов.
+    # Выводим SQL только после проверки всех файлов сервисов.
     print("BEGIN;")
     print("SET LOCAL standard_conforming_strings = on;")
     print("\n".join(statements))

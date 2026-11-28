@@ -247,6 +247,7 @@ func newRouter(cfg *config.Config, issuer *auth.JWTIssuer, h handlers) *mux.Rout
 	api.Handle("/matches/summary", authed(h.match.Summary)).Methods(http.MethodGet)
 	api.Handle("/matches/{match_id}/seen", authed(h.match.MarkSeen)).Methods(http.MethodPost)
 
+	api.Handle("/chats", authed(h.chat.List)).Methods(http.MethodGet)
 	api.Handle("/chats/summary", authed(h.chat.Summary)).Methods(http.MethodGet)
 	api.Handle("/chats/{chat_id}", authed(h.chat.Get)).Methods(http.MethodGet)
 	api.Handle("/chats/{chat_id}/seen", authed(h.chat.MarkSeen)).Methods(http.MethodPost)

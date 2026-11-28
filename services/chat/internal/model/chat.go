@@ -185,3 +185,13 @@ type ChatMessagesPage struct {
 	NextCursor *int64
 	HasMore    bool
 }
+
+type ChatListQuery struct {
+	Limit  *int
+	Cursor *string
+}
+
+type ChatPage struct {
+	Items      []ChatCard
+	NextCursor *string
+}
