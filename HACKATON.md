@@ -153,7 +153,7 @@ PROJECT=my-project bash scripts/onlineconf/grant-admin.sh admin@example.com
 
 Роль `onlineconf_app` создаётся в `db/security/roles.sql`. В `grants.sql` она получает подключение к БД, USAGE схем, SELECT только `(id, email)` таблицы пользователей и права на собственные таблицы. История доступна только на SELECT/INSERT; конфигурации удаляются через `deleted_at`. DDL, superuser и доступ к паролям пользователей не выдаются.
 
-`postgres-passwords.py` читает `deploy/env/onlineconf.env` наряду с остальными сервисами. Шаблон — `deploy/env/onlineconf.env.example`. Для GitHub Actions нужно добавить секрет `ONLINECONF_ENV` с содержимым этого файла и реальным паролем. Workflow загружает его вместе с остальными env.
+Текущий деплой не требует `ONLINECONF_ENV` и не читает `onlineconf.env` при установке паролей. Шаблон `deploy/env/onlineconf.env.example` подготовлен для будущего сервиса. Загрузку env и установку пароля `onlineconf_app` подключим вместе с запуском OnlineConf.
 
 Контейнер OnlineConf, его конфиг и маршрутизацию добавляем при реализации сервиса; текущие изменения подготавливают только БД и установку пароля роли.
 

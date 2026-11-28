@@ -42,7 +42,7 @@ def main() -> int:
 
     statements = []
 
-    for service in ("auth", "profile", "matching", "chat", "onlineconf"):
+    for service in ("auth", "profile", "matching", "chat"):
         try:
             statements.append(password_statement(Path(sys.argv[1]), service))
         except (OSError, ValueError, UnicodeError):

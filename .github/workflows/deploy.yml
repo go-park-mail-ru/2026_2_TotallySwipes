@@ -102,7 +102,7 @@ jobs:
           MINIO_ENV: ${{ secrets.MINIO_ENV }}
         run: |
           set -euo pipefail
-          for service in auth profile matching chat onlineconf gateway postgres minio; do
+          for service in auth profile matching chat gateway postgres minio; do
             secret_name="${service^^}_ENV"
             if [ -z "${!secret_name}" ]; then
               echo "Missing GitHub secret: $secret_name" >&2
